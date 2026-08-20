@@ -50,7 +50,7 @@ create table if not exists public.orders (
   order_code text not null unique,
   cancel_token uuid not null default gen_random_uuid(),
   customer_name text not null,
-  phone text not null,
+  phone text,
   fulfillment text not null check (fulfillment in ('Delivery','Pickup')),
   address text,
   preferred_date date not null,
@@ -62,6 +62,11 @@ create table if not exists public.orders (
   cancelled_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+-- If you already ran an earlier version of this file where phone was NOT NULL,
+-- this line makes it optional on an existing table. Safe to run even if the
+-- table was just created above with phone already nullable.
+alter table public.orders alter column phone drop not null;
 
 create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
@@ -126,6 +131,7 @@ grant execute on function public.is_admin() to anon, authenticated;
 
 -- Customer order placement. Security definer lets customers call one safe transaction
 -- without direct INSERT/UPDATE permission on order or product tables.
+-- NOTE: phone number is OPTIONAL. Only customer_name is required.
 create or replace function public.place_order(
   p_customer_name text,
   p_phone text,
@@ -150,10 +156,15 @@ declare
   v_product public.products%rowtype;
   v_qty integer;
   v_items_out jsonb := '[]'::jsonb;
+  v_phone text;
 begin
-  if coalesce(trim(p_customer_name),'') = '' or coalesce(trim(p_phone),'') = '' then
-    return jsonb_build_object('ok',false,'error','Name and mobile number are required.');
+  if coalesce(trim(p_customer_name),'') = '' then
+    return jsonb_build_object('ok',false,'error','Name is required.');
   end if;
+
+  -- Phone is optional: normalize blank/whitespace-only input to NULL.
+  v_phone := nullif(trim(p_phone),'');
+
   if p_fulfillment not in ('Delivery','Pickup') then return jsonb_build_object('ok',false,'error','Invalid fulfillment method.'); end if;
   if p_fulfillment='Delivery' and coalesce(trim(p_address),'')='' then return jsonb_build_object('ok',false,'error','Delivery address is required.'); end if;
   if p_preferred_date < current_date then return jsonb_build_object('ok',false,'error','Preferred date cannot be in the past.'); end if;
@@ -190,7 +201,7 @@ begin
   end loop;
 
   insert into public.orders(id,order_code,cancel_token,customer_name,phone,fulfillment,address,preferred_date,payment_method,note,total,status)
-  values(v_order_id,v_code,v_token,trim(p_customer_name),trim(p_phone),p_fulfillment,case when p_fulfillment='Delivery' then trim(p_address) else null end,p_preferred_date,p_payment_method,nullif(trim(p_note),''),v_total,'New');
+  values(v_order_id,v_code,v_token,trim(p_customer_name),v_phone,p_fulfillment,case when p_fulfillment='Delivery' then trim(p_address) else null end,p_preferred_date,p_payment_method,nullif(trim(p_note),''),v_total,'New');
 
   for v_item in select * from jsonb_array_elements(v_items_out)
   loop
@@ -203,7 +214,7 @@ begin
   end loop;
 
   return jsonb_build_object('ok',true,'order',jsonb_build_object(
-    'id',v_order_id,'order_code',v_code,'cancel_token',v_token,'customer_name',trim(p_customer_name),'phone',trim(p_phone),
+    'id',v_order_id,'order_code',v_code,'cancel_token',v_token,'customer_name',trim(p_customer_name),'phone',v_phone,
     'fulfillment',p_fulfillment,'address',case when p_fulfillment='Delivery' then trim(p_address) else null end,
     'preferred_date',p_preferred_date,'payment_method',p_payment_method,'note',nullif(trim(p_note),''),'total',v_total,'status','New',
     'created_at',now(),'items',v_items_out
