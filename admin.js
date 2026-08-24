@@ -1,3 +1,4 @@
+const GOOGLE_SHEETS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwDiNU-R9HQDL79QlO6kObtnpS7XCxc2_xoHL3Dk1becwEEjPtAx43WZcUpNWDW3L35/exec';
 const A={section:'dashboard',session:null,orderFilter:'all',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 function configured(){return !!window.BILIHAN_SUPABASE_CONFIGURED}
 async function isAdmin(){if(!A.session)return false;const {data,error}=await db.rpc('is_admin');return !error&&data===true}
