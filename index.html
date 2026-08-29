@@ -11,12 +11,12 @@
   <header class="site-header">
     <a class="brand brand-lockup" href="#home" aria-label="Bilihan Home"><img src="bilihan-logo.png" alt="Bilihan logo"><span id="brandName">Bilihan</span></a>
     <nav class="desktop-nav" aria-label="Primary">
-      <a href="#home">Home</a><a href="#menu">Menu</a>
+      <a href="#home"><img class="nav-icon" src="ios-icons/01-home.png" alt="" aria-hidden="true">Home</a><a href="#menu"><img class="nav-icon" src="ios-icons/02-products.png" alt="" aria-hidden="true">Products</a>
       <button id="myOrderBtn" class="nav-link hidden">My Order</button>
     </nav>
     <div class="header-actions">
-      <button id="themeToggle" class="icon-btn" aria-label="Toggle theme">🌙</button>
-      <button id="cartBtn" class="cart-btn" aria-label="Open cart"><img class="ui-icon" src="icons-png/shopping-bag.png" alt="" aria-hidden="true"> <span id="cartCount">0</span></button>
+      <button id="themeToggle" class="icon-btn" aria-label="Toggle theme"><img id="themeIcon" class="ui-icon" src="ios-icons/05-dark-mode.png" alt="" aria-hidden="true"></button>
+      <button id="cartBtn" class="cart-btn" aria-label="Open cart"><img class="ui-icon" src="ios-icons/04-cart.png" alt="" aria-hidden="true"> <span id="cartCount">0</span></button>
     </div>
   </header>
   <main>
@@ -35,7 +35,13 @@
     <section id="menu" class="section-pad">
       <div class="section-heading"><span class="eyebrow">Our Menu</span><h2>Pick your favorites</h2></div>
       <div id="connectionBanner" class="status-banner hidden"></div>
-      <div id="categoryTabs" class="tabs" role="tablist"></div>
+      <div class="menu-controls">
+        <div id="categoryTabs" class="tabs" role="tablist"></div>
+        <div class="view-switch" role="group" aria-label="Product view">
+          <button id="gridViewBtn" class="view-btn active" type="button" aria-label="Grid view" aria-pressed="true"><img src="ios-icons/08-grid.png" alt="" aria-hidden="true"></button>
+          <button id="listViewBtn" class="view-btn" type="button" aria-label="List view" aria-pressed="false"><img src="ios-icons/09-list.png" alt="" aria-hidden="true"></button>
+        </div>
+      </div>
       <div id="menuGrid" class="product-grid" aria-live="polite"></div>
     </section>
     <section id="about" class="section-pad split-section">
@@ -45,7 +51,7 @@
   </main>
   <footer class="footer"><div class="footer-brand"><img src="bilihan-logo.png" alt=""><strong id="footerBrand">Bilihan</strong></div><span id="footerPhone"></span><span>© <span id="year"></span> Bilihan</span></footer>
   <aside id="cartDrawer" class="drawer" aria-hidden="true">
-    <div class="drawer-header"><h2>Your Cart</h2><button id="closeCart" class="icon-btn" aria-label="Close cart"><img class="ui-icon" src="icons-png/close.png" alt="" aria-hidden="true"></button></div>
+    <div class="drawer-header"><h2>Your Cart</h2><button id="closeCart" class="icon-btn" aria-label="Close cart"><img class="ui-icon" src="ios-icons/14-remove-from-cart.png" alt="" aria-hidden="true"></button></div>
     <div id="cartItems" class="drawer-content"></div>
     <div id="cartFooter" class="drawer-footer"></div>
   </aside>
