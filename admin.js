@@ -69,7 +69,7 @@ function settings(m){
         <input
           type="checkbox"
           name="show_delivery_address"
-          ${s.show_delivery_address!==false?'checked':''}
+          ${s.show_delivery_address===true?'checked':''}
         >
         Show delivery option and delivery address
       </label>
@@ -78,7 +78,7 @@ function settings(m){
         <input
           type="checkbox"
           name="show_preferred_date"
-          ${s.show_preferred_date!==false?'checked':''}
+          ${s.show_preferred_date===true?'checked':''}
         >
         Show preferred date
       </label>
@@ -119,7 +119,7 @@ function settings(m){
 
       <hr>
 
-      <label><input type="checkbox" name="show_stock" ${s.show_stock!==false?'checked':''}> Show available stock on customer page</label>
+      <label><input type="checkbox" name="show_stock" ${s.show_stock===true?'checked':''}> Show available stock on customer page</label>
       <hr>
       <h3>Payment Methods</h3>
 
@@ -127,7 +127,7 @@ function settings(m){
         <input
           type="checkbox"
           name="show_qr_payment"
-          ${s.show_qr_payment!==false?'checked':''}
+          ${s.show_qr_payment===true?'checked':''}
         >
         Show QR Payment
       </label>
@@ -136,7 +136,7 @@ function settings(m){
         <input
           type="checkbox"
           name="show_cash_payment"
-          ${s.show_cash_payment!==false?'checked':''}
+          ${s.show_cash_payment===true?'checked':''}
         >
         Show Cash
       </label>

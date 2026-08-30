@@ -45,6 +45,16 @@ create table if not exists public.store_settings (
   updated_at timestamptz not null default now()
 );
 
+-- Storefront configuration flags used by Store Settings and customer checkout.
+-- Explicit NOT NULL defaults prevent missing/null settings from silently changing customer-facing options.
+alter table public.store_settings add column if not exists show_delivery_address boolean not null default true;
+alter table public.store_settings add column if not exists show_preferred_date boolean not null default true;
+alter table public.store_settings add column if not exists preferred_date_mode text not null default 'calendar';
+alter table public.store_settings add column if not exists order_available_from date;
+alter table public.store_settings add column if not exists show_stock boolean not null default true;
+alter table public.store_settings add column if not exists show_qr_payment boolean not null default true;
+alter table public.store_settings add column if not exists show_cash_payment boolean not null default true;
+
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_code text not null unique,
