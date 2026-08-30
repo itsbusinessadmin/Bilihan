@@ -344,3 +344,32 @@ img{max-width:100%}
   .fast-entry-note { width: 100%; margin: 0; text-align: center; }
   .fast-entry-toast { right: 10px; bottom: calc(82px + env(safe-area-inset-bottom)); max-width: calc(100vw - 20px); }
 }
+
+
+/* ===== Impeccable flagship admin polish ===== */
+:root{
+  --admin-bg:#f6f8f4;--admin-card:#fff;--admin-soft:#eef2ec;--admin-text:#14251a;--admin-muted:#667169;
+  --admin-green:#174c2c;--admin-green-dark:#103a21;--admin-gold:#cfa75f;--admin-line:#dde4db;--admin-line-strong:#c8d2c6;
+  --admin-radius:14px;--admin-shadow:0 3px 10px rgba(18,52,29,.05);--admin-shadow-lg:0 22px 58px rgba(10,29,17,.16);--admin-sidebar:236px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif}
+.sidebar{padding:14px 10px max(18px,env(safe-area-inset-bottom))}
+.admin-brand{min-height:60px;padding:0 7px 13px;margin-bottom:5px}.admin-brand img{width:40px;height:40px;flex-basis:40px;border-radius:11px;box-shadow:none}.admin-brand strong{font-weight:760}.admin-brand small{font-size:.64rem!important;letter-spacing:.08em;text-transform:none}
+.side-nav{gap:3px}.side-nav button{min-height:44px;padding:0 12px;border-radius:10px;font-size:.86rem;font-weight:650}.side-nav button.active{box-shadow:none}.side-nav button.active::after{width:5px;height:5px}
+.admin-main{max-width:1480px;padding:34px clamp(24px,3vw,42px) 64px}.admin-main>.eyebrow{font-size:.76rem;letter-spacing:0;text-transform:none;font-weight:680}.admin-main>.eyebrow::before{display:none}.admin-main>h2,.products-page-header h2{margin:4px 0 22px;font-size:clamp(1.9rem,3vw,2.55rem);font-weight:760;line-height:1.05;letter-spacing:-.035em}
+.panel{margin-bottom:16px;padding:20px;border-radius:14px;box-shadow:none}.panel h3{font-size:1.08rem;font-weight:720}.cards{gap:12px;margin-bottom:16px}.metric{padding:18px;border-radius:14px;box-shadow:none}.metric small{font-size:.72rem;font-weight:650}.metric h2{margin-top:8px;font-size:clamp(1.55rem,2.5vw,2.15rem);font-weight:760;letter-spacing:-.035em}
+.admin-grid{gap:16px}.admin-form{gap:13px}.admin-form label{font-size:.8rem;font-weight:680}.admin-form input:not([type="checkbox"]),.admin-form textarea,.admin-form select{min-height:48px;border-radius:11px;background:var(--admin-card)}
+.primary-btn,.danger-btn,.modal-secondary-btn,.row-actions button,.table button{border-radius:10px;font-weight:680}.primary-btn{box-shadow:none}.primary-btn:hover{transform:none}
+.table th{padding:12px 13px;font-size:.68rem;letter-spacing:.025em}.table td{padding:13px;font-size:.82rem}.table tbody tr:hover{background:var(--admin-soft)}.thumb{border-radius:10px}
+.login-wrap{background:var(--admin-bg)}.login-card{padding:28px;border-radius:16px;box-shadow:var(--admin-shadow-lg)}.login-card>img{width:70px!important;height:70px!important;border-radius:16px!important;box-shadow:none}.login-card .eyebrow{letter-spacing:0;text-transform:none}.login-card .eyebrow::before{display:none}.login-card h2{font-size:1.8rem;letter-spacing:-.035em}
+.admin-modal{border-radius:16px;box-shadow:var(--admin-shadow-lg)}.admin-modal-header h2{font-size:1.7rem;font-weight:760;letter-spacing:-.035em}.admin-modal-close{border-radius:11px}.edit-product-image-area{border-radius:13px}.edit-product-image-area img{border-radius:11px}.edit-available-row{border-radius:12px}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid color-mix(in srgb,var(--admin-green) 40%,transparent);outline-offset:2px}
+@media(max-width:1100px){:root{--admin-sidebar:212px}}
+@media(max-width:760px){
+  .admin-shell{padding-bottom:78px}.sidebar{padding:6px max(7px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(7px,env(safe-area-inset-left));background:color-mix(in srgb,var(--admin-card) 94%,transparent);backdrop-filter:blur(18px) saturate(145%);box-shadow:0 -6px 22px rgba(18,52,29,.07)}
+  .side-nav{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(70px,1fr);overflow-x:auto}.side-nav button{min-width:70px;min-height:56px;border-radius:10px;font-size:.66rem}.side-nav button.active{background:var(--admin-green)}
+  .admin-main{padding:22px 13px 26px}.admin-main>h2,.products-page-header h2{font-size:1.95rem;margin-bottom:18px}.cards{gap:9px}.metric{padding:14px;border-radius:13px}.panel{padding:15px;border-radius:13px}
+  .products-page .table tr,#orderList .table tr{border-radius:13px;box-shadow:none}.admin-modal{border-radius:16px 16px 8px 8px}.admin-modal-header h2{font-size:1.5rem}
+}
+@media(max-width:480px){.admin-main{padding-inline:10px}.cards{gap:8px}.metric{padding:12px}.panel{padding:13px}.login-card{padding:22px 17px;border-radius:15px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
