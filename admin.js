@@ -103,7 +103,7 @@ function openAllSalesModal(){
   document.getElementById('closeAllSales').focus();
 }
 
-function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal=salesByProduct().reduce((sum,r)=>sum+r.overall,0);m.innerHTML=`<span class="eyebrow">Overview</span><h2>Dashboard</h2><div class="cards"><div class="metric"><small>Total Products</small><h2>${ps.length}</h2></div><div class="metric"><small>Available</small><h2>${ps.filter(p=>p.is_available&&p.stock>0).length}</h2></div><div class="metric"><small>Sold Out</small><h2>${ps.filter(p=>!p.is_available||p.stock<=0).length}</h2></div><div class="metric"><small>Total Orders</small><h2>${os.length}</h2></div><button type="button" class="metric metric-action" id="openAllSales"><small>All Sales</small><h2>${money(salesTotal)}</h2><span class="metric-hint">View per-item breakdown</span></button></div>`;
+function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal=salesByProduct().reduce((sum,r)=>sum+r.overall,0);m.innerHTML=`<span class="eyebrow">Overview</span><h2>Dashboard</h2><div class="cards"><div class="metric"><small>Total Products</small><h2>${ps.length}</h2></div><div class="metric"><small>Available</small><h2>${ps.filter(p=>p.is_available&&p.stock>0).length}</h2></div><div class="metric"><small>Sold Out</small><h2>${ps.filter(p=>!p.is_available||p.stock<=0).length}</h2></div><div class="metric"><small>Total Orders</small><h2>${os.length}</h2></div><button type="button" class="metric metric-action metric-money" id="openAllSales"><small>All Sales</small><h2>${money(salesTotal)}</h2><span class="metric-hint">View per-item breakdown</span></button></div>`;
   document.getElementById('openAllSales').onclick=openAllSalesModal;
 }
 async function uploadImage(file,bucket='product-images'){if(!file)return null;const ext=(file.name.split('.').pop()||'jpg').toLowerCase();const path=`${crypto.randomUUID()}.${ext}`;const {error}=await db.storage.from(bucket).upload(path,file,{upsert:false});if(error)throw error;return db.storage.from(bucket).getPublicUrl(path).data.publicUrl}
@@ -115,9 +115,45 @@ function categories(m){m.innerHTML=`<span class="eyebrow">Menu structure</span><
 window.renameCategory=async id=>{const c=A.data.categories.find(x=>x.id===id),n=prompt('Category name',c.name);if(!n)return;const {error}=await db.from('categories').update({name:n}).eq('id',id);if(error)return alert(error.message);await loadAll();renderShell()};window.deleteCategory=async id=>{if(A.data.products.some(p=>p.category_id===id))return alert('Move or delete products in this category first.');if(!confirm('Delete category?'))return;const {error}=await db.from('categories').delete().eq('id',id);if(error)return alert(error.message);await loadAll();renderShell()};window.moveCategory=async(id,d)=>{const s=[...A.data.categories].sort((a,b)=>a.sort_order-b.sort_order),i=s.findIndex(c=>c.id===id),j=i+d;if(j<0||j>=s.length)return;const a=s[i],b=s[j];await db.from('categories').update({sort_order:b.sort_order}).eq('id',a.id);await db.from('categories').update({sort_order:a.sort_order}).eq('id',b.id);await loadAll();renderShell()};
 const PAY_COLORS={Paid:{bg:'#dcfce7',text:'#166534',border:'#86efac'},Pending:{bg:'#fef9c3',text:'#854d0e',border:'#fde047'},'Not Paid':{bg:'#fee2e2',text:'#991b1b',border:'#fca5a5'}};
 function paySelectHtml(o){const st=o.payment_status||'Pending';const c=PAY_COLORS[st]||PAY_COLORS.Pending;return `<select onchange="updatePaymentStatus('${o.id}',this.value)" style="font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid ${c.border};background:${c.bg};color:${c.text};cursor:pointer">${Object.keys(PAY_COLORS).map(k=>`<option value="${k}" ${k===st?'selected':''}>${k}</option>`).join('')}</select>`}
+/* The orders table shows only what you scan for. Everything else lives here,
+   opened by clicking an order number. */
+function openOrderDetails(id){
+  const o=(A.data.orders||[]).find(x=>x.id===id);
+  if(!o){alert('That order is no longer available. Refresh the page.');return}
+  const field=(label,value)=>value===''||value===null||value===undefined?'':`<dt>${esc(label)}</dt><dd>${esc(String(value))}</dd>`;
+  const items=(o.order_items||[]);
+  const itemRows=items.map(i=>`<tr><td>${esc(i.product_name)}</td><td>${i.qty}</td><td>${money(i.unit_price)}</td><td><strong>${money(Number(i.unit_price||0)*Number(i.qty||0))}</strong></td></tr>`).join('');
+  document.getElementById('orderDetailModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend',`<div class="admin-modal-backdrop" id="orderDetailModal"><div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="orderDetailTitle"><div class="admin-modal-header"><div><span class="eyebrow">Customer order</span><h2 id="orderDetailTitle">#${esc(o.order_code)}${o.status==='Cancelled'?' <span class="order-cancelled-tag">Cancelled</span>':''}</h2></div><button type="button" class="admin-modal-close" id="closeOrderDetail" aria-label="Close">&times;</button></div>
+  <dl class="order-detail">
+    ${field('Placed',new Date(o.created_at).toLocaleString())}
+    ${field('Customer',o.customer_name)}
+    ${field('Phone',o.phone||'—')}
+    ${field('Fulfillment',o.fulfillment)}
+    ${o.fulfillment==='Delivery'?field('Address',o.address||'—'):''}
+    ${field('Preferred date',o.preferred_date)}
+    ${field('Payment method',o.payment_method)}
+    ${field('Payment status',o.payment_status||'Pending')}
+    ${field('Order status',o.status)}
+    ${o.cancellation_reason?field('Cancellation reason',o.cancellation_reason):''}
+    ${o.cancelled_at?field('Cancelled at',new Date(o.cancelled_at).toLocaleString()):''}
+    ${o.note?field('Customer note',o.note):''}
+  </dl>
+  ${items.length?`<div class="table-wrap" style="margin-top:18px"><table class="table orders-items-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>${itemRows}</tbody><tfoot><tr><td><strong>Total</strong></td><td><strong>${items.reduce((n,i)=>n+Number(i.qty||0),0)}</strong></td><td></td><td><strong>${money(o.total)}</strong></td></tr></tfoot></table></div>`:'<p class="muted" style="margin-top:18px">This order has no line items recorded.</p>'}
+  </div></div>`);
+  document.body.classList.add('modal-open');
+  const modal=document.getElementById('orderDetailModal');
+  const onKey=e=>{if(e.key==='Escape')close()};
+  function close(){modal.remove();document.body.classList.remove('modal-open');document.removeEventListener('keydown',onKey);document.querySelector(`[data-order="${CSS.escape(id)}"]`)?.focus()}
+  document.getElementById('closeOrderDetail').onclick=close;
+  modal.addEventListener('click',e=>{if(e.target===modal)close()});
+  document.addEventListener('keydown',onKey);
+  document.getElementById('closeOrderDetail').focus();
+}
+
 function orders(m){
   const totals=A.data.orders.reduce((acc,o)=>{const st=o.payment_status||'Pending';acc.sell+=+o.total;if(st==='Paid')acc.paid+=+o.total;else acc.unpaid+=+o.total;(o.order_items||[]).forEach(i=>{const q=Number(i.qty||0);const {original,interest}=lineItemPrices(i);acc.original+=original*q;acc.interest+=interest*q});return acc},{sell:0,paid:0,unpaid:0,original:0,interest:0});
-  m.innerHTML=`<div class="summary-row" style="align-items:flex-start;flex-wrap:wrap;gap:16px"><div><span class="eyebrow">Customer orders</span><h2>Orders</h2><button type="button" class="danger-btn" id="deleteAllOrders">Delete All Orders</button></div><div class="cards" style="display:flex;gap:12px"><div class="metric"><small>Total Sell</small><h2>${money(totals.sell)}</h2></div><div class="metric" style="border-color:#86efac"><small>Total Paid</small><h2 style="color:#166534">${money(totals.paid)}</h2></div><div class="metric" style="border-color:#fca5a5"><small>Total Unpaid</small><h2 style="color:#991b1b">${money(totals.unpaid)}</h2></div><div class="metric"><small>Total Interest</small><h2>${money(totals.interest)}</h2></div><div class="metric"><small>Total Original Price</small><h2>${money(totals.original)}</h2></div></div></div>
+  m.innerHTML=`<div class="summary-row" style="align-items:flex-start;flex-wrap:wrap;gap:16px"><div><span class="eyebrow">Customer orders</span><h2>Orders</h2><button type="button" class="danger-btn" id="deleteAllOrders">Delete All Orders</button></div><div class="cards orders-cards"><div class="metric metric-money"><small>Total Sell</small><h2>${money(totals.sell)}</h2></div><div class="metric metric-money" style="border-color:#86efac"><small>Total Paid</small><h2 style="color:#166534">${money(totals.paid)}</h2></div><div class="metric metric-money" style="border-color:#fca5a5"><small>Total Unpaid</small><h2 style="color:#991b1b">${money(totals.unpaid)}</h2></div><div class="metric metric-money"><small>Total Interest</small><h2>${money(totals.interest)}</h2></div><div class="metric metric-money"><small>Total Original Price</small><h2>${money(totals.original)}</h2></div></div></div>
   <div class="panel"><input id="orderSearch" placeholder="Search name, phone, order number" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
   <div id="payFilters" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">${['all','Paid','Pending','Not Paid'].map(f=>{const active=A.orderFilter===f;const c=f==='all'?null:PAY_COLORS[f];const bg=active?(c?c.bg:'var(--text)'):'transparent';const text=active?(c?c.text:'var(--bg)'):'var(--text)';const border=c?c.border:'var(--line)';return `<button data-f="${f}" style="padding:6px 14px;border-radius:999px;border:1px solid ${border};background:${bg};color:${text};font-weight:600;cursor:pointer">${f==='all'?'All':f}</button>`}).join('')}</div>
   </div>
@@ -130,7 +166,10 @@ function orders(m){
       const matchesFilter=A.orderFilter==='all'||((o.payment_status||'Pending')===A.orderFilter);
       return matchesSearch&&matchesFilter;
     });
-    document.getElementById('orderList').innerHTML=rows.length?`<table class="table"><thead><tr><th>Order #</th><th>Payment Status</th><th>Date</th><th>Customer</th><th>Phone</th><th>Fulfillment</th><th>Address</th><th>Preferred Date</th><th>Payment</th><th>Items</th><th>Total</th><th>Status</th><th>Cancellation Reason</th><th></th></tr></thead><tbody>${rows.map(o=>`<tr><td><strong>#${esc(o.order_code)}</strong></td><td>${paySelectHtml(o)}</td><td>${new Date(o.created_at).toLocaleString()}</td><td>${esc(o.customer_name)}</td><td>${esc(o.phone||'—')}</td><td>${esc(o.fulfillment)}</td><td>${esc(o.address||'—')}</td><td>${esc(o.preferred_date)}</td><td>${esc(o.payment_method)}</td><td>${(o.order_items||[]).map(i=>`${esc(i.product_name)} × ${i.qty}`).join(', ')}</td><td>${money(o.total)}</td><td>${esc(o.status)}</td><td>${esc(o.cancellation_reason||'—')}</td><td><button onclick="deleteOrder('${o.id}')">Delete</button></td></tr>`).join('')}</tbody></table>`:'<p style="padding:20px">No orders match this filter.</p>';
+    const list=document.getElementById('orderList');
+    list.innerHTML=rows.length?`<table class="table orders-table"><thead><tr><th>Order #</th><th>Payment Status</th><th>Customer</th><th><span class="sr-only">Delete</span></th></tr></thead><tbody>${rows.map(o=>`<tr><td><button type="button" class="order-code-btn" data-order="${esc(o.id)}" title="View full order details">#${esc(o.order_code)}</button>${o.status==='Cancelled'?'<span class="order-cancelled-tag">Cancelled</span>':''}</td><td>${paySelectHtml(o)}</td><td>${esc(o.customer_name)}</td><td><button type="button" class="icon-delete-btn" data-delete="${esc(o.id)}" title="Delete order" aria-label="Delete order #${esc(o.order_code)}"></button></td></tr>`).join('')}</tbody></table>`:'<p style="padding:20px">No orders match this filter.</p>';
+    list.querySelectorAll('[data-order]').forEach(b=>b.onclick=()=>openOrderDetails(b.dataset.order));
+    list.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>deleteOrder(b.dataset.delete));
   };
   document.getElementById('orderSearch').oninput=draw;
   draw();
