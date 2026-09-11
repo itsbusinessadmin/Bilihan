@@ -276,7 +276,7 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 /* =========================== Backdrop / modals =========================== */
 .backdrop{position:fixed;inset:0;z-index:var(--z-backdrop);background:rgba(8,14,10,.5);backdrop-filter:blur(3px)}
 .modal{padding:0;border:1px solid var(--line);color:var(--text);overflow:auto;overscroll-behavior:contain;width:min(620px,calc(100vw - 28px));max-height:calc(100dvh - 28px);border-radius:var(--radius-lg);background:var(--bg-elevated);box-shadow:var(--shadow-lg)}
-.wide-modal{width:min(880px,calc(100vw - 28px))}
+.wide-modal{width:min(1060px,calc(100vw - 28px))}
 .modal::backdrop{background:rgba(8,14,10,.55);backdrop-filter:blur(4px)}
 .modal-body{padding:var(--space-xl)}
 .modal-close{position:sticky;z-index:3;float:right;top:12px;border-radius:12px;background:var(--card)}
@@ -589,3 +589,60 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 @media (prefers-reduced-motion:reduce){
   .mobile-nav,.skip-link{transition:none}
 }
+
+/* ===================================================================
+   Checkout: a two-column layout on anything laptop-sized. The single
+   stack was 1486px of content in an 872px window, so the order summary
+   and the Place Order button sat below the fold behind a long scroll
+   while a third of the modal width went unused.
+   =================================================================== */
+.checkout-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(292px,340px);gap:var(--space-lg);align-items:start}
+.checkout-main{display:flex;flex-direction:column;gap:var(--space-sm);min-width:0}
+.checkout-aside{min-width:0}
+/* Sticky so the total and Place Order stay in view while the form is filled in. */
+.checkout-aside-inner{position:sticky;top:0;display:flex;flex-direction:column;gap:var(--space-sm);padding:var(--space-md);border:1px solid var(--line);border-radius:var(--radius);background:var(--card-soft)}
+.checkout-aside-inner .summary{background:var(--card)}
+.checkout-aside-inner .primary-btn{width:100%;min-height:50px}
+.checkout-progress:empty{display:none}
+
+/* A label caption is one line: the text and its "(optional)" note sit together
+   rather than stacking as two flex rows. */
+.field-label{display:block;min-width:0}
+
+/* Tighter vertical rhythm - the form was far taller than it needed to be. */
+.checkout-form .field{gap:5px}
+.checkout-form .field input,.checkout-form .field select{min-height:44px;padding:10px 13px}
+.checkout-form .field textarea{min-height:64px;padding:10px 13px}
+.checkout-form .choice-value{min-height:44px;padding:10px 13px}
+.checkout-group{padding:var(--space-sm) var(--space-md) var(--space-md)}
+.checkout-group-title{margin-bottom:var(--space-xs)}
+
+/* Pair fields only when the form column is genuinely wide enough. With the aside
+   taking its share, a fixed two-up grid squeezed inputs to ~170px on a 1024px
+   screen. */
+.checkout-group .form-grid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+
+@media(max-width:1040px){
+  /* Not enough width for the side panel: one column, and the summary scrolls
+     with the rest instead of sticking. */
+  .checkout-layout{grid-template-columns:1fr;gap:var(--space-sm)}
+  .checkout-aside-inner{position:static}
+}
+/* A price must never break mid-number; let the item name take the slack. */
+.summary-row{gap:var(--space-sm)}
+.summary-row strong:last-child,.summary-row span+strong{white-space:nowrap}
+/* In the narrow side column the QR sits above its instructions rather than beside. */
+.checkout-aside-inner .status-banner{margin:0}
+.checkout-actions{display:flex;flex-direction:column;gap:var(--space-sm);margin-top:auto}
+@media(min-width:1041px){
+  /* Two-column layout only: Place Order sticks to the bottom of the modal's scroll
+     area so it stays reachable on a short laptop screen. In one column the side
+     panel is the last thing on the page, and sticking there just covered the total. */
+  .checkout-actions{position:sticky;bottom:calc(var(--space-md) * -1);z-index:1;padding:var(--space-sm) 0 var(--space-md);background:var(--card-soft)}
+  .checkout-actions::before{content:"";position:absolute;left:0;right:0;top:-14px;height:14px;background:linear-gradient(to bottom,transparent,var(--card-soft));pointer-events:none}
+}
+/* The receipt picker was the raw browser control; give it the same shape as the
+   other fields so the checkout reads as one form. */
+.field input[type=file]{padding:7px 9px;cursor:pointer}
+.field input[type=file]::file-selector-button{margin-right:12px;padding:9px 15px;border:1px solid var(--line-strong);border-radius:10px;background:var(--card-soft);color:var(--text);font:inherit;font-size:var(--text-secondary);font-weight:660;cursor:pointer;transition:background var(--fast) var(--ease)}
+.field input[type=file]::file-selector-button:hover{background:var(--card-soft-2)}
