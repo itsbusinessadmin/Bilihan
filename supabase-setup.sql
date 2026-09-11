@@ -581,3 +581,74 @@ drop policy if exists "admins manage support threads" on public.support_threads;
 create policy "admins manage support threads" on public.support_threads for all using (public.is_admin()) with check (public.is_admin());
 drop policy if exists "admins manage support messages" on public.support_messages;
 create policy "admins manage support messages" on public.support_messages for all using (public.is_admin()) with check (public.is_admin());
+
+-- ===================================================================
+-- Usage and capacity reporting for the admin Security tab.
+-- Admin-only. Reports real sizes so the owner can see what is filling the
+-- free tier and which table is worth pruning.
+-- ===================================================================
+create or replace function public.admin_usage()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tables jsonb := '[]'::jsonb;
+  v_storage jsonb := '[]'::jsonb;
+  v_db bigint := 0;
+  r record;
+begin
+  if not public.is_admin() then
+    return jsonb_build_object('ok', false, 'error', 'Not authorised.');
+  end if;
+
+  begin
+    v_db := pg_database_size(current_database());
+  exception when others then v_db := 0;
+  end;
+
+  -- Row counts and on-disk size for the tables that actually grow.
+  for r in
+    select c.relname as name,
+           pg_total_relation_size(c.oid) as bytes,
+           coalesce((select n_live_tup from pg_stat_user_tables s where s.relid = c.oid), 0) as approx_rows
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relkind = 'r'
+       and c.relname in ('orders','order_items','products','categories','support_threads','support_messages','store_settings','admin_users')
+     order by pg_total_relation_size(c.oid) desc
+  loop
+    v_tables := v_tables || jsonb_build_object('name', r.name, 'bytes', r.bytes, 'rows', r.approx_rows);
+  end loop;
+
+  -- Exact counts for the three the owner may want to prune.
+  v_tables := jsonb_build_object('list', v_tables, 'exact', jsonb_build_object(
+    'orders', (select count(*) from public.orders),
+    'order_items', (select count(*) from public.order_items),
+    'support_messages', (select count(*) from public.support_messages),
+    'support_threads', (select count(*) from public.support_threads)
+  ));
+
+  -- Uploaded files, per bucket. Wrapped because storage lives outside this schema.
+  begin
+    select coalesce(jsonb_agg(jsonb_build_object('bucket', b.bucket_id, 'files', b.files, 'bytes', b.bytes) order by b.bytes desc), '[]'::jsonb)
+      into v_storage
+      from (
+        select o.bucket_id,
+               count(*) as files,
+               coalesce(sum(nullif(o.metadata->>'size','')::bigint), 0) as bytes
+          from storage.objects o
+         group by o.bucket_id
+      ) b;
+  exception when others then
+    v_storage := '[]'::jsonb;
+  end;
+
+  return jsonb_build_object('ok', true, 'database_bytes', v_db,
+                            'tables', v_tables, 'storage', v_storage,
+                            'measured_at', now());
+end;
+$$;
+
+grant execute on function public.admin_usage() to authenticated;
