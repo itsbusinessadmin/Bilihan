@@ -253,7 +253,14 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   #orderList .table td{display:grid;grid-template-columns:minmax(104px,.42fr) minmax(0,1fr);gap:var(--admin-space-sm);max-width:none;padding:7px 0;border:0;border-bottom:1px dashed var(--admin-line);font-size:.8rem}
   #orderList .table td:last-child{border-bottom:0;padding-top:var(--admin-space-md)}
   #orderList .table td::before{color:var(--admin-muted);font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
-  #orderList .table td:nth-child(1)::before{content:"Order"}#orderList .table td:nth-child(2)::before{content:"Payment"}#orderList .table td:nth-child(3)::before{content:"Date"}#orderList .table td:nth-child(4)::before{content:"Customer"}#orderList .table td:nth-child(5)::before{content:"Phone"}#orderList .table td:nth-child(6)::before{content:"Fulfillment"}#orderList .table td:nth-child(7)::before{content:"Address"}#orderList .table td:nth-child(8)::before{content:"Preferred"}#orderList .table td:nth-child(9)::before{content:"Method"}#orderList .table td:nth-child(10)::before{content:"Items"}#orderList .table td:nth-child(11)::before{content:"Total"}#orderList .table td:nth-child(12)::before{content:"Status"}#orderList .table td:nth-child(13)::before{content:"Cancellation"}#orderList .table td:nth-child(14)::before{content:"Action"}
+  /* The orders list is Order / Payment / Customer / delete. */
+  #orderList .table td:nth-child(1)::before{content:"Order"}
+  #orderList .table td:nth-child(2)::before{content:"Payment"}
+  #orderList .table td:nth-child(3)::before{content:"Customer"}
+  /* width:1% keeps the delete column tight in the desktop table; on mobile the row
+     is a stacked card, so the cell has to take the full width to right-align. */
+  #orderList .table td:last-child{display:flex;justify-content:flex-end;width:auto;padding-top:var(--admin-space-md)}
+  #orderList .table td:last-child::before{content:none}
 
   .summary-row{align-items:flex-start;flex-direction:column;gap:var(--admin-space-xs)}
   .summary-row>.row-actions{width:100%;justify-content:flex-start}
@@ -351,12 +358,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 
 /* ---- Orders: compact list + detail modal ---- */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-.order-code-btn{padding:0;border:0;background:none;font:inherit;font-weight:760;color:var(--admin-green);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
-.order-code-btn:hover{color:var(--admin-text)}
+.table .order-code-btn{display:inline-flex;align-items:center;min-height:44px;padding:0 2px;border:0;border-radius:0;background:none;font:inherit;font-weight:760;font-size:inherit;color:var(--admin-green);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.table .order-code-btn:hover{background:none;border-color:transparent;color:var(--admin-text)}
 .order-cancelled-tag{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:999px;background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;font-size:.66rem;font-weight:800;letter-spacing:.03em;text-transform:uppercase;vertical-align:middle}
-.icon-delete-btn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;border:1px solid var(--admin-line);border-radius:10px;background:var(--admin-card);color:#b0413a;cursor:pointer;transition:background .15s var(--admin-ease-out),border-color .15s var(--admin-ease-out)}
-.icon-delete-btn::before{content:"";display:block;width:17px;height:17px;background-color:currentColor;-webkit-mask:url(ios-icons/trash.png) center/contain no-repeat;mask:url(ios-icons/trash.png) center/contain no-repeat}
-.icon-delete-btn:hover{background:#fbeae8;border-color:#b0413a}
+/* also overrides .table button's padding and min-height */
+.table .icon-delete-btn,.icon-delete-btn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;padding:0;border:1px solid var(--admin-line);border-radius:10px;background:var(--admin-card);color:#b0413a;cursor:pointer;transition:background .15s var(--admin-ease-out),border-color .15s var(--admin-ease-out)}
+.table .icon-delete-btn::before,.icon-delete-btn::before{content:"";display:block;width:17px;height:17px;background-color:currentColor;-webkit-mask:url(ios-icons/trash.png) center/contain no-repeat;mask:url(ios-icons/trash.png) center/contain no-repeat}
+.table .icon-delete-btn:hover,.icon-delete-btn:hover{background:#fbeae8;border-color:#b0413a}
 .orders-table td:last-child,.orders-table th:last-child{width:1%;text-align:right;white-space:nowrap}
 .order-detail{display:grid;grid-template-columns:minmax(110px,auto) 1fr;gap:10px 20px;margin:0}
 .order-detail dt{color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:700}
@@ -369,8 +377,56 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 }
 /* The Orders summary cards sit beside the heading; let them take the rest of the
    row and fall back to the responsive .cards grid instead of a fixed flex row. */
-.orders-cards{flex:1 1 420px;min-width:0;margin-bottom:0}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:var(--admin-space-md);margin-bottom:var(--admin-space-lg)}
+.page-head h2{margin:.3rem 0 0}
+.orders-cards{min-width:0}
+@media(max-width:760px){.page-head{align-items:stretch;flex-direction:column}.page-head .danger-btn{width:100%}}
 /* Link from Admin out to the live storefront. Opens in a new tab so the admin
    page, and anything half-typed on it, stays put. */
 .view-store-btn{margin:var(--admin-space-md) 0 var(--admin-space-lg);text-decoration:none}
 .view-store-btn::after{content:"↗";margin-left:2px;font-weight:700}
+
+/* ===================================================================
+   Admin layout tidy-up: readable form widths, reachable navigation,
+   and touch targets that clear 44px on every screen.
+   =================================================================== */
+
+/* ---- Forms ----
+   Full-bleed inputs stretched to ~900px on a laptop are hard to scan, so cap the
+   form and let short related fields pair up once there is room. */
+.admin-form{max-width:760px}
+.admin-form .form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0 var(--admin-space-lg);align-items:start}
+.admin-form .form-row>label{min-width:0}
+.admin-form input,.admin-form select{min-height:46px}
+.admin-form textarea{min-height:96px}
+/* Checkbox rows read as one tappable line rather than a stray 13px square. */
+.admin-form label.check-row{display:flex;align-items:center;gap:12px;min-height:46px;margin:0;padding:4px 0;font-weight:600;cursor:pointer}
+.admin-form label.check-row input[type=checkbox]{flex:0 0 20px;width:20px;height:20px;min-height:0;margin:0;accent-color:var(--admin-green);cursor:pointer}
+.admin-form .form-section{margin-top:var(--admin-space-xl);padding-top:var(--admin-space-lg);border-top:1px solid var(--admin-line)}
+.admin-form .form-section:first-of-type{margin-top:0;padding-top:0;border-top:0}
+.admin-form .form-section>h3{margin:0 0 var(--admin-space-md)}
+
+/* The payment dropdown in the orders list was a 26px-tall tap target. */
+.orders-table select{min-height:40px}
+
+@media(min-width:761px) and (max-width:900px){
+  /* Landscape phones and small tablets have width to spare; two cards wasted it. */
+  .cards{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+}
+
+@media(max-width:760px){
+  /* Seven sections scrolled sideways in a one-row bar, so three were invisible and
+     nothing hinted they existed. Wrap instead: every section on screen, no scroll. */
+  .admin-shell{padding-bottom:132px}
+  .side-nav{grid-auto-flow:row;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-columns:auto;overflow:visible}
+  .side-nav button{min-width:0;min-height:48px;padding:var(--admin-space-xs) 4px;hyphens:auto}
+  .admin-form{max-width:none}
+  .admin-form .form-row{gap:0}
+}
+@media(max-width:760px) and (orientation:landscape){
+  /* Vertical space is the scarce thing here, so keep the bar to a single row. */
+  .admin-shell{padding-bottom:84px}
+  .side-nav{grid-auto-flow:column;grid-template-columns:none;grid-auto-columns:minmax(72px,1fr);overflow-x:auto}
+}
+.admin-form .form-hint{margin:-4px 0 var(--admin-space-md);color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:500}
+.order-cancelled-tag{white-space:nowrap}

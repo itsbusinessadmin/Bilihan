@@ -51,7 +51,7 @@ async function init(){
 function renderSetup(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-logo.png" style="width:90px;border-radius:50%"><span class="eyebrow">Bilihan v3</span><h2>Connect Supabase</h2><p>Edit <strong>config.js</strong> once and paste your Supabase Project URL and anon public key, then reload this page.</p><p class="muted">Never paste a service_role key into the website.</p></div></div>`}
 function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword(d);if(error)return renderLogin(error.message);A.session=data.session;const status=await adminStatus();if(status==='no'){await db.auth.signOut();A.session=null;return renderLogin('This account is not listed as a Bilihan admin.')}if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');try{await loadAll()}catch(err){console.error(err);return renderReconnect(err?.message)}renderShell()}}
 async function loadAll(){const [p,c,o,s]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single()]);for(const r of [p,c,o,s])if(r.error)throw r.error;A.data={products:p.data,categories:c.data,orders:o.data,settings:s.data}}
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="bilihan-logo.png"><div><strong>Bilihan</strong><small style="display:block">ADMIN</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['settings','Store Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,settings,appearance,security}[A.section]||dashboard)(m)}
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="bilihan-logo.png"><div><strong>Bilihan</strong><small style="display:block">ADMIN</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,settings,appearance,security}[A.section]||dashboard)(m)}
 /* ---- Sales reporting ----------------------------------------------------
    Resolve the original-price / interest split for one order line. An order item
    may carry its own original_price and interest recorded at order time; when it
@@ -153,7 +153,7 @@ function openOrderDetails(id){
 
 function orders(m){
   const totals=A.data.orders.reduce((acc,o)=>{const st=o.payment_status||'Pending';acc.sell+=+o.total;if(st==='Paid')acc.paid+=+o.total;else acc.unpaid+=+o.total;(o.order_items||[]).forEach(i=>{const q=Number(i.qty||0);const {original,interest}=lineItemPrices(i);acc.original+=original*q;acc.interest+=interest*q});return acc},{sell:0,paid:0,unpaid:0,original:0,interest:0});
-  m.innerHTML=`<div class="summary-row" style="align-items:flex-start;flex-wrap:wrap;gap:16px"><div><span class="eyebrow">Customer orders</span><h2>Orders</h2><button type="button" class="danger-btn" id="deleteAllOrders">Delete All Orders</button></div><div class="cards orders-cards"><div class="metric metric-money"><small>Total Sell</small><h2>${money(totals.sell)}</h2></div><div class="metric metric-money" style="border-color:#86efac"><small>Total Paid</small><h2 style="color:#166534">${money(totals.paid)}</h2></div><div class="metric metric-money" style="border-color:#fca5a5"><small>Total Unpaid</small><h2 style="color:#991b1b">${money(totals.unpaid)}</h2></div><div class="metric metric-money"><small>Total Interest</small><h2>${money(totals.interest)}</h2></div><div class="metric metric-money"><small>Total Original Price</small><h2>${money(totals.original)}</h2></div></div></div>
+  m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Customer orders</span><h2>Orders</h2></div><button type="button" class="danger-btn" id="deleteAllOrders">Delete All Orders</button></div><div class="cards orders-cards"><div class="metric metric-money"><small>Total Sell</small><h2>${money(totals.sell)}</h2></div><div class="metric metric-money" style="border-color:#86efac"><small>Total Paid</small><h2 style="color:#166534">${money(totals.paid)}</h2></div><div class="metric metric-money" style="border-color:#fca5a5"><small>Total Unpaid</small><h2 style="color:#991b1b">${money(totals.unpaid)}</h2></div><div class="metric metric-money"><small>Total Interest</small><h2>${money(totals.interest)}</h2></div><div class="metric metric-money"><small>Total Original Price</small><h2>${money(totals.original)}</h2></div></div>
   <div class="panel"><input id="orderSearch" placeholder="Search name, phone, order number" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
   <div id="payFilters" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">${['all','Paid','Pending','Not Paid'].map(f=>{const active=A.orderFilter===f;const c=f==='all'?null:PAY_COLORS[f];const bg=active?(c?c.bg:'var(--text)'):'transparent';const text=active?(c?c.text:'var(--bg)'):'var(--text)';const border=c?c.border:'var(--line)';return `<button data-f="${f}" style="padding:6px 14px;border-radius:999px;border:1px solid ${border};background:${bg};color:${text};font-weight:600;cursor:pointer">${f==='all'?'All':f}</button>`}).join('')}</div>
   </div>
@@ -188,136 +188,62 @@ function settings(m){
 
     <form id="settingsForm" class="panel admin-form">
 
-      <label>
-        Business name
-        <input name="business_name" value="${esc(s.business_name||'')}">
-      </label>
+      <section class="form-section">
+        <h3>Contact details</h3>
+        <p class="muted form-hint">Shown in your storefront footer. Leave a field blank to hide it from customers.</p>
 
-      <label>
-        Contact number
-        <input name="phone" type="tel" inputmode="tel" value="${esc(s.phone||'')}" placeholder="09XXXXXXXXX">
-      </label>
+        <div class="form-row">
+          <label>Business name<input name="business_name" value="${esc(s.business_name||'')}"></label>
+          <label>Contact number<input name="phone" type="tel" inputmode="tel" value="${esc(s.phone||'')}" placeholder="09XXXXXXXXX"></label>
+        </div>
 
-      <label>
-        Contact email
-        <input name="email" type="email" value="${esc(s.email||'')}" placeholder="hello@bilihan.shop">
-      </label>
+        <div class="form-row">
+          <label>Contact email<input name="email" type="email" value="${esc(s.email||'')}" placeholder="hello@bilihan.shop"></label>
+          <label>Messenger link<input name="messenger_url" type="url" value="${esc(s.messenger_url||'')}" placeholder="https://m.me/yourpage"></label>
+        </div>
 
-      <label>
-        Messenger link
-        <input name="messenger_url" type="url" value="${esc(s.messenger_url||'')}" placeholder="https://m.me/yourpage">
-      </label>
+        <div class="form-row">
+          <label>Instagram link<input name="instagram_url" type="url" value="${esc(s.instagram_url||'')}" placeholder="https://instagram.com/yourhandle"></label>
+        </div>
 
-      <label>
-        Instagram link
-        <input name="instagram_url" type="url" value="${esc(s.instagram_url||'')}" placeholder="https://instagram.com/yourhandle">
-      </label>
+        <label>Pickup location<textarea name="pickup_location">${esc(s.pickup_location||'')}</textarea></label>
+      </section>
 
-      <label>
-        Pickup location
-        <textarea name="pickup_location">${esc(s.pickup_location||'')}</textarea>
-      </label>
+      <section class="form-section">
+        <h3>Ordering</h3>
 
-      <hr>
+        <label class="check-row"><input type="checkbox" name="show_delivery_address" ${s.show_delivery_address===true?'checked':''}> Show delivery option and delivery address</label>
+        <label class="check-row"><input type="checkbox" name="show_preferred_date" ${s.show_preferred_date===true?'checked':''}> Show preferred date</label>
+        <label class="check-row"><input type="checkbox" name="show_stock" ${s.show_stock===true?'checked':''}> Show available stock on the customer page</label>
 
-      <h3>Order Settings</h3>
+        <div class="form-row">
+          <label>Preferred date mode
+            <select name="preferred_date_mode" id="preferredDateMode">
+              <option value="calendar" ${(s.preferred_date_mode||'calendar')==='calendar'?'selected':''}>Customer chooses date</option>
+              <option value="fixed" ${s.preferred_date_mode==='fixed'?'selected':''}>Fixed date</option>
+            </select>
+          </label>
 
-      <label>
-        <input
-          type="checkbox"
-          name="show_delivery_address"
-          ${s.show_delivery_address===true?'checked':''}
-        >
-        Show delivery option and delivery address
-      </label>
+          <label id="orderAvailableDateLabel">
+            <span id="orderAvailableDateText">${(s.preferred_date_mode||'calendar')==='fixed'?'Fixed preferred date':'Orders available from'}</span>
+            <input name="order_available_from" type="date" value="${esc(s.order_available_from||'')}">
+          </label>
+        </div>
+      </section>
 
-      <label>
-        <input
-          type="checkbox"
-          name="show_preferred_date"
-          ${s.show_preferred_date===true?'checked':''}
-        >
-        Show preferred date
-      </label>
+      <section class="form-section">
+        <h3>Payment methods</h3>
 
-      <label>
-        Preferred Date Mode
+        <label class="check-row"><input type="checkbox" name="show_qr_payment" ${s.show_qr_payment===true?'checked':''}> Show QR Payment</label>
+        <label class="check-row"><input type="checkbox" name="show_cash_payment" ${s.show_cash_payment===true?'checked':''}> Show Cash</label>
 
-        <select name="preferred_date_mode" id="preferredDateMode">
-          <option
-            value="calendar"
-            ${(s.preferred_date_mode||'calendar')==='calendar'?'selected':''}
-          >
-            Customer chooses date
-          </option>
+        <div class="form-row">
+          <label>QR image<input name="qr_file" type="file" accept="image/*"></label>
+          <label>Or QR image URL<input name="qr_image_url" value="${esc(s.qr_image_url||'')}" placeholder="https://..."></label>
+        </div>
+      </section>
 
-          <option
-            value="fixed"
-            ${s.preferred_date_mode==='fixed'?'selected':''}
-          >
-            Fixed date
-          </option>
-        </select>
-      </label>
-
-      <label id="orderAvailableDateLabel">
-        <span id="orderAvailableDateText">
-          ${(s.preferred_date_mode||'calendar')==='fixed'
-            ? 'Fixed preferred date'
-            : 'Orders available from'}
-        </span>
-
-        <input
-          name="order_available_from"
-          type="date"
-          value="${esc(s.order_available_from||'')}"
-        >
-      </label>
-
-      <hr>
-
-      <label><input type="checkbox" name="show_stock" ${s.show_stock===true?'checked':''}> Show available stock on customer page</label>
-      <hr>
-      <h3>Payment Methods</h3>
-
-      <label>
-        <input
-          type="checkbox"
-          name="show_qr_payment"
-          ${s.show_qr_payment===true?'checked':''}
-        >
-        Show QR Payment
-      </label>
-
-      <label>
-        <input
-          type="checkbox"
-          name="show_cash_payment"
-          ${s.show_cash_payment===true?'checked':''}
-        >
-        Show Cash
-      </label>
-
-      <hr>
-
-      <label>
-        QR image
-        <input
-          name="qr_file"
-          type="file"
-          accept="image/*"
-        >
-      </label>
-
-      <input
-        name="qr_image_url"
-        value="${esc(s.qr_image_url||'')}"
-        placeholder="Or QR image URL"
-      >
-
-      <button class="primary-btn">
-        Save Settings
-      </button>
+      <button class="primary-btn">Save Settings</button>
 
     </form>
   `;
