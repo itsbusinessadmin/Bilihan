@@ -461,3 +461,32 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .bulk-bar .row-actions .danger-btn:disabled{opacity:.5;cursor:not-allowed}
 /* Selected rows read at a glance. Progressive: browsers without :has() just skip it. */
 .select-mode .table tbody tr:has([data-pick]:checked){background:color-mix(in srgb,var(--admin-green) 7%,transparent)}
+
+/* ---- Customer messages ---- */
+.nav-badge{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:8px;padding:0 6px;border-radius:999px;background:var(--admin-danger);color:#fff;font-size:.66rem;font-weight:800;font-variant-numeric:tabular-nums}
+.thread-layout{display:grid;grid-template-columns:minmax(240px,300px) minmax(0,1fr);gap:var(--admin-space-md);align-items:start}
+.thread-list{max-height:min(640px,calc(100dvh - 230px));overflow-y:auto;padding:var(--admin-space-xs)}
+.thread-row{display:flex;flex-direction:column;gap:3px;width:100%;padding:11px 12px;border:0;border-radius:12px;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.thread-row:hover{background:var(--admin-soft)}
+.thread-row.active{background:color-mix(in srgb,var(--admin-green) 10%,transparent)}
+.thread-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.thread-row-sub{display:block;color:var(--admin-muted);font-size:var(--admin-text-caption);overflow-wrap:anywhere}
+.thread-unread{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--admin-danger);color:#fff;font-size:.66rem;font-weight:800}
+.thread-view{display:flex;flex-direction:column;height:min(640px,calc(100dvh - 230px));padding:0;overflow:hidden}
+.thread-empty{display:grid;place-items:center;height:100%;padding:var(--admin-space-lg);text-align:center}
+.thread-head{padding:var(--admin-space-md);border-bottom:1px solid var(--admin-line);background:var(--admin-soft)}
+.thread-log{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:var(--admin-space-md)}
+.admin-msg{max-width:76%;padding:9px 12px;border-radius:14px;font-size:var(--admin-text-secondary,.9rem);line-height:1.45}
+.admin-msg p{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+.admin-msg time{display:block;margin-top:4px;font-size:.66rem;opacity:.75}
+.admin-msg-in{align-self:flex-start;border:1px solid var(--admin-line);border-bottom-left-radius:5px;background:var(--admin-card)}
+.admin-msg-out{align-self:flex-end;border-bottom-right-radius:5px;background:var(--admin-green);color:#fff}
+.thread-compose{display:flex;align-items:flex-end;gap:8px;padding:var(--admin-space-sm);border-top:1px solid var(--admin-line);background:var(--admin-soft)}
+.thread-compose textarea{flex:1;min-width:0;height:44px;max-height:120px;padding:11px 13px;border:1px solid var(--admin-line);border-radius:12px;background:var(--admin-card);color:var(--admin-text);font:inherit;line-height:1.4;resize:none}
+.thread-compose .primary-btn{min-height:44px;padding-inline:18px}
+
+@media(max-width:900px){
+  .thread-layout{grid-template-columns:1fr}
+  .thread-list{max-height:280px}
+  .thread-view{height:min(520px,calc(100dvh - 260px))}
+}

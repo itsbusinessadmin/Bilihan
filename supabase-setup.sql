@@ -329,3 +329,255 @@ create policy "admins delete store assets" on storage.objects for delete to auth
 
 -- IMPORTANT: after you create your Auth user, run this ONE line separately using the UUID from Authentication -> Users:
 -- insert into public.admin_users(user_id) values ('YOUR-AUTH-USER-UUID');
+
+-- ===================================================================
+-- Customer support chat
+--
+-- One thread per customer, keyed on their phone number when they gave one and
+-- on their name otherwise, so several orders from the same person land in a
+-- single conversation.
+--
+-- The public site never reads these tables directly. Everything goes through
+-- security-definer functions, and after the first identification the browser
+-- holds a per-thread token that authorises every later call. That token, not
+-- the order number, is what keeps the conversation private from then on.
+-- ===================================================================
+
+create table if not exists public.support_threads (
+  id uuid primary key default gen_random_uuid(),
+  customer_key text not null unique,
+  customer_token uuid not null default gen_random_uuid(),
+  customer_name text not null default 'Customer',
+  phone text,
+  created_at timestamptz not null default now(),
+  last_message_at timestamptz not null default now(),
+  admin_unread integer not null default 0,
+  customer_unread integer not null default 0
+);
+
+create table if not exists public.support_messages (
+  id uuid primary key default gen_random_uuid(),
+  thread_id uuid not null references public.support_threads(id) on delete cascade,
+  sender text not null check (sender in ('customer','admin')),
+  body text not null check (length(btrim(body)) > 0),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists support_messages_thread_idx on public.support_messages(thread_id, created_at);
+create index if not exists support_threads_recent_idx on public.support_threads(last_message_at desc);
+
+-- Normalises the key both sides resolve a customer to.
+create or replace function public.support_key(p_phone text, p_name text)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when coalesce(regexp_replace(coalesce(p_phone,''), '\D', '', 'g'), '') <> ''
+      then 'p:' || right(regexp_replace(p_phone, '\D', '', 'g'), 10)
+    else 'n:' || lower(btrim(coalesce(p_name,'Customer')))
+  end;
+$$;
+
+-- Finds the customer from an order number or a phone number and returns their
+-- thread, creating it on first contact. Order numbers match case-insensitively.
+create or replace function public.support_identify(p_order_code text, p_phone text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_key text;
+  v_name text;
+  v_phone text;
+  v_thread public.support_threads%rowtype;
+begin
+  if coalesce(btrim(p_order_code),'') <> '' then
+    select * into v_order from public.orders
+      where upper(btrim(order_code)) = upper(btrim(p_order_code))
+      order by created_at desc limit 1;
+    if not found then
+      return jsonb_build_object('ok', false, 'error', 'We could not find that order number. Check it and try again.');
+    end if;
+    v_name := v_order.customer_name;
+    v_phone := v_order.phone;
+  elsif coalesce(regexp_replace(coalesce(p_phone,''), '\D', '', 'g'),'') <> '' then
+    select * into v_order from public.orders
+      where right(regexp_replace(coalesce(phone,''), '\D', '', 'g'), 10)
+          = right(regexp_replace(p_phone, '\D', '', 'g'), 10)
+      order by created_at desc limit 1;
+    if not found then
+      return jsonb_build_object('ok', false, 'error', 'We could not find an order for that number. Check it and try again.');
+    end if;
+    v_name := v_order.customer_name;
+    v_phone := coalesce(v_order.phone, p_phone);
+  else
+    return jsonb_build_object('ok', false, 'error', 'Enter your order number or the mobile number you ordered with.');
+  end if;
+
+  v_key := public.support_key(v_phone, v_name);
+
+  select * into v_thread from public.support_threads where customer_key = v_key;
+  if not found then
+    insert into public.support_threads(customer_key, customer_name, phone)
+    values (v_key, coalesce(nullif(btrim(v_name),''),'Customer'), v_phone)
+    returning * into v_thread;
+  else
+    update public.support_threads
+       set customer_name = coalesce(nullif(btrim(v_name),''), customer_name),
+           phone = coalesce(v_phone, phone)
+     where id = v_thread.id
+     returning * into v_thread;
+  end if;
+
+  return jsonb_build_object('ok', true, 'thread',
+    jsonb_build_object('id', v_thread.id, 'token', v_thread.customer_token,
+                       'customer_name', v_thread.customer_name));
+end;
+$$;
+
+-- Returns the conversation and clears the customer's unread count.
+create or replace function public.support_fetch(p_thread_id uuid, p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_thread public.support_threads%rowtype;
+  v_messages jsonb;
+begin
+  select * into v_thread from public.support_threads
+    where id = p_thread_id and customer_token = p_token;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'This conversation is no longer available.');
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object('id', m.id, 'sender', m.sender,
+           'body', m.body, 'created_at', m.created_at) order by m.created_at), '[]'::jsonb)
+    into v_messages
+    from public.support_messages m where m.thread_id = v_thread.id;
+
+  if v_thread.customer_unread > 0 then
+    update public.support_threads set customer_unread = 0 where id = v_thread.id;
+  end if;
+
+  return jsonb_build_object('ok', true, 'customer_name', v_thread.customer_name, 'messages', v_messages);
+end;
+$$;
+
+-- Unread count only: cheap enough to poll for the button badge.
+create or replace function public.support_unread(p_thread_id uuid, p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_count integer;
+begin
+  select customer_unread into v_count from public.support_threads
+    where id = p_thread_id and customer_token = p_token;
+  if v_count is null then
+    return jsonb_build_object('ok', false, 'unread', 0);
+  end if;
+  return jsonb_build_object('ok', true, 'unread', v_count);
+end;
+$$;
+
+create or replace function public.support_send(p_thread_id uuid, p_token uuid, p_body text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_thread public.support_threads%rowtype;
+  v_body text := btrim(coalesce(p_body,''));
+begin
+  if v_body = '' then
+    return jsonb_build_object('ok', false, 'error', 'Type a message first.');
+  end if;
+  if length(v_body) > 2000 then
+    return jsonb_build_object('ok', false, 'error', 'That message is too long.');
+  end if;
+
+  select * into v_thread from public.support_threads
+    where id = p_thread_id and customer_token = p_token;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'This conversation is no longer available.');
+  end if;
+
+  -- Light flood guard: at most 20 customer messages a minute on one thread.
+  if (select count(*) from public.support_messages
+        where thread_id = v_thread.id and sender = 'customer'
+          and created_at > now() - interval '1 minute') >= 20 then
+    return jsonb_build_object('ok', false, 'error', 'You are sending messages very quickly. Please wait a moment.');
+  end if;
+
+  insert into public.support_messages(thread_id, sender, body) values (v_thread.id, 'customer', v_body);
+  update public.support_threads
+     set admin_unread = admin_unread + 1, last_message_at = now()
+   where id = v_thread.id;
+
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+-- Admin side. These check is_admin() rather than a token.
+create or replace function public.support_admin_reply(p_thread_id uuid, p_body text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_body text := btrim(coalesce(p_body,''));
+begin
+  if not public.is_admin() then
+    return jsonb_build_object('ok', false, 'error', 'Not authorised.');
+  end if;
+  if v_body = '' then
+    return jsonb_build_object('ok', false, 'error', 'Type a reply first.');
+  end if;
+
+  insert into public.support_messages(thread_id, sender, body) values (p_thread_id, 'admin', v_body);
+  update public.support_threads
+     set customer_unread = customer_unread + 1, last_message_at = now()
+   where id = p_thread_id;
+
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+create or replace function public.support_admin_mark_read(p_thread_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    return jsonb_build_object('ok', false, 'error', 'Not authorised.');
+  end if;
+  update public.support_threads set admin_unread = 0 where id = p_thread_id;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+grant execute on function public.support_identify(text,text) to anon, authenticated;
+grant execute on function public.support_fetch(uuid,uuid) to anon, authenticated;
+grant execute on function public.support_unread(uuid,uuid) to anon, authenticated;
+grant execute on function public.support_send(uuid,uuid,text) to anon, authenticated;
+grant execute on function public.support_admin_reply(uuid,text) to authenticated;
+grant execute on function public.support_admin_mark_read(uuid) to authenticated;
+
+alter table public.support_threads enable row level security;
+alter table public.support_messages enable row level security;
+
+-- No public policy at all: customers reach their conversation only through the
+-- functions above, which require the thread token. Admins read and write directly.
+drop policy if exists "admins manage support threads" on public.support_threads;
+create policy "admins manage support threads" on public.support_threads for all using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "admins manage support messages" on public.support_messages;
+create policy "admins manage support messages" on public.support_messages for all using (public.is_admin()) with check (public.is_admin());
