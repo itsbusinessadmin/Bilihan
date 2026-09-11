@@ -213,42 +213,12 @@ async function placeOrder(e){
 }
 function showOrder(order){
   const cancelled=order.status==='Cancelled';
-  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div><div class="contact-actions" style="margin-top:16px"><button class="secondary-btn" id="copyOrderNo">Copy Order Number</button>${!cancelled?'<button class="danger-btn" id="cancelOrderBtn">Cancel Order</button>':'<button class="secondary-btn" disabled>Order Cancelled</button>'}<button class="primary-btn" id="continueBtn">Continue Shopping</button></div><div id="cancelState" aria-live="polite"></div></div>`;
+  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}<div class="contact-actions" style="margin-top:16px"><button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
   $('orderDialog').showModal();
   $('copyOrderNo').onclick=async()=>{try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(order.order_code);else{const ta=document.createElement('textarea');ta.value=order.order_code;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}toast('Copied ✓')}catch{toast(`Order #${order.order_code}`)}};
   $('continueBtn').onclick=()=>$('orderDialog').close();
-  if($('cancelOrderBtn')){const deadline=new Date(order.created_at).getTime()+3*60*60*1000;if(Date.now()>deadline)$('cancelOrderBtn').disabled=true;else $('cancelOrderBtn').onclick=()=>cancelOrder(order)}
-}
-function cancelOrder(order){
-  const host=$('cancelState');if(!host)return;
-  host.innerHTML=`<form id="cancelOrderForm" class="cancel-form"><strong>Cancel this order?</strong><p class="muted" style="margin:.35rem 0 0">Tell us why so the store has the right context.</p><label class="field"><span>Reason *</span><textarea name="reason" maxlength="500" required placeholder="Reason for cancellation"></textarea></label><div class="cancel-form-actions"><button type="button" class="secondary-btn" id="keepOrderBtn">Keep Order</button><button type="submit" class="danger-btn">Confirm Cancellation</button></div></form>`;
-  $('keepOrderBtn').onclick=()=>{host.innerHTML=''};
-  $('cancelOrderForm').onsubmit=async e=>{
-    e.preventDefault();
-    const form=e.currentTarget;clearFieldErrors(form);
-    const reason=String(new FormData(form).get('reason')||'').trim();
-    if(reason.length<5){fieldError(form,'reason','Please tell us briefly why you are cancelling (at least 5 characters).');form.reason.focus();return}
-    await submitCancellation(order,reason);
-  };
-  $('cancelOrderForm').reason?.focus();
-}
-async function submitCancellation(order,reason){
-  const host=$('cancelState');
-  try{
-    if(host)host.innerHTML='<div class="status-banner">Cancelling order…</div>';
-    const {data,error}=await db.rpc('cancel_order',{p_order_code:order.order_code,p_cancel_token:order.cancel_token,p_reason:reason,p_requested_at:new Date().toISOString()});
-    if(error)throw error;
-    /* A refusal from the server (window expired, wrong token) is a final answer, not a
-       connection problem — queueing it for retry would loop forever. */
-    if(!data?.ok){const rejected=new Error(data?.error||'This order can no longer be cancelled online. Please contact the store.');rejected.rejected=true;throw rejected}
-    const updated={...order,status:'Cancelled',cancellation_reason:reason,cancelled_at:new Date().toISOString()};
-    localStorage.setItem(LS.latestOrder,JSON.stringify(updated));await bootstrap();showOrder(updated);toast('Order cancelled');track('order_cancelled');
-    if(order.payment_method==='QR Payment'){$('cancelState').innerHTML='<div class="status-banner">If you already sent payment, contact the store through Messenger or Instagram regarding your refund.</div>'}
-  }catch(e){
-    if(e?.rejected){if(host)host.innerHTML=`<div class="status-banner" role="alert">${esc(e.message)}</div>`;toast('Could not cancel this order');return}
-    const pending={order,reason,requestedAt:new Date().toISOString()};localStorage.setItem(LS.pendingCancel,JSON.stringify(pending));
-    if(host)host.innerHTML='<div class="status-banner" role="status">Cancellation queued. We will retry when your connection is available.</div>';toast('Cancellation queued')
-  }
+  /* Cancelling is no longer self-service: the customer talks to the store instead. */
+  $('messageUsBtn').onclick=()=>{$('orderDialog').close();if(window.BilihanSupport?.open)window.BilihanSupport.open();else toast('Chat is loading. Please try again in a moment.')};
 }
 async function retryPendingCancel(){if(!window.BILIHAN_SUPABASE_CONFIGURED)return;const raw=localStorage.getItem(LS.pendingCancel);if(!raw)return;const p=safeJsonParse(raw,null);if(!p?.order?.order_code){localStorage.removeItem(LS.pendingCancel);return}try{const {data,error}=await db.rpc('cancel_order',{p_order_code:p.order.order_code,p_cancel_token:p.order.cancel_token,p_reason:p.reason,p_requested_at:p.requestedAt});if(error)throw error;if(data?.ok){localStorage.removeItem(LS.pendingCancel);const updated={...p.order,status:'Cancelled',cancellation_reason:p.reason};localStorage.setItem(LS.latestOrder,JSON.stringify(updated))}}catch(e){console.warn('Pending cancellation still waiting',e)}}
 function renderLatestOrderButton(){

@@ -695,3 +695,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 }
 @media(prefers-reduced-motion:reduce){.support-fab{transition:none}}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+/* The greeting is a local welcome, not a stored message, so it reads slightly softer. */
+.support-greeting{background:var(--card-soft);border-color:var(--line)}
