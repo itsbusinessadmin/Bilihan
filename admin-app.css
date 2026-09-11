@@ -61,7 +61,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .panel{width:100%;min-width:0;margin-bottom:var(--admin-space-lg);padding:var(--admin-space-xl);background:var(--admin-card);border:1px solid var(--admin-line);border-radius:var(--admin-radius);box-shadow:var(--admin-shadow)}
 .panel h3{margin-top:0;color:var(--admin-text);font-size:var(--admin-text-subheading);font-weight:660;letter-spacing:-.014em}
 .panel p{line-height:var(--admin-leading-body);max-width:70ch}
-.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--admin-space-md);margin-bottom:var(--admin-space-lg)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:var(--admin-space-md);margin-bottom:var(--admin-space-lg)}
 .metric{min-width:0;padding:var(--admin-space-lg);background:var(--admin-card);border:1px solid var(--admin-line);border-radius:var(--admin-radius);box-shadow:var(--admin-shadow);position:relative;overflow:hidden}
 .metric::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--admin-green)}
 .metric small{display:block;color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:700;letter-spacing:.01em}
@@ -336,3 +336,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 
 #orderSearch{padding-left:42px!important;background-color:var(--admin-card)!important;background-repeat:no-repeat!important;background-position:14px center!important;background-size:16px 16px!important;background-image:url("ios-icons/search.png")!important}
 [data-theme="dark"] #orderSearch{background-image:url("ios-icons/search-light.png")!important}
+
+/* ---- All Sales card + report ---- */
+.metric-action{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s var(--admin-ease-out),box-shadow .15s var(--admin-ease-out),transform .15s var(--admin-ease-out)}
+.metric-action:hover{border-color:var(--admin-green);box-shadow:var(--admin-shadow-lg)}
+.metric-action:active{transform:scale(.99)}
+.metric-hint{display:block;margin-top:8px;color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:640}
+.admin-modal-wide{width:min(920px,100%)}
+.sales-table td:nth-child(n+2),.sales-table th:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums}
+.sales-table tfoot td{border-top:2px solid var(--admin-line);background:var(--admin-soft)}
