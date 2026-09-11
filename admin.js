@@ -1,4 +1,4 @@
-const GOOGLE_SHEETS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwDiNU-R9HQDL79QlO6kObtnpS7XCxc2_xoHL3Dk1becwEEjPtAx43WZcUpNWDW3L35/exec';
+const GOOGLE_SHEETS_WEB_APP_URL = (window.BILIHAN_CONFIG||{}).GOOGLE_SHEETS_WEB_APP_URL || '';
 const A={section:'dashboard',session:null,orderFilter:'all',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 function configured(){return !!window.BILIHAN_SUPABASE_CONFIGURED}
 async function isAdmin(){if(!A.session)return false;const {data,error}=await db.rpc('is_admin');return !error&&data===true}
@@ -54,6 +54,26 @@ function settings(m){
       <label>
         Business name
         <input name="business_name" value="${esc(s.business_name||'')}">
+      </label>
+
+      <label>
+        Contact number
+        <input name="phone" type="tel" inputmode="tel" value="${esc(s.phone||'')}" placeholder="09XXXXXXXXX">
+      </label>
+
+      <label>
+        Contact email
+        <input name="email" type="email" value="${esc(s.email||'')}" placeholder="hello@bilihan.shop">
+      </label>
+
+      <label>
+        Messenger link
+        <input name="messenger_url" type="url" value="${esc(s.messenger_url||'')}" placeholder="https://m.me/yourpage">
+      </label>
+
+      <label>
+        Instagram link
+        <input name="instagram_url" type="url" value="${esc(s.instagram_url||'')}" placeholder="https://instagram.com/yourhandle">
       </label>
 
       <label>
@@ -209,6 +229,18 @@ function settings(m){
       const row={
         business_name:
           fd.get('business_name'),
+
+        phone:
+          String(fd.get('phone')||'').trim(),
+
+        email:
+          String(fd.get('email')||'').trim()||null,
+
+        messenger_url:
+          String(fd.get('messenger_url')||'').trim(),
+
+        instagram_url:
+          String(fd.get('instagram_url')||'').trim(),
 
         pickup_location:
           fd.get('pickup_location'),

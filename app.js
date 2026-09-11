@@ -1,5 +1,15 @@
-const GOOGLE_SHEETS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwDiNU-R9HQDL79QlO6kObtnpS7XCxc2_xoHL3Dk1becwEEjPtAx43WZcUpNWDW3L35/exec';
-const LS = { cart:'bilihan_cart_v3', theme:'bilihan_theme_v3', latestOrder:'bilihan_latest_order_v3', cache:'bilihan_cache_v3', pendingCancel:'bilihan_pending_cancel_v3', productView:'bilihan_product_view_v1' };
+const GOOGLE_SHEETS_WEB_APP_URL = (window.BILIHAN_CONFIG||{}).GOOGLE_SHEETS_WEB_APP_URL || '';
+const LS = { cart:'bilihan_cart_v3', theme:'bilihan_theme_v3', latestOrder:'bilihan_latest_order_v3', cache:'bilihan_cache_v3', pendingCancel:'bilihan_pending_cancel_v3', productView:'bilihan_product_view_v1', lastOrderAt:'bilihan_last_order_at_v1' };
+const TITLE_SUFFIX='Order Food Online for Pickup or Delivery';
+/* Order cooldown and form dwell time: cheap client-side deterrents against bots and
+   accidental double submissions. Server-side limits still belong in Supabase. */
+const ORDER_COOLDOWN_MS=30*1000, MIN_CHECKOUT_DWELL_MS=3000;
+/* Seed values shipped with the database. Treat them as 'not configured yet' so the
+   storefront never shows placeholder contact details to a customer. */
+const PLACEHOLDER_SETTINGS=['+63 900 000 0000','https://m.me/','https://instagram.com/','Your pickup location here'];
+function realSetting(value){const v=String(value||'').trim();return v&&!PLACEHOLDER_SETTINGS.includes(v)?v:''}
+function telHref(phone){return 'tel:'+phone.replace(/[^\d+]/g,'')}
+function track(event){try{window.BilihanAnalytics?.track?.(event)}catch{/* analytics must never break checkout */}}
 const FALLBACK = {
   settings:{business_name:'Bilihan',phone:'+63 900 000 0000',messenger_url:'https://m.me/',instagram_url:'https://instagram.com/',pickup_location:'Your pickup location here',qr_image_url:'bilihan-logo.png',hero_title:'Good food, made easy.',hero_tagline:'From everyday favorites to satisfying cravings, find something good at Bilihan.',about_text:'Bilihan is your easy online food stop for everyday favorites, cravings, meals, snacks, and more.',about_image_url:'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1400&q=80',hero_images:['https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=80']},
   categories:[],products:[]
@@ -29,10 +39,47 @@ function renderSkeletons(){$('menuGrid').innerHTML=Array.from({length:8},()=>'<d
 function renderAll(){renderSettings();renderCategories();renderViewSwitch();renderProducts();renderCart();renderLatestOrderButton();renderConnection()}
 function renderConnection(){
   const b=$('connectionBanner');
-  if(!window.BILIHAN_SUPABASE_CONFIGURED){b.textContent='Store database is not connected yet. Browsing demo/cache only; checkout is disabled.';b.classList.remove('hidden');return}
+  if(!window.BILIHAN_SUPABASE_CONFIGURED){b.textContent=window.BILIHAN_SUPABASE_LIB_MISSING?'We could not reach our ordering system. You are browsing a saved copy of the menu, and checkout is disabled until the connection returns.':'Store database is not connected yet. Browsing demo/cache only; checkout is disabled.';b.classList.remove('hidden');return}
   if(!state.online){b.textContent='Ordering is temporarily unavailable. You can still browse our cached menu while we reconnect. ';const btn=document.createElement('button');btn.className='secondary-btn';btn.textContent='Try Again';btn.onclick=bootstrap;b.replaceChildren(document.createTextNode(b.textContent),btn);b.classList.remove('hidden')} else b.classList.add('hidden')
 }
-function renderSettings(){const s=state.data.settings||FALLBACK.settings;const logo=s.logo_url||'bilihan-logo.png';$('brandName').textContent=$('footerBrand').textContent=s.business_name;document.title=s.business_name||'Bilihan';document.querySelectorAll('img[src="bilihan-logo.png"],img[data-store-logo]').forEach(img=>{img.src=logo;img.dataset.storeLogo='true'});$('heroTitle').textContent=s.hero_title;$('heroTagline').textContent=s.hero_tagline;$('aboutText').textContent=s.about_text;$('aboutImage').onerror=()=>{$('aboutImage').src='bilihan-logo.png';$('aboutImage').onerror=null};$('aboutImage').src=s.about_image_url||'bilihan-logo.png';$('footerPhone').textContent=s.phone;$('year').textContent=new Date().getFullYear();renderHero()}
+function renderSettings(){
+  const s=state.data.settings||FALLBACK.settings;
+  const name=realSetting(s.business_name)||'Bilihan';
+  const logo=s.logo_url||'bilihan-mark.webp';
+  $('brandName').textContent=$('footerBrand').textContent=name;
+  document.querySelectorAll('.footer-copy-name').forEach(el=>{el.textContent=name});
+  document.title=`${name} — ${TITLE_SUFFIX}`;
+  document.querySelectorAll('img[data-store-logo]').forEach(img=>{img.src=logo});
+  $('heroTitle').textContent=s.hero_title;$('heroTagline').textContent=s.hero_tagline;$('aboutText').textContent=s.about_text;
+  $('aboutImage').onerror=()=>{$('aboutImage').src='bilihan-logo.png';$('aboutImage').onerror=null};$('aboutImage').src=s.about_image_url||'bilihan-logo.png';
+  $('aboutImage').alt=`A selection of the food available at ${name}`;
+  renderContact(s);
+  $('year').textContent=new Date().getFullYear();
+  renderHero();
+}
+function contactMethods(s){
+  const out=[];
+  const phone=realSetting(s.phone),email=realSetting(s.email),messenger=realSetting(s.messenger_url),instagram=realSetting(s.instagram_url);
+  if(phone)out.push({href:telHref(phone),label:phone,icon:'phone'});
+  if(email)out.push({href:`mailto:${email}`,label:email});
+  if(messenger)out.push({href:messenger,label:'Messenger',external:true});
+  if(instagram)out.push({href:instagram,label:'Instagram',external:true});
+  return out;
+}
+function renderContact(s){
+  const methods=contactMethods(s);
+  const link=(m,cls)=>`<a class="${cls}${m.icon?' contact-'+m.icon:''}" href="${esc(m.href)}"${m.external?' target="_blank" rel="noopener noreferrer"':''}>${esc(m.label)}</a>`;
+  const footer=$('footerContact');
+  if(footer)footer.innerHTML=methods.length?methods.map(m=>link(m,'footer-contact-link')).join(''):'<a class="footer-contact-link" href="#menu">Place an order</a>';
+  const box=$('contactLinks');
+  if(box){
+    const pickup=realSetting(s.pickup_location);
+    const pickupHtml=pickup?`<p class="contact-pickup"><strong>Pickup location:</strong> ${esc(pickup)}</p>`:'';
+    box.innerHTML=methods.length
+      ? methods.map(m=>link(m,'secondary-btn')).join('')+pickupHtml
+      : `<p class="muted">We're still setting up our public contact details. Place an order and we'll reach you using the number on it.</p>${pickupHtml}`;
+  }
+}
 function renderHero(){const imgs=state.data.settings?.hero_images||[];if(!imgs.length){$('heroImage').src='bilihan-logo.png';$('heroDots').innerHTML='';return}$('heroImage').onerror=()=>{$('heroImage').src='bilihan-logo.png';$('heroImage').onerror=null};$('heroImage').src=imgs[state.heroIndex%imgs.length];$('heroDots').innerHTML=imgs.length>1?imgs.map((_,i)=>`<button class="${i===state.heroIndex?'active':''}" data-i="${i}" aria-label="Show featured image ${i+1}" aria-current="${i===state.heroIndex?'true':'false'}"></button>`).join(''):'';[...$('heroDots').children].forEach(b=>b.onclick=()=>{state.heroIndex=+b.dataset.i;renderHero()})}
 setInterval(()=>{if(state.data&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const n=state.data.settings?.hero_images?.length||1;state.heroIndex=(state.heroIndex+1)%n;renderHero()}},4000);
 function visibleCategories(){return (state.data.categories||[]).filter(c=>(state.data.products||[]).some(p=>p.category_id===c.id)).sort((a,b)=>a.sort_order-b.sort_order)}
@@ -45,14 +92,24 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
 function renderCart(){
   $('cartCount').textContent=state.cart.reduce((s,i)=>s+i.qty,0);
   if(!state.cart.length){$('cartItems').innerHTML='<div style="text-align:center;padding:60px 20px"><h3>Your cart is empty</h3><button class="secondary-btn" id="browseBtn">Browse Menu</button></div>';$('cartFooter').innerHTML='';setTimeout(()=>$('browseBtn')&&($('browseBtn').onclick=closeCart),0);return}
-  $('cartItems').innerHTML=state.cart.map((i,idx)=>`<div class="cart-item"><img src="${esc(i.image||'bilihan-logo.png')}" onerror="this.onerror=null;this.src='bilihan-logo.png'"><div class="cart-item-main"><strong>${esc(i.name)}</strong><span>${money(i.price)}</span><div class="cart-controls"><button class="qty-btn" data-a="minus" data-i="${idx}" aria-label="Decrease ${esc(i.name)} quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><span class="qty-value">${i.qty}</span><button class="qty-btn" data-a="plus" data-i="${idx}" aria-label="Increase ${esc(i.name)} quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button><button class="remove-btn icon-remove-btn" data-a="remove" data-i="${idx}" aria-label="Remove ${esc(i.name)} from cart" title="Remove"><img class="ui-icon" src="ios-icons/trash.png" alt="" aria-hidden="true"></button></div></div></div>`).join('');
+  $('cartItems').innerHTML=state.cart.map((i,idx)=>`<div class="cart-item"><img src="${esc(i.image||'bilihan-logo.png')}" width="72" height="72" loading="lazy" alt="${esc(i.name)}" onerror="this.onerror=null;this.src='bilihan-logo.png'"><div class="cart-item-main"><strong>${esc(i.name)}</strong><span>${money(i.price)}</span><div class="cart-controls"><button class="qty-btn" data-a="minus" data-i="${idx}" aria-label="Decrease ${esc(i.name)} quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><span class="qty-value">${i.qty}</span><button class="qty-btn" data-a="plus" data-i="${idx}" aria-label="Increase ${esc(i.name)} quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button><button class="remove-btn icon-remove-btn" data-a="remove" data-i="${idx}" aria-label="Remove ${esc(i.name)} from cart" title="Remove"><img class="ui-icon" src="ios-icons/trash.png" alt="" aria-hidden="true"></button></div></div></div>`).join('');
   const total=state.cart.reduce((s,i)=>s+i.qty*i.price,0);$('cartFooter').innerHTML=`<div class="summary-row"><strong>Total</strong><strong>${money(total)}</strong></div><button id="checkoutBtn" class="primary-btn" style="width:100%">Checkout</button>`;
   $('cartItems').querySelectorAll('button').forEach(b=>b.onclick=()=>cartAction(b.dataset.a,+b.dataset.i));$('checkoutBtn').onclick=openCheckout;
 }
 async function cartAction(a,i){const item=state.cart[i];if(a==='minus')item.qty=Math.max(1,item.qty-1);if(a==='plus'){const p=state.data.products.find(p=>p.id===item.productId);if(item.qty<(p?.stock||0))item.qty++;else toast('Maximum available stock reached')}if(a==='remove'&&confirm('Remove this item from your cart?'))state.cart.splice(i,1);saveCart()}
-function openCart(){$('cartDrawer').classList.add('open');$('backdrop').classList.remove('hidden')}
-function closeCart(){$('cartDrawer').classList.remove('open');$('backdrop').classList.add('hidden')}
-$('cartBtn').onclick=openCart;$('closeCart').onclick=closeCart;$('backdrop').onclick=closeCart;
+function openCart(){closeMobileNav();const d=$('cartDrawer');d.classList.add('open');d.setAttribute('aria-hidden','false');d.removeAttribute('inert');$('backdrop').classList.remove('hidden');$('closeCart').focus()}
+function closeCart(){const d=$('cartDrawer');d.classList.remove('open');d.setAttribute('aria-hidden','true');d.setAttribute('inert','');$('backdrop').classList.add('hidden')}
+$('cartBtn').onclick=openCart;$('closeCart').onclick=closeCart;$('backdrop').onclick=()=>{closeCart();closeMobileNav()};
+$('cartDrawer').setAttribute('inert','');
+
+/* ---- Mobile navigation ---- */
+function mobileNavOpen(){return $('menuBtn')?.getAttribute('aria-expanded')==='true'}
+function openMobileNav(){closeCart();$('mobileNav').hidden=false;requestAnimationFrame(()=>$('mobileNav').classList.add('open'));$('menuBtn').setAttribute('aria-expanded','true');$('menuBtn').setAttribute('aria-label','Close menu');$('backdrop').classList.remove('hidden')}
+function closeMobileNav(){const nav=$('mobileNav');if(!nav||nav.hidden)return;nav.classList.remove('open');nav.hidden=true;$('menuBtn').setAttribute('aria-expanded','false');$('menuBtn').setAttribute('aria-label','Open menu');if(!$('cartDrawer').classList.contains('open'))$('backdrop').classList.add('hidden')}
+if($('menuBtn'))$('menuBtn').onclick=()=>mobileNavOpen()?closeMobileNav():openMobileNav();
+if($('mobileNav'))$('mobileNav').querySelectorAll('a').forEach(a=>a.addEventListener('click',closeMobileNav));
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(mobileNavOpen())closeMobileNav();if($('cartDrawer').classList.contains('open'))closeCart()});
+addEventListener('resize',()=>{if(innerWidth>820)closeMobileNav()});
 function validateCartAgainstLive(liveProducts){let changed=false, invalid=[];for(const item of state.cart){const p=liveProducts.find(x=>x.id===item.productId);if(!p){invalid.push(`${item.name} is no longer available.`);changed=true;continue}if(!p.is_available||p.stock<item.qty){invalid.push(`${item.name} no longer has enough stock.`);changed=true}if(+p.price!==+item.price){item.price=+p.price;invalid.push(`${item.name} price was updated.`);changed=true}}if(changed)saveCart();return invalid}
 async function fetchLiveProducts(){const {data,error}=await db.from('products').select('*');if(error)throw error;return data}
 async function syncOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;const items=(order.items||[]).map(i=>`${i.product_name} x ${i.qty}`).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||''};await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(err){console.warn('Google Sheets sync failed:',err)}}
@@ -62,6 +119,14 @@ async function compressReceiptImage(file){const allowed=['image/jpeg','image/png
 async function uploadReceiptToGoogleDrive(order,file){if(!order?.order_code)throw new Error('Order number is missing.');if(!file)throw new Error('Please upload your payment receipt.');const file_base64=await fileToBase64(file);const payload={action:'upload_receipt',order_code:order.order_code,file_name:file.name,mime_type:file.type,file_base64};const response=await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),cache:'no-store'});return response}
 function isExplicitlyEnabled(settings,key){return settings?.[key]===true}
 function checkoutError(message){const box=$('checkoutError');if(!box)return;box.textContent=message||'';box.classList.toggle('hidden',!message)}
+function clearFieldErrors(form){form.querySelectorAll('.field-error').forEach(node=>node.remove());form.querySelectorAll('[aria-invalid="true"]').forEach(el=>{el.removeAttribute('aria-invalid');el.classList.remove('invalid')})}
+function fieldError(form,name,message){
+  const input=form.elements[name];if(!input)return;
+  input.setAttribute('aria-invalid','true');input.classList.add('invalid');
+  const host=input.closest('.field')||input.parentElement;
+  if(host&&!host.querySelector('.field-error')){const span=document.createElement('span');span.className='field-error';span.setAttribute('role','alert');span.textContent=message;host.appendChild(span)}
+  input.addEventListener('input',()=>{input.removeAttribute('aria-invalid');input.classList.remove('invalid');host?.querySelector('.field-error')?.remove()},{once:true});
+}
 function openCheckout(){
   closeCart();
   if(!window.BILIHAN_SUPABASE_CONFIGURED||!state.online){toast('Ordering is temporarily unavailable. Please try again shortly.');return}
@@ -85,10 +150,10 @@ function openCheckout(){
   const fixedDate=availableFrom||today;
   const availableLabel=availableFrom?new Date(availableFrom+'T00:00:00').toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'}):'';
   const preferredDateField=showPreferredDate?(preferredDateMode==='fixed'?`<div class="field"><span>Preferred date</span><div class="status-banner" style="margin:0">${esc(availableLabel||fixedDate)}</div><input type="hidden" name="preferredDate" value="${esc(fixedDate)}"></div>`:`<label class="field">Preferred date *<input name="preferredDate" type="date" required min="${esc(minDate)}"></label>`):`<input type="hidden" name="preferredDate" value="${esc(fixedDate)}">`;
-  $('checkoutDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="checkoutDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="checkout-heading"><h2>Complete your order</h2><p>Review your contact, fulfillment, and payment details before placing the order.</p></div><div id="checkoutError" class="status-banner hidden" role="alert" aria-live="assertive"></div><form id="checkoutForm" class="checkout-form"><section class="checkout-group" aria-labelledby="checkoutContactTitle"><div class="checkout-group-title"><h3 id="checkoutContactTitle">Contact</h3></div><div class="form-grid"><label class="field">Name *<input name="name" maxlength="100" autocomplete="name" required></label><label class="field">Mobile number <span class="muted">(optional)</span><input name="phone" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="09XXXXXXXXX or +639XXXXXXXXX"></label></div></section><section class="checkout-group" aria-labelledby="checkoutFulfillmentTitle"><div class="checkout-group-title"><h3 id="checkoutFulfillmentTitle">Fulfillment</h3></div><div class="form-grid">${fulfillmentField}${preferredDateField}<label id="addressField" class="field full">Delivery address *<textarea name="address" maxlength="500" autocomplete="street-address"></textarea></label><div id="pickupInfo" class="field full hidden"><div class="status-banner"><strong>Pickup location:</strong> ${esc(s.pickup_location||'Please contact the store for the pickup location.')}</div></div></div></section><section class="checkout-group" aria-labelledby="checkoutPaymentTitle"><div class="checkout-group-title"><h3 id="checkoutPaymentTitle">Payment & review</h3></div><div class="form-grid">${paymentField}<label class="field checkout-note">Customer note <span class="muted">(optional)</span><textarea name="note" maxlength="500" placeholder="Anything the store should know?"></textarea></label><div id="paymentInfo" class="field full"></div><div class="field full summary" id="checkoutSummary"></div><label class="field full checkout-confirm"><input type="checkbox" name="confirm" id="confirmOrder" required><span>I confirm that my order and contact details are correct.</span></label></div></section><div class="checkout-submit"><button class="primary-btn" id="placeOrderBtn" disabled>Place Order</button><p class="muted" id="orderProgress" role="status" aria-live="polite"></p></div></form></div>`;
+  $('checkoutDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="checkoutDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="checkout-heading"><h2>Complete your order</h2><p>Review your contact, fulfillment, and payment details before placing the order.</p></div><div id="checkoutError" class="status-banner hidden" role="alert" aria-live="assertive"></div><form id="checkoutForm" class="checkout-form" novalidate><div class="hp-field" aria-hidden="true"><label>Leave this field empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div><section class="checkout-group" aria-labelledby="checkoutContactTitle"><div class="checkout-group-title"><h3 id="checkoutContactTitle">Contact</h3></div><div class="form-grid"><label class="field">Name *<input name="name" maxlength="100" autocomplete="name" required></label><label class="field">Mobile number <span class="muted">(optional)</span><input name="phone" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="09XXXXXXXXX or +639XXXXXXXXX"></label></div></section><section class="checkout-group" aria-labelledby="checkoutFulfillmentTitle"><div class="checkout-group-title"><h3 id="checkoutFulfillmentTitle">Fulfillment</h3></div><div class="form-grid">${fulfillmentField}${preferredDateField}<label id="addressField" class="field full">Delivery address *<textarea name="address" maxlength="500" autocomplete="street-address"></textarea></label><div id="pickupInfo" class="field full hidden"><div class="status-banner"><strong>Pickup location:</strong> ${esc(s.pickup_location||'Please contact the store for the pickup location.')}</div></div></div></section><section class="checkout-group" aria-labelledby="checkoutPaymentTitle"><div class="checkout-group-title"><h3 id="checkoutPaymentTitle">Payment & review</h3></div><div class="form-grid">${paymentField}<label class="field checkout-note">Customer note <span class="muted">(optional)</span><textarea name="note" maxlength="500" placeholder="Anything the store should know?"></textarea></label><div id="paymentInfo" class="field full"></div><div class="field full summary" id="checkoutSummary"></div><label class="field full checkout-confirm"><input type="checkbox" name="confirm" id="confirmOrder" required><span>I confirm that my order and contact details are correct.</span></label></div></section><div class="checkout-submit"><button class="primary-btn" id="placeOrderBtn" disabled>Place Order</button><p class="muted" id="orderProgress" role="status" aria-live="polite"></p></div></form></div>`;
   $('checkoutDialog').showModal();
   const f=$('checkoutForm');
-  f._receiptPrepared=null;f._receiptPreparing=false;
+  f._receiptPrepared=null;f._receiptPreparing=false;f.dataset.openedAt=String(Date.now());
   const updatePlaceOrderButton=()=>{const qr=f.payment.value==='QR Payment';const hasReceipt=!qr||!!f._receiptPrepared;const confirmed=$('confirmOrder')?.checked;$('placeOrderBtn').disabled=!!f._receiptPreparing||!(hasReceipt&&confirmed)};
   const renderDynamic=()=>{
     checkoutError('');
@@ -113,11 +178,30 @@ async function placeOrder(e){
   if(f.dataset.submitting==='true')return;
   checkoutError('');
   const d=Object.fromEntries(new FormData(f));
+  /* Honeypot: a real customer never sees this field, so anything in it is a bot. */
+  if(String(d.website||'').trim()){checkoutError('We could not verify this order. Please reload the page and try again.');return}
+  const dwell=Date.now()-Number(f.dataset.openedAt||0);
+  if(dwell<MIN_CHECKOUT_DWELL_MS){checkoutError('Please take a moment to check your details, then place the order again.');return}
+  const lastOrderAt=Number(localStorage.getItem(LS.lastOrderAt)||0);
+  const cooldownLeft=ORDER_COOLDOWN_MS-(Date.now()-lastOrderAt);
+  if(lastOrderAt&&cooldownLeft>0){checkoutError(`You just placed an order. Please wait ${Math.ceil(cooldownLeft/1000)} seconds before placing another one.`);return}
   const allowedFulfillment=new Set(['Pickup',...(isExplicitlyEnabled(s,'show_delivery_address')?['Delivery']:[])]);
   const allowedPayments=new Set([...(isExplicitlyEnabled(s,'show_qr_payment')&&!!String(s.qr_image_url||'').trim()?['QR Payment']:[]),...(isExplicitlyEnabled(s,'show_cash_payment')?['Cash on Delivery / Pickup']:[])]);
   if(!allowedFulfillment.has(d.fulfillment)){checkoutError('That fulfillment method is no longer available. Please choose another option.');return}
   if(!allowedPayments.has(d.payment)){checkoutError('That payment method is no longer available. Please choose another option.');return}
-  const phone=String(d.phone||'').trim();if(phone&&!/^(?:09\d{9}|\+639\d{9})$/.test(phone)){checkoutError('Enter a Philippine mobile number as 09XXXXXXXXX or +639XXXXXXXXX.');f.phone?.focus();return}
+  clearFieldErrors(f);
+  const phone=String(d.phone||'').trim();
+  const problems=[];
+  if(String(d.name||'').trim().length<2)problems.push(['name','Please enter the name we should put on this order.']);
+  if(phone&&!/^(?:09\d{9}|\+639\d{9})$/.test(phone))problems.push(['phone','Enter a Philippine mobile number as 09XXXXXXXXX or +639XXXXXXXXX.']);
+  if(d.fulfillment==='Delivery'&&String(d.address||'').trim().length<10)problems.push(['address','Please enter a complete delivery address, including street and barangay.']);
+  const dateInput=f.elements.preferredDate;
+  if(dateInput&&dateInput.type==='date'){
+    if(!String(d.preferredDate||'').trim())problems.push(['preferredDate','Please choose the date you want this order for.']);
+    else if(dateInput.min&&String(d.preferredDate)<dateInput.min)problems.push(['preferredDate',`Please choose a date on or after ${dateInput.min}.`]);
+  }
+  if(!f.confirm?.checked)problems.push(['confirm','Please confirm that your order and contact details are correct.']);
+  if(problems.length){problems.forEach(([field,message])=>fieldError(f,field,message));checkoutError('Please fix the highlighted fields and place your order again.');f.elements[problems[0][0]]?.focus();return}
   const isQr=d.payment==='QR Payment';const receiptFile=isQr?f._receiptPrepared:null;if(isQr&&!receiptFile){checkoutError('Please upload a JPG, PNG, WEBP, or PDF payment receipt before placing the order.');return}
   f.dataset.submitting='true';btn.disabled=true;btn.textContent='Creating order…';if(progress)progress.textContent='Creating order…';
   try{
@@ -130,7 +214,7 @@ async function placeOrder(e){
     const {data,error}=await db.rpc('place_order',{p_customer_name:String(d.name||'').trim(),p_phone:phone||null,p_fulfillment:fulfillment,p_address:address,p_preferred_date:preferredDate,p_payment_method:d.payment,p_note:String(d.note||'').trim()||null,p_items:items});
     if(error)throw error;if(!data?.ok)throw new Error(data?.error||'Order could not be placed.');const order=data.order;
     if(isQr&&receiptFile){btn.textContent='Uploading receipt…';if(progress)progress.textContent=`Uploading receipt for Order #${order.order_code}…`;await uploadReceiptToGoogleDrive(order,receiptFile)}
-    btn.textContent='Finalizing…';if(progress)progress.textContent='Finalizing order…';syncOrderToGoogleSheet(order);localStorage.setItem(LS.latestOrder,JSON.stringify(order));state.cart=[];saveCart();$('checkoutDialog').close();await bootstrap();showOrder(order)
+    btn.textContent='Finalizing…';if(progress)progress.textContent='Finalizing order…';syncOrderToGoogleSheet(order);localStorage.setItem(LS.latestOrder,JSON.stringify(order));localStorage.setItem(LS.lastOrderAt,String(Date.now()));state.cart=[];saveCart();$('checkoutDialog').close();await bootstrap();showOrder(order);toast(`Order #${order.order_code} placed ✓`);track('order_placed')
   }catch(err){console.error(err);checkoutError(err?.message||'Unable to place your order. Please check your connection and try again.')}finally{delete f.dataset.submitting;btn.disabled=false;btn.textContent='Place Order';if(progress)progress.textContent=''}
 }
 function showOrder(order){
@@ -146,7 +230,13 @@ function cancelOrder(order){
   const host=$('cancelState');if(!host)return;
   host.innerHTML=`<form id="cancelOrderForm" class="cancel-form"><strong>Cancel this order?</strong><p class="muted" style="margin:.35rem 0 0">Tell us why so the store has the right context.</p><label class="field"><span>Reason *</span><textarea name="reason" maxlength="500" required placeholder="Reason for cancellation"></textarea></label><div class="cancel-form-actions"><button type="button" class="secondary-btn" id="keepOrderBtn">Keep Order</button><button type="submit" class="danger-btn">Confirm Cancellation</button></div></form>`;
   $('keepOrderBtn').onclick=()=>{host.innerHTML=''};
-  $('cancelOrderForm').onsubmit=async e=>{e.preventDefault();const reason=String(new FormData(e.currentTarget).get('reason')||'').trim();if(!reason)return;await submitCancellation(order,reason)};
+  $('cancelOrderForm').onsubmit=async e=>{
+    e.preventDefault();
+    const form=e.currentTarget;clearFieldErrors(form);
+    const reason=String(new FormData(form).get('reason')||'').trim();
+    if(reason.length<5){fieldError(form,'reason','Please tell us briefly why you are cancelling (at least 5 characters).');form.reason.focus();return}
+    await submitCancellation(order,reason);
+  };
   $('cancelOrderForm').reason?.focus();
 }
 async function submitCancellation(order,reason){
@@ -154,17 +244,28 @@ async function submitCancellation(order,reason){
   try{
     if(host)host.innerHTML='<div class="status-banner">Cancelling order…</div>';
     const {data,error}=await db.rpc('cancel_order',{p_order_code:order.order_code,p_cancel_token:order.cancel_token,p_reason:reason,p_requested_at:new Date().toISOString()});
-    if(error)throw error;if(!data?.ok)throw new Error(data?.error||'Unable to cancel');
+    if(error)throw error;
+    /* A refusal from the server (window expired, wrong token) is a final answer, not a
+       connection problem — queueing it for retry would loop forever. */
+    if(!data?.ok){const rejected=new Error(data?.error||'This order can no longer be cancelled online. Please contact the store.');rejected.rejected=true;throw rejected}
     const updated={...order,status:'Cancelled',cancellation_reason:reason,cancelled_at:new Date().toISOString()};
-    localStorage.setItem(LS.latestOrder,JSON.stringify(updated));await bootstrap();showOrder(updated);
+    localStorage.setItem(LS.latestOrder,JSON.stringify(updated));await bootstrap();showOrder(updated);toast('Order cancelled');track('order_cancelled');
     if(order.payment_method==='QR Payment'){$('cancelState').innerHTML='<div class="status-banner">If you already sent payment, contact the store through Messenger or Instagram regarding your refund.</div>'}
   }catch(e){
+    if(e?.rejected){if(host)host.innerHTML=`<div class="status-banner" role="alert">${esc(e.message)}</div>`;toast('Could not cancel this order');return}
     const pending={order,reason,requestedAt:new Date().toISOString()};localStorage.setItem(LS.pendingCancel,JSON.stringify(pending));
-    if(host)host.innerHTML='<div class="status-banner">Cancellation queued. We will retry when your connection is available.</div>';toast('Cancellation queued')
+    if(host)host.innerHTML='<div class="status-banner" role="status">Cancellation queued. We will retry when your connection is available.</div>';toast('Cancellation queued')
   }
 }
 async function retryPendingCancel(){if(!window.BILIHAN_SUPABASE_CONFIGURED)return;const raw=localStorage.getItem(LS.pendingCancel);if(!raw)return;const p=safeJsonParse(raw,null);if(!p?.order?.order_code){localStorage.removeItem(LS.pendingCancel);return}try{const {data,error}=await db.rpc('cancel_order',{p_order_code:p.order.order_code,p_cancel_token:p.order.cancel_token,p_reason:p.reason,p_requested_at:p.requestedAt});if(error)throw error;if(data?.ok){localStorage.removeItem(LS.pendingCancel);const updated={...p.order,status:'Cancelled',cancellation_reason:p.reason};localStorage.setItem(LS.latestOrder,JSON.stringify(updated))}}catch(e){console.warn('Pending cancellation still waiting',e)}}
-function renderLatestOrderButton(){const raw=localStorage.getItem(LS.latestOrder);const o=safeJsonParse(raw,null);$('myOrderBtn').classList.toggle('hidden',!o);$('myOrderBtn').onclick=()=>o&&showOrder(safeJsonParse(localStorage.getItem(LS.latestOrder),o))}
+function renderLatestOrderButton(){
+  const o=safeJsonParse(localStorage.getItem(LS.latestOrder),null);
+  [$('myOrderBtn'),$('myOrderBtnMobile')].forEach(btn=>{
+    if(!btn)return;
+    btn.classList.toggle('hidden',!o);
+    btn.onclick=()=>{closeMobileNav();if(o)showOrder(safeJsonParse(localStorage.getItem(LS.latestOrder),o))};
+  });
+}
 function syncThemeIcon(){const dark=document.documentElement.dataset.theme==='dark';const icon=$('themeIcon');if(icon)icon.src=dark?'ios-icons/light-mode.png':'ios-icons/dark-mode.png';$('themeToggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('themeToggle').setAttribute('aria-pressed',String(dark));const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute('content',dark?'#0d100e':'#faf8f3')}document.documentElement.dataset.theme=localStorage.getItem(LS.theme)||'light';syncThemeIcon();$('themeToggle').onclick=()=>{const dark=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=dark?'light':'dark';localStorage.setItem(LS.theme,dark?'light':'dark');syncThemeIcon()};
 window.addEventListener('offline',()=>{state.online=false;renderConnection()});window.addEventListener('online',()=>bootstrap());
 bootstrap();
