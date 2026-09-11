@@ -3,26 +3,92 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Bilihan</title>
-  <meta name="description" content="Bilihan online food store" />
+
+  <!-- Force HTTPS. GitHub Pages "Enforce HTTPS" handles this at the edge; this is the fallback. -->
+  <script>
+    (function () {
+      var local = ['localhost', '127.0.0.1', ''];
+      if (location.protocol === 'http:' && local.indexOf(location.hostname) === -1) {
+        location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
+
+  <title>Bilihan — Order Food Online for Pickup or Delivery</title>
+  <meta name="description" content="Order food online from Bilihan. Everyday favorites, meals and snacks, ready for pickup or delivery. Browse the menu, add to cart, and check out in minutes." />
+  <link rel="canonical" href="https://bilihan.shop/" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+
+  <!-- Social preview -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Bilihan" />
+  <meta property="og:url" content="https://bilihan.shop/" />
+  <meta property="og:title" content="Bilihan — Order Food Online for Pickup or Delivery" />
+  <meta property="og:description" content="Everyday favorites, meals and snacks, ready for pickup or delivery. Browse the menu and check out in minutes." />
+  <meta property="og:image" content="https://bilihan.shop/og-image.jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Bilihan — good food, made easy." />
+  <meta property="og:locale" content="en_PH" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Bilihan — Order Food Online for Pickup or Delivery" />
+  <meta name="twitter:description" content="Everyday favorites, meals and snacks, ready for pickup or delivery." />
+  <meta name="twitter:image" content="https://bilihan.shop/og-image.jpg" />
+
+  <!-- Icons -->
+  <link rel="icon" href="favicon.ico" sizes="32x32" />
+  <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="manifest" href="site.webmanifest" />
+
   <meta name="theme-color" content="#faf8f3" />
   <meta name="color-scheme" content="light dark" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Bilihan" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+  <link rel="preconnect" href="https://nrwiblxfqfovmnoofiii.supabase.co" crossorigin />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="styles.css" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Store",
+    "name": "Bilihan",
+    "slogan": "All food. All good.",
+    "description": "Online food store for everyday favorites, meals and snacks, ready for pickup or delivery.",
+    "url": "https://bilihan.shop/",
+    "logo": "https://bilihan.shop/icon-512.png",
+    "image": "https://bilihan.shop/og-image.jpg",
+    "areaServed": "PH",
+    "currenciesAccepted": "PHP",
+    "paymentAccepted": "Cash, QR Payment"
+  }
+  </script>
 </head>
 <body>
+  <a class="skip-link" href="#menu">Skip to products</a>
   <header class="site-header">
-    <a class="brand brand-lockup" href="#home" aria-label="Bilihan Home"><img src="bilihan-logo.png" alt="Bilihan logo"><span id="brandName">Bilihan</span></a>
+    <a class="brand brand-lockup" href="#home" aria-label="Bilihan Home"><img src="bilihan-mark.webp" width="40" height="40" data-store-logo alt="Bilihan logo"><span id="brandName">Bilihan</span></a>
     <nav class="desktop-nav" aria-label="Primary">
-      <a href="#home">Home</a><a href="#menu">Products</a>
-      <button id="myOrderBtn" class="nav-link hidden">My Order</button>
+      <a href="#home">Home</a><a href="#menu">Products</a><a href="#about">About</a>
+      <button id="myOrderBtn" class="nav-link hidden" type="button">My Order</button>
     </nav>
     <div class="header-actions">
-      <button id="themeToggle" class="icon-btn" aria-label="Toggle theme"><img id="themeIcon" class="ui-icon" src="ios-icons/dark-mode.png" alt="" aria-hidden="true"></button>
-      <button id="cartBtn" class="cart-btn" aria-label="Open cart"><img class="ui-icon" src="ios-icons/cart.png" alt="" aria-hidden="true"> <span id="cartCount">0</span></button>
+      <button id="themeToggle" class="icon-btn" type="button" aria-label="Toggle theme"><img id="themeIcon" class="ui-icon" src="ios-icons/dark-mode.png" width="22" height="22" alt="" aria-hidden="true"></button>
+      <button id="cartBtn" class="cart-btn" type="button" aria-label="Open cart"><img class="ui-icon" src="ios-icons/cart.png" width="22" height="22" alt="" aria-hidden="true"> <span id="cartCount">0</span></button>
+      <button id="menuBtn" class="icon-btn menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="mobileNav"><span class="menu-bars" aria-hidden="true"></span></button>
     </div>
   </header>
+  <nav id="mobileNav" class="mobile-nav" aria-label="Mobile" hidden>
+    <a href="#home">Home</a>
+    <a href="#menu">Products</a>
+    <a href="#about">About</a>
+    <button id="myOrderBtnMobile" class="hidden" type="button">My Order</button>
+    <div id="mobileNavContact" class="mobile-nav-contact"></div>
+  </nav>
   <main>
     <section id="home" class="hero section-pad">
       <div class="hero-copy">
@@ -32,30 +98,35 @@
         <a class="primary-btn" href="#menu">Shop Now</a>
       </div>
       <div class="hero-carousel" aria-label="Featured food">
-        <img id="heroImage" alt="Featured food" />
+        <img id="heroImage" src="bilihan-logo.png" width="800" height="600" fetchpriority="high" alt="Featured food from Bilihan" />
         <div id="heroDots" class="hero-dots"></div>
       </div>
     </section>
     <section id="menu" class="section-pad">
       <div class="section-heading"><h2>Pick your favorites</h2></div>
-      <div id="connectionBanner" class="status-banner hidden"></div>
+      <div id="connectionBanner" class="status-banner hidden" role="status" aria-live="polite"></div>
       <div class="menu-controls">
         <div id="categoryTabs" class="tabs" role="tablist"></div>
         <div class="view-switch" role="group" aria-label="Product view">
-          <button id="gridViewBtn" class="view-btn active" type="button" aria-label="Grid view" aria-pressed="true"><img src="ios-icons/grid.png" alt="" aria-hidden="true"></button>
-          <button id="listViewBtn" class="view-btn" type="button" aria-label="List view" aria-pressed="false"><img src="ios-icons/list.png" alt="" aria-hidden="true"></button>
+          <button id="gridViewBtn" class="view-btn active" type="button" aria-label="Grid view" aria-pressed="true"><img src="ios-icons/grid.png" width="20" height="20" alt="" aria-hidden="true"></button>
+          <button id="listViewBtn" class="view-btn" type="button" aria-label="List view" aria-pressed="false"><img src="ios-icons/list.png" width="20" height="20" alt="" aria-hidden="true"></button>
         </div>
       </div>
       <div id="menuGrid" class="product-grid" aria-live="polite"></div>
     </section>
     <section id="about" class="section-pad split-section">
-      <img id="aboutImage" class="about-image" alt="Bilihan food selection" />
+      <img id="aboutImage" class="about-image" src="bilihan-logo.png" width="700" height="525" loading="lazy" alt="A selection of the food available at Bilihan" />
       <div><h2>Your easy online food stop</h2><p id="aboutText"></p></div>
     </section>
   </main>
-  <footer class="footer"><div class="footer-brand"><img src="bilihan-logo.png" alt=""><strong id="footerBrand">Bilihan</strong></div><span id="footerPhone"></span><span>© <span id="year"></span> Bilihan</span></footer>
-  <aside id="cartDrawer" class="drawer" aria-hidden="true">
-    <div class="drawer-header"><h2>Your Cart</h2><button id="closeCart" class="icon-btn" aria-label="Close cart"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button></div>
+  <footer class="footer">
+    <div class="footer-brand"><img src="bilihan-mark.webp" width="32" height="32" data-store-logo alt=""><strong id="footerBrand">Bilihan</strong></div>
+    <nav class="footer-links" aria-label="Footer"><a href="#menu">Products</a><a href="#about">About</a></nav>
+    <div id="footerContact" class="footer-contact"></div>
+    <span>&copy; <span id="year">2026</span> <span class="footer-copy-name">Bilihan</span></span>
+  </footer>
+  <aside id="cartDrawer" class="drawer" aria-hidden="true" aria-label="Shopping cart">
+    <div class="drawer-header"><h2>Your Cart</h2><button id="closeCart" class="icon-btn" type="button" aria-label="Close cart"><img class="ui-icon" src="ios-icons/close.png" width="20" height="20" alt="" aria-hidden="true"></button></div>
     <div id="cartItems" class="drawer-content"></div>
     <div id="cartFooter" class="drawer-footer"></div>
   </aside>
@@ -63,10 +134,11 @@
   <dialog id="productDialog" class="modal"></dialog>
   <dialog id="checkoutDialog" class="modal wide-modal"></dialog>
   <dialog id="orderDialog" class="modal wide-modal"></dialog>
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
   <script src="supabase.js"></script>
+  <script src="analytics.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

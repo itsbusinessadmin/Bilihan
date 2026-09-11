@@ -17,7 +17,14 @@ Bilihan v3 replaces Google Sheets / Apps Script with Supabase.
 - `admin.js` — admin logic
 - `styles.css` — UI
 - `bilihan-logo.png` — Bilihan logo
-- `config.js` — one-time public Supabase URL + anon key
+- `404.html` — custom not-found page (GitHub Pages serves this automatically)
+- `analytics.js` — analytics loader (does nothing until configured)
+- `bilihan-mark.webp` — small logo used in the header and footer lockups
+- `favicon.ico`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` — site icons
+- `og-image.jpg` — social sharing preview (1200×630)
+- `site.webmanifest` — installable web app metadata
+- `robots.txt`, `sitemap.xml` — search engine files
+- `config.js` — one-time public configuration (Supabase URL + anon key, analytics)
 - `supabase.js` — creates the browser client
 - `supabase-setup.sql` — database tables, policies, storage buckets, and safe order functions
 
@@ -116,3 +123,78 @@ If the customer goes offline while cancelling, the site queues the request local
 - Public users have read-only access to storefront data through RLS.
 - Orders and stock changes happen through security-definer functions rather than unrestricted public table writes.
 - For a serious production launch, also add CAPTCHA/rate limiting or an Edge Function in front of public order placement if abuse becomes a concern.
+
+---
+
+## Launch checklist
+
+Applied to the storefront. The page layout is unchanged — the only visible additions are a
+mobile menu button, an About link in the desktop nav, and clickable contact details in the footer.
+
+| Item | Status |
+|------|--------|
+| Secrets off the frontend | Only the Supabase anon key (public by design, guarded by RLS) and the public Apps Script endpoint reach the browser; both documented in `config.js` |
+| Force HTTPS | `upgrade-insecure-requests` plus an `http:` → `https:` redirect. **Also switch on GitHub → Settings → Pages → Enforce HTTPS** |
+| Meta titles + descriptions | Unique title, description and canonical URL |
+| Social preview image | `og-image.jpg` (1200×630) with Open Graph + Twitter card tags |
+| Favicon | `favicon.ico`, PNG icons, Apple touch icon, `site.webmanifest` |
+| Sitemap + robots.txt | `sitemap.xml` and `robots.txt` (admin disallowed); `admin.html` is `noindex` |
+| Alt text on images | Every `<img>` has `alt`; decorative images use `alt=""` + `aria-hidden` |
+| Compressed images | `bilihan-logo.png` 1.34 MB → 102 KB; header/footer use a 7 KB WebP mark |
+| Page load speed | Preconnects, `loading="lazy"`, `fetchpriority` on the hero, explicit `width`/`height` against layout shift |
+| Colour contrast | Every rendered text/background pair passes WCAG AA in light and dark |
+| Mobile friendly | Verified 320 px → 1600 px |
+| Custom 404 page | `404.html` |
+| Broken links | All internal links, anchors and assets verified |
+| Form validation | Inline per-field errors with `aria-invalid`, plus server-side re-checks of stock and price |
+| Spam protection | Honeypot field, minimum form dwell time, 30-second order cooldown |
+| Analytics | `analytics.js` — see below |
+| One clear call to action | "Shop Now" in the hero, "Checkout" in the cart |
+| No horizontal scroll | Verified at ten widths with overflow clipping disabled |
+| Mobile menu | Hamburger menu with Home, Products, About, My Order and contact details |
+| Footer links | Products and About, alongside the contact details |
+| Copyright year | In the HTML and refreshed by JS |
+| Clickable logo / number / email | Logo links home; phone uses `tel:`, email uses `mailto:` |
+| No placeholder text | Seeded defaults such as `+63 900 000 0000` are treated as "not set" and hidden |
+| Success + error messages | Toast on success; alert banner plus per-field messages on failure |
+
+Deliberately **not** included, at your request: privacy policy page, terms & conditions page,
+and cookie consent banner.
+
+## Before you go live
+
+1. **Run the two new columns** in Supabase → SQL Editor:
+   ```sql
+   alter table public.store_settings add column if not exists logo_url text;
+   alter table public.store_settings add column if not exists email text;
+   ```
+2. **Fill in Store Settings** in Admin: business name, contact number, contact email, Messenger,
+   Instagram, pickup location. Anything left at its seeded default is hidden from customers rather
+   than shown as placeholder text.
+3. **Turn on Enforce HTTPS** in GitHub → Settings → Pages.
+4. **Submit the sitemap** at `https://bilihan.shop/sitemap.xml` in Google Search Console.
+5. **If you change domain**, update the canonical/Open Graph URLs in `index.html`, `robots.txt`,
+   `sitemap.xml`, and `SITE_URL` in `config.js`.
+
+## Turning on analytics
+
+Off until configured. Set `ANALYTICS` in `config.js` to one of:
+
+```js
+ANALYTICS: { provider: 'plausible', domain: 'bilihan.shop' }
+ANALYTICS: { provider: 'umami', src: 'https://your-umami/script.js', websiteId: 'your-uuid' }
+ANALYTICS: { provider: 'ga4', id: 'G-XXXXXXXXXX' }
+```
+
+Only page views and two non-identifying events (`order_placed`, `order_cancelled`) are sent — no
+customer name, phone number, address, or order contents. Plausible and Umami are cookieless and
+need no consent banner. GA4 sets cookies, so if you use it and expect EU/UK visitors you would
+need a consent banner in front of it.
+
+## Spam protection
+
+The checkout form has three client-side deterrents: a honeypot field no human can see, a minimum
+dwell time before the form will submit, and a 30-second cooldown between orders from the same
+browser. These stop casual bots but run in the browser, so a determined attacker can bypass them.
+For a high-traffic launch, add a server-side control in front of `place_order` — Supabase rate
+limiting, Cloudflare Turnstile, or an Edge Function that verifies a CAPTCHA token.
