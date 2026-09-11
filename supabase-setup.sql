@@ -55,6 +55,11 @@ alter table public.store_settings add column if not exists show_stock boolean no
 alter table public.store_settings add column if not exists show_qr_payment boolean not null default true;
 alter table public.store_settings add column if not exists show_cash_payment boolean not null default true;
 
+-- Storefront identity and contact details surfaced in the customer footer.
+-- All optional: the storefront hides any that are not set.
+alter table public.store_settings add column if not exists logo_url text;
+alter table public.store_settings add column if not exists email text;
+
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_code text not null unique,
