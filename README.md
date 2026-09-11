@@ -19,6 +19,7 @@ Bilihan v3 replaces Google Sheets / Apps Script with Supabase.
 - `bilihan-logo.png` — Bilihan logo
 - `404.html` — custom not-found page (GitHub Pages serves this automatically)
 - `analytics.js` — analytics loader (does nothing until configured)
+- `support.js` — customer support chat widget
 - `bilihan-mark.webp` — small logo used in the header and footer lockups
 - `favicon.ico`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` — site icons
 - `og-image.jpg` — social sharing preview (1200×630)
@@ -207,6 +208,43 @@ schedule no matter what the site does.
 
 Because the browser stays signed in, anyone who can use that browser profile can open Admin. Use
 Log Out on shared or public computers.
+
+## Customer support chat
+
+A chat button sits in the corner of the storefront. A customer who ordered from
+that browser is recognised automatically; on another device they identify
+themselves once with an order number (case and spacing are ignored) or the mobile
+number they ordered with. After that the browser holds a per-thread token and the
+order number is never needed again.
+
+Several orders from the same person land in **one** conversation. Threads are keyed
+on the customer's phone number when they gave one and on their name otherwise, so
+Admin sees one thread per customer rather than one per order.
+
+Replies are in **Admin → Messages**, which carries an unread count in the sidebar.
+The customer's button carries its own unread badge.
+
+**Run the schema again** (`supabase-setup.sql`) to create the chat tables and
+functions — the new statements are all `if not exists` / `create or replace`, so
+re-running the whole file is safe.
+
+### How access is controlled
+
+The public site can never read the chat tables. `anon` has no grant on them at all;
+customers reach their conversation only through security-definer functions that
+require the thread token issued at identification.
+
+One trade-off to be aware of: **anyone who knows a customer's order number, or the
+mobile number they ordered with, can open that customer's conversation.** That is
+what makes "chat without signing in" possible, and it is the behaviour you asked
+for. If a stronger check is worth the extra friction, requiring the order number
+*and* the matching phone number together is a small change to `support_identify`.
+
+Messages are limited to 20 per minute per thread and 2000 characters.
+
+New messages appear within about 4 seconds while the chat is open (Supabase
+Realtime would make it instant and can be layered on later without changing the
+schema).
 
 ## Spam protection
 

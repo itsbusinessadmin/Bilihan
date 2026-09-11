@@ -49,8 +49,12 @@ async function init(){
 }
 function renderSetup(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-logo.png" style="width:90px;border-radius:50%"><span class="eyebrow">Bilihan v3</span><h2>Connect Supabase</h2><p>Edit <strong>config.js</strong> once and paste your Supabase Project URL and anon public key, then reload this page.</p><p class="muted">Never paste a service_role key into the website.</p></div></div>`}
 function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword(d);if(error)return renderLogin(error.message);A.session=data.session;const status=await adminStatus();if(status==='no'){await db.auth.signOut();A.session=null;return renderLogin('This account is not listed as a Bilihan admin.')}if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');try{await loadAll()}catch(err){console.error(err);return renderReconnect(err?.message)}renderShell()}}
-async function loadAll(){const [p,c,o,s]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single()]);for(const r of [p,c,o,s])if(r.error)throw r.error;A.data={products:p.data,categories:c.data,orders:o.data,settings:s.data}}
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="bilihan-logo.png"><div><strong>Bilihan</strong><small style="display:block">ADMIN</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,settings,appearance,security}[A.section]||dashboard)(m)}
+async function loadAll(){const [p,c,o,s,t]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single(),db.from('support_threads').select('*').order('last_message_at',{ascending:false})]);for(const r of [p,c,o,s])if(r.error)throw r.error;
+  /* The support tables may not exist yet on a database that predates the chat, so
+     a failure there must not stop the rest of Admin from loading. */
+  if(t.error)console.warn('Bilihan admin: support threads unavailable',t.error);
+  A.data={products:p.data,categories:c.data,orders:o.data,settings:s.data,threads:t.error?[]:(t.data||[])}}
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="bilihan-logo.png"><div><strong>Bilihan</strong><small style="display:block">ADMIN</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,messages,settings,appearance,security}[A.section]||dashboard)(m)}
 /* ---- Sales reporting ----------------------------------------------------
    Resolve the original-price / interest split for one order line. An order item
    may carry its own original_price and interest recorded at order time; when it
@@ -277,6 +281,115 @@ window.updatePaymentStatus=async(id,status)=>{const {error}=await db.from('order
 async function deleteOrderFromGoogleSheet(orderCode){try{if(!GOOGLE_SHEETS_WEB_APP_URL||!orderCode)return;await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'delete_order',order_code:orderCode})})}catch(err){console.warn('Google Sheets/Drive delete sync failed:',err)}}
 async function deleteAllOrdersFromGoogleServices(){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'delete_all_orders'})})}catch(err){console.warn('Google Sheets/Drive bulk delete sync failed:',err)}}
 window.deleteOrder=async id=>{const o=A.data.orders.find(x=>x.id===id);if(!o)return alert('Order not found.');if(!confirm(`Delete Order #${o.order_code} permanently? This will also delete its Google Sheet row and matching payment receipt from Google Drive.`))return;const {error}=await db.from('orders').delete().eq('id',id);if(error)return alert(error.message);await deleteOrderFromGoogleSheet(o.order_code);await loadAll();renderShell()};async function deleteAllOrders(){if(!A.data.orders.length)return alert('There are no orders to delete.');if(!confirm(`Delete ALL ${A.data.orders.length} customer orders? This cannot be undone. It will also remove all matching Google Sheet rows and payment receipt files from Google Drive.`))return;if(prompt('Type DELETE ALL ORDERS to confirm:')!=='DELETE ALL ORDERS')return alert('Delete All cancelled.');const ids=A.data.orders.map(o=>o.id);const {error}=await db.from('orders').delete().in('id',ids);if(error)return alert(error.message);await deleteAllOrdersFromGoogleServices();A.orderFilter='all';await loadAll();renderShell();alert('All customer orders, matching Google Sheet rows, and matching Google Drive receipts have been deleted.');}
+/* ---- Customer messages -----------------------------------------------------
+   One thread per customer, so several orders from the same person stay in a
+   single conversation. Threads arrive with loadAll(); the messages of the open
+   thread are fetched on demand and polled while this section is on screen. */
+function adminUnreadTotal(){return (A.data.threads||[]).reduce((n,t)=>n+Number(t.admin_unread||0),0)}
+const MSG={openId:null,messages:[],timer:null,loading:false};
+
+function stopMessagePolling(){clearInterval(MSG.timer);MSG.timer=null}
+
+async function loadThreadMessages(id,{silent}={}){
+  if(!id)return;
+  if(!silent)MSG.loading=true;
+  const {data,error}=await db.from('support_messages').select('*').eq('thread_id',id).order('created_at');
+  if(error){console.warn('Bilihan admin: could not load messages',error);MSG.loading=false;return}
+  MSG.messages=data||[];MSG.loading=false;
+  paintThread();
+}
+
+async function openThread(id){
+  if(MSG.openId===id)return;
+  MSG.openId=id;MSG.messages=[];
+  paintThread();
+  await loadThreadMessages(id);
+  const thread=(A.data.threads||[]).find(t=>t.id===id);
+  if(thread&&thread.admin_unread>0){
+    const {error}=await db.rpc('support_admin_mark_read',{p_thread_id:id});
+    if(!error){thread.admin_unread=0;paintThreadList();paintNavBadge()}
+  }
+}
+
+function paintNavBadge(){
+  const btn=document.querySelector('.side-nav button[data-s="messages"]');
+  if(!btn)return;
+  const n=adminUnreadTotal();
+  const existing=btn.querySelector('.nav-badge');
+  if(!n){existing?.remove();return}
+  if(existing)existing.textContent=n>99?'99+':n;
+  else btn.insertAdjacentHTML('beforeend',`<span class="nav-badge">${n>99?'99+':n}</span>`);
+}
+
+function threadRowHtml(t){
+  const when=new Date(t.last_message_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  return `<button type="button" class="thread-row${MSG.openId===t.id?' active':''}" data-thread="${esc(t.id)}">
+    <span class="thread-row-top"><strong>${esc(t.customer_name||'Customer')}</strong>${t.admin_unread?`<span class="thread-unread">${t.admin_unread}</span>`:''}</span>
+    <span class="thread-row-sub">${esc(t.phone||'No phone on file')} · ${esc(when)}</span></button>`;
+}
+
+function paintThreadList(){
+  const list=document.getElementById('threadList');
+  if(!list)return;
+  const threads=A.data.threads||[];
+  list.innerHTML=threads.length?threads.map(threadRowHtml).join(''):'<p class="muted" style="padding:14px">No customer messages yet.</p>';
+  list.querySelectorAll('[data-thread]').forEach(b=>b.onclick=()=>openThread(b.dataset.thread));
+}
+
+function paintThread(){
+  const host=document.getElementById('threadView');
+  if(!host)return;
+  const thread=(A.data.threads||[]).find(t=>t.id===MSG.openId);
+  if(!thread){host.innerHTML='<div class="thread-empty"><p class="muted">Pick a conversation on the left to read it and reply.</p></div>';return}
+  const log=MSG.loading&&!MSG.messages.length
+    ?'<p class="muted" style="padding:14px">Loading…</p>'
+    :(MSG.messages.length?MSG.messages.map(m=>{
+        const when=new Date(m.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+        return `<div class="admin-msg admin-msg-${m.sender==='admin'?'out':'in'}"><p>${esc(m.body)}</p><time>${esc(when)}</time></div>`;
+      }).join(''):'<p class="muted" style="padding:14px">No messages in this conversation yet.</p>');
+  const atBottom=(()=>{const l=host.querySelector('.thread-log');return !l||l.scrollHeight-l.scrollTop-l.clientHeight<40})();
+  host.innerHTML=`<div class="thread-head"><div><strong>${esc(thread.customer_name||'Customer')}</strong><span class="thread-row-sub">${esc(thread.phone||'No phone on file')}</span></div></div>
+    <div class="thread-log">${log}</div>
+    <form class="thread-compose" id="threadCompose"><label class="sr-only" for="threadInput">Reply</label>
+      <textarea id="threadInput" rows="1" maxlength="2000" placeholder="Write a reply…"></textarea>
+      <button class="primary-btn" type="submit">Send</button></form>`;
+  const logEl=host.querySelector('.thread-log');
+  if(logEl&&atBottom)logEl.scrollTop=logEl.scrollHeight;
+  const form=document.getElementById('threadCompose');
+  const input=document.getElementById('threadInput');
+  const grow=()=>{input.style.height='auto';input.style.height=Math.min(input.scrollHeight,120)+'px'};
+  input.addEventListener('input',grow);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit()}});
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    const body=input.value.trim();
+    if(!body)return;
+    input.value='';grow();
+    MSG.messages=[...MSG.messages,{id:'local-'+Date.now(),sender:'admin',body,created_at:new Date().toISOString()}];
+    paintThread();
+    const {data,error}=await db.rpc('support_admin_reply',{p_thread_id:MSG.openId,p_body:body});
+    if(error||!data?.ok){alert(error?.message||data?.error||'Reply not sent.');}
+    await loadThreadMessages(MSG.openId,{silent:true});
+  };
+  input.focus();
+}
+
+async function refreshThreads(){
+  const {data,error}=await db.from('support_threads').select('*').order('last_message_at',{ascending:false});
+  if(error)return;
+  A.data.threads=data||[];
+  paintThreadList();paintNavBadge();
+  if(MSG.openId)await loadThreadMessages(MSG.openId,{silent:true});
+}
+
+function messages(m){
+  m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Support</span><h2>Messages</h2></div></div>
+    <div class="thread-layout"><div class="panel thread-list" id="threadList"></div><div class="panel thread-view" id="threadView"></div></div>`;
+  paintThreadList();paintThread();
+  stopMessagePolling();
+  MSG.timer=setInterval(()=>{if(!document.hidden&&A.section==='messages')refreshThreads()},12000);
+}
+
 function settings(m){
   const s=A.data.settings;
 
