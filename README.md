@@ -191,6 +191,23 @@ customer name, phone number, address, or order contents. Plausible and Umami are
 need no consent banner. GA4 sets cookies, so if you use it and expect EU/UK visitors you would
 need a consent banner in front of it.
 
+## Staying signed in to Admin
+
+Admin remembers the browser you signed in from, so you do not re-enter your password on every
+visit. The Supabase client stores the session in that browser and refreshes it in the background;
+**Log Out** (Admin → Security) is what ends it.
+
+A network failure never signs the device out. If Admin cannot reach the database on load it shows
+a "Can't reach the database" screen with a **Try Again** button and keeps your session, rather than
+dropping you back to the login form.
+
+If you are still asked to sign in regularly, check **Supabase Dashboard → Authentication →
+Sessions**. A "time-box user sessions" or inactivity-timeout value there ends sessions on a
+schedule no matter what the site does.
+
+Because the browser stays signed in, anyone who can use that browser profile can open Admin. Use
+Log Out on shared or public computers.
+
 ## Spam protection
 
 The checkout form has three client-side deterrents: a honeypot field no human can see, a minimum
