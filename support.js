@@ -121,6 +121,22 @@
   }
 
   /* ---------- data ---------- */
+  /* Every failure used to read "check your connection", which is wrong and
+     undiagnosable when the real cause is that the chat functions have not been
+     created in the database yet. Say which it is. */
+  const SETUP_MSG = 'Messaging is not set up on this store yet. If you are the owner, run supabase-setup.sql in Supabase.';
+  function describeError(err) {
+    const code = err?.code || '';
+    const text = `${err?.message || ''} ${err?.hint || ''} ${err?.details || ''}`.toLowerCase();
+    if (code === 'PGRST202' || text.includes('could not find the function') || text.includes('does not exist')) return SETUP_MSG;
+    if (code === '42501' || text.includes('permission denied')) return SETUP_MSG;
+    if (code === 'PGRST301' || text.includes('jwt')) return 'Messaging is unavailable right now. Please try again shortly.';
+    if (err instanceof TypeError || text.includes('failed to fetch') || text.includes('networkerror')) {
+      return 'We could not reach the store. Check your connection and try again.';
+    }
+    return err?.message ? `We could not open your chat. (${err.message})` : 'We could not open your chat. Please try again.';
+  }
+
   async function identify(orderCode, phone) {
     const client = db();
     if (!client) { state.lastError = 'Messaging is unavailable right now. Please try again shortly.'; return false; }
@@ -139,8 +155,8 @@
       setTitle();
       return true;
     } catch (err) {
-      console.warn('Bilihan support: identify failed', err);
-      state.lastError = 'We could not reach the store. Check your connection and try again.';
+      console.error('Bilihan support: identify failed', err);
+      state.lastError = describeError(err);
       return false;
     }
   }
@@ -213,11 +229,11 @@
       }
       await refresh(true);
     } catch (err) {
-      console.warn('Bilihan support: send failed', err);
+      console.error('Bilihan support: send failed', err);
       state.messages = state.messages.filter(m => m.id !== optimistic.id);
       paintMessages();
       const log = root.querySelector('#supportLog');
-      if (log) log.insertAdjacentHTML('beforeend', '<div class="support-error" role="alert">Could not send. Check your connection and try again.</div>');
+      if (log) log.insertAdjacentHTML('beforeend', `<div class="support-error" role="alert">${esc(describeError(err))}</div>`);
     }
   }
 

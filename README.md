@@ -242,6 +242,20 @@ for. If a stronger check is worth the extra friction, requiring the order number
 
 Messages are limited to 20 per minute per thread and 2000 characters.
 
+### Deleting conversations
+
+**Admin → Messages → Select** ticks conversations for deletion, and **Delete All
+Messages** clears the lot behind a typed confirmation. Both delete from the
+database, not just the screen: `support_messages` has `on delete cascade`, so a
+thread's messages go with it and the storage is genuinely reclaimed. Orders are
+never touched by this.
+
+### If the chat says it cannot reach the store
+
+That almost always means `supabase-setup.sql` has not been re-run, so the chat
+functions do not exist yet. The chat now says so explicitly instead of blaming the
+connection. Run the file in Supabase → SQL Editor and try again.
+
 New messages appear within about 4 seconds while the chat is open (Supabase
 Realtime would make it instant and can be layered on later without changing the
 schema).
