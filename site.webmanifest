@@ -1,0 +1,16 @@
+{
+  "name": "Bilihan — Order Food Online",
+  "short_name": "Bilihan",
+  "description": "Order everyday favorites, meals and snacks from Bilihan for pickup or delivery.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#faf8f3",
+  "theme_color": "#1f4d34",
+  "lang": "en-PH",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

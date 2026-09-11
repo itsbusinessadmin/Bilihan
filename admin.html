@@ -13,6 +13,24 @@
     content="width=device-width, initial-scale=1, viewport-fit=cover"
   >
 
+  <!-- Admin is a private tool: keep it out of search engines entirely. -->
+  <meta name="robots" content="noindex, nofollow, noarchive">
+
+  <!-- Force HTTPS. GitHub Pages "Enforce HTTPS" handles this at the edge; belt-and-braces fallback. -->
+  <script>
+    (function () {
+      var local = ['localhost', '127.0.0.1', ''];
+      if (location.protocol === 'http:' && local.indexOf(location.hostname) === -1) {
+        location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
   <!-- Mobile browser/theme color -->
   <meta name="theme-color" content="#1f4d34">
   <meta name="color-scheme" content="light">

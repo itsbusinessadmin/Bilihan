@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <script>
+    (function () {
+      var local = ['localhost', '127.0.0.1', ''];
+      if (location.protocol === 'http:' && local.indexOf(location.hostname) === -1) {
+        location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
+
+  <title>Page Not Found — Bilihan</title>
+  <meta name="description" content="That page does not exist. Head back to the Bilihan store to browse the menu and place your order." />
+  <meta name="robots" content="noindex, follow" />
+
+  <link rel="icon" href="favicon.ico" sizes="32x32" />
+  <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="manifest" href="site.webmanifest" />
+  <meta name="theme-color" content="#faf8f3" />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand brand-lockup" href="/" aria-label="Bilihan — back to the store"><img src="/bilihan-mark.webp" width="40" height="40" data-store-logo alt="Bilihan logo"><span data-store-name>Bilihan</span></a>
+    <div class="header-actions">
+      <a class="secondary-btn header-back" href="/">Back to store</a>
+    </div>
+  </header>
+
+  <main class="section-pad error-page">
+    <span class="eyebrow">Error 404</span>
+    <h1>We couldn't find that page.</h1>
+    <p class="muted">The link may be old, or the page may have moved. The food is still here though.</p>
+    <div class="contact-actions error-actions">
+      <a class="primary-btn" href="/#menu">Browse the menu</a>
+      <a class="secondary-btn" href="/">Go to the homepage</a>
+      <a class="secondary-btn" href="/#contact">Contact us</a>
+    </div>
+    <img class="error-art" src="/bilihan-logo.png" width="320" height="320" alt="" aria-hidden="true" />
+  </main>
+
+  <footer class="footer">
+    <div class="footer-bottom">
+      <span>&copy; <span id="year">2026</span> <span data-store-name>Bilihan</span>. All rights reserved.</span>
+      <nav class="footer-nav footer-nav-inline" aria-label="Legal">
+        <a href="/">Home</a>
+        <a href="/privacy.html">Privacy Policy</a>
+        <a href="/terms.html">Terms &amp; Conditions</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="/config.js" defer></script>
+  <script src="/supabase.js" defer></script>
+  <script src="/consent.js" defer></script>
+  <script src="/page.js" defer></script>
+</body>
+</html>
