@@ -23,7 +23,13 @@ function toast(msg){$('toast').textContent=msg;$('toast').classList.remove('hidd
 function saveCart(){localStorage.setItem(LS.cart,JSON.stringify(state.cart));renderCart()}
 async function bootstrap(){
   if(!window.BILIHAN_SUPABASE_CONFIGURED){state.online=false; state.data=safeJsonParse(localStorage.getItem(LS.cache),null)||structuredClone(FALLBACK);renderAll();return;}
-  renderSkeletons();
+  /* Paint the cached menu immediately so a returning customer sees products without
+     waiting on the network, then refresh in the background. A briefly stale card cannot
+     produce a wrong order: checkout re-reads live products and place_order re-checks
+     stock and price server-side. */
+  const cached=safeJsonParse(localStorage.getItem(LS.cache),null);
+  if(cached?.products?.length&&cached.settings){state.data=cached;renderAll()}
+  else renderSkeletons();
   try{
     const [{data:categories,error:ce},{data:products,error:pe},{data:settings,error:se}] = await Promise.all([
       db.from('categories').select('*').order('sort_order'),
@@ -69,7 +75,7 @@ function renderContact(s){
   const nav=$('mobileNavContact');if(nav)nav.innerHTML=html;
 }
 function renderHero(){const imgs=state.data.settings?.hero_images||[];if(!imgs.length){$('heroImage').src='bilihan-logo.png';$('heroDots').innerHTML='';return}$('heroImage').onerror=()=>{$('heroImage').src='bilihan-logo.png';$('heroImage').onerror=null};$('heroImage').src=imgs[state.heroIndex%imgs.length];$('heroDots').innerHTML=imgs.length>1?imgs.map((_,i)=>`<button class="${i===state.heroIndex?'active':''}" data-i="${i}" aria-label="Show featured image ${i+1}" aria-current="${i===state.heroIndex?'true':'false'}"></button>`).join(''):'';[...$('heroDots').children].forEach(b=>b.onclick=()=>{state.heroIndex=+b.dataset.i;renderHero()})}
-setInterval(()=>{if(state.data&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const n=state.data.settings?.hero_images?.length||1;state.heroIndex=(state.heroIndex+1)%n;renderHero()}},4000);
+setInterval(()=>{if(state.data&&!document.hidden&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const n=state.data.settings?.hero_images?.length||1;state.heroIndex=(state.heroIndex+1)%n;renderHero()}},4000);
 function visibleCategories(){return (state.data.categories||[]).filter(c=>(state.data.products||[]).some(p=>p.category_id===c.id)).sort((a,b)=>a.sort_order-b.sort_order)}
 function renderCategories(){const cats=visibleCategories();$('categoryTabs').innerHTML=[{id:'all',name:'All'},...cats].map(c=>`<button class="tab ${state.category===c.id?'active':''}" type="button" role="tab" aria-selected="${state.category===c.id?'true':'false'}" data-id="${c.id}">${esc(c.name)}</button>`).join('');[...$('categoryTabs').children].forEach(b=>b.onclick=()=>{state.category=b.dataset.id;renderCategories();renderProducts()})}
 function renderViewSwitch(){const grid=$('gridViewBtn'),list=$('listViewBtn'),menu=$('menuGrid');if(!grid||!list||!menu)return;const isList=state.productView==='list';menu.classList.toggle('list-view',isList);grid.classList.toggle('active',!isList);list.classList.toggle('active',isList);grid.setAttribute('aria-pressed',String(!isList));list.setAttribute('aria-pressed',String(isList));grid.onclick=()=>setProductView('grid');list.onclick=()=>setProductView('list')}
@@ -213,7 +219,6 @@ function showOrder(order){
   $('continueBtn').onclick=()=>$('orderDialog').close();
   if($('cancelOrderBtn')){const deadline=new Date(order.created_at).getTime()+3*60*60*1000;if(Date.now()>deadline)$('cancelOrderBtn').disabled=true;else $('cancelOrderBtn').onclick=()=>cancelOrder(order)}
 }
-function orderText(o){return `Bilihan Order #${o.order_code}\n${(o.items||[]).map(i=>`${i.product_name} x ${i.qty}`).join('\n')}\nTotal: ${money(o.total)}\n${o.fulfillment} — ${o.preferred_date}\n${o.payment_method}`}
 function cancelOrder(order){
   const host=$('cancelState');if(!host)return;
   host.innerHTML=`<form id="cancelOrderForm" class="cancel-form"><strong>Cancel this order?</strong><p class="muted" style="margin:.35rem 0 0">Tell us why so the store has the right context.</p><label class="field"><span>Reason *</span><textarea name="reason" maxlength="500" required placeholder="Reason for cancellation"></textarea></label><div class="cancel-form-actions"><button type="button" class="secondary-btn" id="keepOrderBtn">Keep Order</button><button type="submit" class="danger-btn">Confirm Cancellation</button></div></form>`;

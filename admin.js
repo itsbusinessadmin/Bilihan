@@ -20,7 +20,6 @@ async function adminStatus(){
   }
   return 'unknown';
 }
-async function isAdmin(){return (await adminStatus())==='yes'}
 
 function renderRestoring(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Signing you in…</h2><p class="muted">Restoring your session on this device.</p></div></div>`}
 
@@ -106,7 +105,37 @@ function openAllSalesModal(){
 function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal=salesByProduct().reduce((sum,r)=>sum+r.overall,0);m.innerHTML=`<span class="eyebrow">Overview</span><h2>Dashboard</h2><a class="primary-btn view-store-btn" href="index.html" target="_blank" rel="noopener">View customer store</a><div class="cards"><div class="metric"><small>Total Products</small><h2>${ps.length}</h2></div><div class="metric"><small>Available</small><h2>${ps.filter(p=>p.is_available&&p.stock>0).length}</h2></div><div class="metric"><small>Sold Out</small><h2>${ps.filter(p=>!p.is_available||p.stock<=0).length}</h2></div><div class="metric"><small>Total Orders</small><h2>${os.length}</h2></div><button type="button" class="metric metric-action metric-money" id="openAllSales"><small>All Sales</small><h2>${money(salesTotal)}</h2><span class="metric-hint">View per-item breakdown</span></button></div>`;
   document.getElementById('openAllSales').onclick=openAllSalesModal;
 }
-async function uploadImage(file,bucket='product-images'){if(!file)return null;const ext=(file.name.split('.').pop()||'jpg').toLowerCase();const path=`${crypto.randomUUID()}.${ext}`;const {error}=await db.storage.from(bucket).upload(path,file,{upsert:false});if(error)throw error;return db.storage.from(bucket).getPublicUrl(path).data.publicUrl}
+/* Product and storefront images are usually picked straight from a phone camera,
+   where one photo is several megabytes - and that exact file was then served to
+   every customer on every visit. Downscale and re-encode in the browser first.
+   WebP is used so logos with transparency survive; if anything about the re-encode
+   fails, or it would not actually be smaller, the original file is uploaded. */
+const IMAGE_MAX_SIDE=1600, IMAGE_QUALITY=0.82, IMAGE_SKIP_BELOW=200*1024;
+async function compressImage(file){
+  if(!file.type?.startsWith('image/')||file.type==='image/gif'||file.type==='image/svg+xml')return file;
+  let bitmap;
+  try{bitmap=await createImageBitmap(file)}catch{return file}
+  const scale=Math.min(1,IMAGE_MAX_SIDE/Math.max(bitmap.width,bitmap.height));
+  if(scale===1&&file.size<=IMAGE_SKIP_BELOW){bitmap.close?.();return file}
+  const width=Math.max(1,Math.round(bitmap.width*scale));
+  const height=Math.max(1,Math.round(bitmap.height*scale));
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+  canvas.getContext('2d').drawImage(bitmap,0,0,width,height);
+  bitmap.close?.();
+  const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',IMAGE_QUALITY));
+  if(!blob||blob.size>=file.size)return file;
+  const base=(file.name||'image').replace(/\.[^.]+$/,'');
+  return new File([blob],`${base}.webp`,{type:'image/webp',lastModified:Date.now()});
+}
+async function uploadImage(file,bucket='product-images'){
+  if(!file)return null;
+  const prepared=await compressImage(file);
+  const ext=(prepared.name.split('.').pop()||'jpg').toLowerCase();
+  const path=`${crypto.randomUUID()}.${ext}`;
+  const {error}=await db.storage.from(bucket).upload(path,prepared,{upsert:false,contentType:prepared.type});
+  if(error)throw error;
+  return db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
 /* ---- Bulk selection, shared by Products and Orders -------------------------
    Selection lives outside the render so that re-drawing a list (a search keystroke
    on Orders, a reload after saving) keeps the ticks. The checkbox markup is always
