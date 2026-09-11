@@ -286,9 +286,9 @@ window.deleteOrder=async id=>{const o=A.data.orders.find(x=>x.id===id);if(!o)ret
    single conversation. Threads arrive with loadAll(); the messages of the open
    thread are fetched on demand and polled while this section is on screen. */
 function adminUnreadTotal(){return (A.data.threads||[]).reduce((n,t)=>n+Number(t.admin_unread||0),0)}
-const MSG={openId:null,messages:[],timer:null,loading:false};
+const MSG={openId:null,messages:[],timer:null,loading:false,sync:null};
 
-function stopMessagePolling(){clearInterval(MSG.timer);MSG.timer=null}
+function stopMessagePolling(){clearInterval(MSG.timer);MSG.timer=null;MSG.sync=null}
 
 async function loadThreadMessages(id,{silent}={}){
   if(!id)return;
@@ -323,9 +323,11 @@ function paintNavBadge(){
 
 function threadRowHtml(t){
   const when=new Date(t.last_message_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-  return `<button type="button" class="thread-row${MSG.openId===t.id?' active':''}" data-thread="${esc(t.id)}">
+  /* The checkbox sits beside the row button rather than inside it: a button may
+     not contain another interactive control. */
+  return `<div class="thread-item${MSG.openId===t.id?' active':''}">${bulkCheckboxHtml(t.id)}<button type="button" class="thread-row" data-thread="${esc(t.id)}">
     <span class="thread-row-top"><strong>${esc(t.customer_name||'Customer')}</strong>${t.admin_unread?`<span class="thread-unread">${t.admin_unread}</span>`:''}</span>
-    <span class="thread-row-sub">${esc(t.phone||'No phone on file')} · ${esc(when)}</span></button>`;
+    <span class="thread-row-sub">${esc(t.phone||'No phone on file')} · ${esc(when)}</span></button></div>`;
 }
 
 function paintThreadList(){
@@ -334,6 +336,7 @@ function paintThreadList(){
   const threads=A.data.threads||[];
   list.innerHTML=threads.length?threads.map(threadRowHtml).join(''):'<p class="muted" style="padding:14px">No customer messages yet.</p>';
   list.querySelectorAll('[data-thread]').forEach(b=>b.onclick=()=>openThread(b.dataset.thread));
+  MSG.sync?.();
 }
 
 function paintThread(){
@@ -382,10 +385,34 @@ async function refreshThreads(){
   if(MSG.openId)await loadThreadMessages(MSG.openId,{silent:true});
 }
 
+async function removeThreads(ids){
+  /* support_messages has on delete cascade, so removing the threads clears their
+     messages from the database in the same statement. */
+  const {error}=await db.from('support_threads').delete().in('id',ids);
+  if(error)throw error;
+  if(ids.includes(MSG.openId)){MSG.openId=null;MSG.messages=[]}
+}
+
+async function deleteAllThreads(){
+  const threads=A.data.threads||[];
+  if(!threads.length)return alert('There are no conversations to delete.');
+  if(!confirm(`Delete ALL ${threads.length} conversation${threads.length===1?'':'s'} and every message in them? This cannot be undone.`))return;
+  if(prompt('Type DELETE ALL MESSAGES to confirm:')!=='DELETE ALL MESSAGES')return alert('Delete All cancelled.');
+  try{
+    await removeThreads(threads.map(t=>t.id));
+    bulkReset();await loadAll();renderShell();
+    alert('All conversations and their messages have been deleted.');
+  }catch(err){console.error(err);alert(err.message||'Could not delete the conversations.')}
+}
+
 function messages(m){
-  m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Support</span><h2>Messages</h2></div></div>
+  m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Support</span><h2>Messages</h2></div>
+      <div class="row-actions"><button type="button" id="bulkToggle">Select</button><button type="button" class="danger-btn" id="deleteAllThreads">Delete All Messages</button></div></div>
+    ${bulkBarHtml()}
     <div class="thread-layout"><div class="panel thread-list" id="threadList"></div><div class="panel thread-view" id="threadView"></div></div>`;
   paintThreadList();paintThread();
+  document.getElementById('deleteAllThreads').onclick=deleteAllThreads;
+  MSG.sync=wireBulk('messages',document.getElementById('threadList'),'conversation',removeThreads);
   stopMessagePolling();
   MSG.timer=setInterval(()=>{if(!document.hidden&&A.section==='messages')refreshThreads()},12000);
 }

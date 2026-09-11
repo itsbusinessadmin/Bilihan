@@ -466,9 +466,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .nav-badge{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:8px;padding:0 6px;border-radius:999px;background:var(--admin-danger);color:#fff;font-size:.66rem;font-weight:800;font-variant-numeric:tabular-nums}
 .thread-layout{display:grid;grid-template-columns:minmax(240px,300px) minmax(0,1fr);gap:var(--admin-space-md);align-items:start}
 .thread-list{max-height:min(640px,calc(100dvh - 230px));overflow-y:auto;padding:var(--admin-space-xs)}
-.thread-row{display:flex;flex-direction:column;gap:3px;width:100%;padding:11px 12px;border:0;border-radius:12px;background:transparent;color:inherit;text-align:left;cursor:pointer}
-.thread-row:hover{background:var(--admin-soft)}
-.thread-row.active{background:color-mix(in srgb,var(--admin-green) 10%,transparent)}
+.thread-item{display:flex;align-items:center;gap:2px;border-radius:12px}
+.thread-item.active{background:color-mix(in srgb,var(--admin-green) 10%,transparent)}
+.thread-item:hover{background:var(--admin-soft)}
+.thread-item .row-select{padding-left:10px}
+.thread-row{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;padding:11px 12px;border:0;border-radius:12px;background:transparent;color:inherit;text-align:left;cursor:pointer}
 .thread-row-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .thread-row-sub{display:block;color:var(--admin-muted);font-size:var(--admin-text-caption);overflow-wrap:anywhere}
 .thread-unread{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--admin-danger);color:#fff;font-size:.66rem;font-weight:800}
@@ -490,3 +492,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   .thread-list{max-height:280px}
   .thread-view{height:min(520px,calc(100dvh - 260px))}
 }
+/* The thread list is not a table, so the generic select-mode rules do not reach it. */
+.thread-list.select-mode .row-select{display:inline-flex;align-items:center}
+.thread-list.select-mode .thread-item:has([data-pick]:checked){background:color-mix(in srgb,var(--admin-green) 12%,transparent)}
