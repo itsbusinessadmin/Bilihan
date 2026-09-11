@@ -201,21 +201,7 @@
     });
   };
 
-  const enhanceProductsPage = () => {
-    const page = document.querySelector('.products-page');
-    if (!page || page.querySelector('.fast-entry-toolbar')) return;
-    const header = page.querySelector('.products-page-header');
-    if (!header) return;
-
-    const bar = document.createElement('div');
-    bar.className = 'fast-entry-toolbar';
-    bar.innerHTML = '<div><strong>Fast Entry Mode</strong><br><small>Your last category, stock and interest are remembered automatically.</small></div><span class="fast-entry-shortcut">Cmd/Ctrl + Enter = Save</span>';
-    header.insertAdjacentElement('afterend', bar);
-  };
-
   const observer = new MutationObserver(() => {
-    enhanceProductsPage();
-
     const modal = document.getElementById('addProductModal');
     if (modal) enhanceModal(modal);
 
@@ -232,5 +218,4 @@
   });
 
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  enhanceProductsPage();
 })();

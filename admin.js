@@ -1,10 +1,55 @@
 const GOOGLE_SHEETS_WEB_APP_URL = (window.BILIHAN_CONFIG||{}).GOOGLE_SHEETS_WEB_APP_URL || '';
 const A={section:'dashboard',session:null,orderFilter:'all',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 function configured(){return !!window.BILIHAN_SUPABASE_CONFIGURED}
-async function isAdmin(){if(!A.session)return false;const {data,error}=await db.rpc('is_admin');return !error&&data===true}
-async function init(){if(!configured()){renderSetup();return}const {data:{session}}=await db.auth.getSession();A.session=session;if(!session){renderLogin();return}if(!(await isAdmin())){await db.auth.signOut();A.session=null;renderLogin('This account is not listed as a Bilihan admin.');return}await loadAll();renderShell()}
+/* The Supabase client stores the session in this browser (persistSession), so a
+   device that has signed in once stays signed in until Log Out is used.
+
+   Only a definite "you are not an admin" answer may tear that down. A network
+   failure must never sign the device out: signOut() deletes the stored refresh
+   token, so treating one unreachable request as "not an admin" loses the saved
+   session permanently and forces a fresh login.
+
+   Returns 'yes' | 'no' | 'unknown'. */
+async function adminStatus(){
+  if(!A.session)return 'no';
+  for(let attempt=0;attempt<2;attempt++){
+    const {data,error}=await db.rpc('is_admin');
+    if(!error)return data===true?'yes':'no';
+    console.warn('Bilihan admin: could not verify admin access',error);
+    if(attempt===0)await new Promise(r=>setTimeout(r,700));
+  }
+  return 'unknown';
+}
+async function isAdmin(){return (await adminStatus())==='yes'}
+
+function renderRestoring(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Signing you in…</h2><p class="muted">Restoring your session on this device.</p></div></div>`}
+
+/* Reached when the database is unreachable. The session stays saved, so this is a
+   retry screen rather than a login screen. */
+function renderReconnect(message){
+  const email=A.session?.user?.email||'';
+  app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Can't reach the database</h2><div class="status-banner">${esc(message||'We could not load your admin data.')}</div><p class="muted">You are still signed in on this device${email?` as ${esc(email)}`:''}.</p><button type="button" class="primary-btn" id="retryAdmin">Try Again</button><button type="button" class="secondary-btn" id="signOutAdmin">Log Out</button></div></div>`;
+  document.getElementById('retryAdmin').onclick=()=>{init().catch(err=>renderReconnect(err?.message))};
+  document.getElementById('signOutAdmin').onclick=async()=>{await db.auth.signOut();A.session=null;renderLogin()};
+}
+
+async function init(){
+  if(!configured()){renderSetup();return}
+  renderRestoring();
+  let session=null;
+  try{const {data}=await db.auth.getSession();session=data?.session||null}
+  catch(err){console.warn('Bilihan admin: could not read the stored session',err)}
+  A.session=session;
+  if(!session){renderLogin();return}
+  const status=await adminStatus();
+  if(status==='no'){await db.auth.signOut();A.session=null;renderLogin('This account is not listed as a Bilihan admin.');return}
+  if(status==='unknown'){renderReconnect('We could not confirm your admin access right now.');return}
+  try{await loadAll()}
+  catch(err){console.error(err);renderReconnect(err?.message);return}
+  renderShell();
+}
 function renderSetup(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-logo.png" style="width:90px;border-radius:50%"><span class="eyebrow">Bilihan v3</span><h2>Connect Supabase</h2><p>Edit <strong>config.js</strong> once and paste your Supabase Project URL and anon public key, then reload this page.</p><p class="muted">Never paste a service_role key into the website.</p></div></div>`}
-function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-logo.png" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button class="primary-btn">Sign In</button></form></div>`;document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword(d);if(error)return renderLogin(error.message);A.session=data.session;if(!(await isAdmin())){await db.auth.signOut();return renderLogin('This account is not listed as a Bilihan admin.')}await loadAll();renderShell()}}
+function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword(d);if(error)return renderLogin(error.message);A.session=data.session;const status=await adminStatus();if(status==='no'){await db.auth.signOut();A.session=null;return renderLogin('This account is not listed as a Bilihan admin.')}if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');try{await loadAll()}catch(err){console.error(err);return renderReconnect(err?.message)}renderShell()}}
 async function loadAll(){const [p,c,o,s]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single()]);for(const r of [p,c,o,s])if(r.error)throw r.error;A.data={products:p.data,categories:c.data,orders:o.data,settings:s.data}}
 function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="bilihan-logo.png"><div><strong>Bilihan</strong><small style="display:block">ADMIN</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['settings','Store Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,settings,appearance,security}[A.section]||dashboard)(m)}
 function dashboard(m){const ps=A.data.products,os=A.data.orders;m.innerHTML=`<span class="eyebrow">Overview</span><h2>Dashboard</h2><div class="cards"><div class="metric"><small>Total Products</small><h2>${ps.length}</h2></div><div class="metric"><small>Available</small><h2>${ps.filter(p=>p.is_available&&p.stock>0).length}</h2></div><div class="metric"><small>Sold Out</small><h2>${ps.filter(p=>!p.is_available||p.stock<=0).length}</h2></div><div class="metric"><small>Total Orders</small><h2>${os.length}</h2></div></div><div class="panel"><h3>Live Supabase control center</h3><p>Products, categories, orders, images, stock and storefront settings now save to Supabase. Normal business changes no longer require editing GitHub code.</p></div>`}
@@ -291,5 +336,13 @@ function settings(m){
 }
 
 function appearance(m){const s=A.data.settings;let heroItems=(s.hero_images||[]).map(url=>({id:crypto.randomUUID(),url,file:null}));m.innerHTML=`<span class="eyebrow">Storefront content</span><h2>Appearance</h2><form id="appearanceForm" class="panel admin-form"><label>Store Logo${s.logo_url?` <img src="${esc(s.logo_url)}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`:` <img src="bilihan-logo.png" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`}<input name="logo_file" type="file" accept="image/*"></label><label>Hero title<input name="hero_title" value="${esc(s.hero_title||'')}"></label><label>Hero tagline<textarea name="hero_tagline">${esc(s.hero_tagline||'')}</textarea></label><label>Hero images<small class="muted" style="display:block;font-weight:400;margin:2px 0 8px">Best size 1600×1200px (4:3 ratio). Tap the + tile to add an image, tap × to remove one.</small><div id="heroSlotsWrap" class="hero-slots-grid"></div></label><label>About text<textarea name="about_text" rows="6">${esc(s.about_text||'')}</textarea></label><label>About image<input name="about_file" type="file" accept="image/*"></label><input name="about_image_url" value="${esc(s.about_image_url||'')}" placeholder="Or About image URL"><button class="primary-btn">Save Appearance</button></form>`;const wrap=document.getElementById('heroSlotsWrap');function renderHeroSlots(){wrap.innerHTML=heroItems.map((it,i)=>`<div class="hero-slot" data-id="${it.id}"><img src="${esc(it.file?URL.createObjectURL(it.file):it.url)}" alt="Hero image ${i+1}"><button type="button" class="hero-slot-remove" data-id="${it.id}" aria-label="Remove hero image ${i+1}" title="Remove">×</button></div>`).join('')+`<label class="hero-add-slot" title="Add hero image"><span>+</span><input type="file" accept="image/*" id="heroAddInput"></label>`;wrap.querySelectorAll('.hero-slot-remove').forEach(btn=>btn.onclick=()=>{heroItems=heroItems.filter(x=>x.id!==btn.dataset.id);renderHeroSlots()});document.getElementById('heroAddInput').onchange=ev=>{const f=ev.target.files[0];if(!f)return;heroItems.push({id:crypto.randomUUID(),url:null,file:f});renderHeroSlots()}}renderHeroSlots();document.getElementById('appearanceForm').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);let logo=s.logo_url||null;let about=String(fd.get('about_image_url')||'');const logoFile=fd.get('logo_file');const aboutFile=fd.get('about_file');try{if(logoFile&&logoFile.size)logo=await uploadImage(logoFile,'store-assets');if(aboutFile&&aboutFile.size)about=await uploadImage(aboutFile,'store-assets');const heroUrls=[];for(const it of heroItems){if(it.file){heroUrls.push(await uploadImage(it.file,'store-assets'))}else if(it.url){heroUrls.push(it.url)}}const row={logo_url:logo,hero_title:fd.get('hero_title'),hero_tagline:fd.get('hero_tagline'),hero_images:heroUrls,about_text:fd.get('about_text'),about_image_url:about};const {error}=await db.from('store_settings').update(row).eq('id',1);if(error)throw error;await loadAll();alert('Appearance saved.');renderShell()}catch(err){alert(err.message)}}}
-function security(m){m.innerHTML=`<span class="eyebrow">Access</span><h2>Security</h2><div class="panel"><p><strong>Signed in as:</strong> ${esc(A.session.user.email)}</p><p>Admin access is protected by Supabase Auth and the <code>admin_users</code> table. Your service-role key is never exposed to the browser.</p></div><div class="panel"><button class="danger-btn" id="logout">Log Out</button></div>`;document.getElementById('logout').onclick=async()=>{await db.auth.signOut();A.session=null;renderLogin()}}
+function security(m){m.innerHTML=`<span class="eyebrow">Access</span><h2>Security</h2><div class="panel"><p><strong>Signed in as:</strong> ${esc(A.session.user.email)}</p><p>Admin access is protected by Supabase Auth and the <code>admin_users</code> table. Your service-role key is never exposed to the browser.</p></div><div class="panel"><h3>This device</h3><p>You stay signed in on this browser, so you do not have to enter your password each visit. Anyone who can use this browser profile can therefore open Admin — log out below when you are on a shared or public computer.</p><button class="danger-btn" id="logout">Log Out</button></div>`;document.getElementById('logout').onclick=async()=>{await db.auth.signOut();A.session=null;renderLogin()}}
+/* Keep A.session in step with background token refreshes, and follow a sign-out
+   that happened in another tab. */
+if(window.db){
+  db.auth.onAuthStateChange((event,session)=>{
+    A.session=session||null;
+    if(event==='SIGNED_OUT'&&!A.session)renderLogin();
+  });
+}
 init().catch(e=>{console.error(e);app.innerHTML=`<div class="login-wrap"><div class="login-card"><h2>Bilihan Admin</h2><p>${esc(e.message)}</p></div></div>`});
