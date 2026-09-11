@@ -430,3 +430,34 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 }
 .admin-form .form-hint{margin:-4px 0 var(--admin-space-md);color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:500}
 .order-cancelled-tag{white-space:nowrap}
+
+/* ---- Bulk selection (Products and Orders) ---- */
+.row-select{display:none}
+.row-select input{width:20px;height:20px;min-height:0;margin:0;accent-color:var(--admin-green);cursor:pointer}
+.select-mode .row-select{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+/* Desktop: the tick sits inline at the head of the first cell. */
+.select-mode .table td:first-child{display:flex;align-items:center;gap:10px}
+.bulk-bar{display:flex;align-items:center;flex-wrap:wrap;gap:var(--admin-space-md);margin-bottom:var(--admin-space-md);padding:var(--admin-space-sm) var(--admin-space-lg);background:var(--admin-soft);border:1px solid var(--admin-line-strong);border-radius:var(--admin-radius)}
+.bulk-bar label{display:flex;align-items:center;gap:10px;min-height:44px;margin:0;font-weight:660;cursor:pointer}
+.bulk-bar label input{width:20px;height:20px;min-height:0;margin:0;accent-color:var(--admin-green);cursor:pointer}
+.bulk-count{color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:700}
+.bulk-bar .row-actions{margin-left:auto}
+
+@media(max-width:760px){
+  /* The rows are stacked cards here, and their first cell is a label/value grid,
+     so an inline tick would land in the wrong grid slot. Pin it to the card. */
+  .select-mode .table td:first-child{display:grid}
+  /* .select-mode lands ON .products-page / #orderList, so the tr rule has to be a
+     plain descendant of it - nesting them made this selector match nothing and the
+     ticks positioned against a shared ancestor, stacking on top of each other. */
+  .select-mode .table tr{position:relative;padding-right:46px}
+  .select-mode .row-select{position:absolute;top:12px;right:12px;z-index:1}
+  .bulk-bar{padding:var(--admin-space-sm) var(--admin-space-md)}
+  .bulk-bar .row-actions{width:100%;margin-left:0}
+  .bulk-bar .row-actions>*{flex:1}
+}
+/* .row-actions button outranks .danger-btn, so restate it for the bulk bar. */
+.bulk-bar .row-actions .danger-btn{border:1px solid color-mix(in srgb,var(--admin-danger) 28%,var(--admin-line));background:var(--danger-tint,color-mix(in srgb,var(--admin-card) 92%,var(--admin-danger) 8%));color:var(--admin-danger);font-weight:700}
+.bulk-bar .row-actions .danger-btn:disabled{opacity:.5;cursor:not-allowed}
+/* Selected rows read at a glance. Progressive: browsers without :has() just skip it. */
+.select-mode .table tbody tr:has([data-pick]:checked){background:color-mix(in srgb,var(--admin-green) 7%,transparent)}
