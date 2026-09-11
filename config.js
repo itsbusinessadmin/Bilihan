@@ -25,5 +25,14 @@ window.BILIHAN_CONFIG = {
      Plausible:  { provider: 'plausible', domain: 'bilihan.shop' }
      Umami:      { provider: 'umami', src: 'https://your-umami/script.js', websiteId: 'uuid' }
      Google GA4: { provider: 'ga4', id: 'G-XXXXXXXXXX' }                                   */
-  ANALYTICS: null
+  ANALYTICS: null,
+
+  /* Plan limits shown on the Security tab's capacity bars. These are the Supabase
+     free-tier figures at the time of writing — check your own plan and update them
+     if they differ, because nothing can read your plan from the browser. */
+  USAGE_LIMITS: {
+    plan_label: 'Supabase Free',
+    database_mb: 500,
+    storage_mb: 1024
+  }
 };

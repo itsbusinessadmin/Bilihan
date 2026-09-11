@@ -592,7 +592,148 @@ function settings(m){
 }
 
 function appearance(m){const s=A.data.settings;let heroItems=(s.hero_images||[]).map(url=>({id:crypto.randomUUID(),url,file:null}));m.innerHTML=`<span class="eyebrow">Storefront content</span><h2>Appearance</h2><form id="appearanceForm" class="panel admin-form"><label>Store Logo${s.logo_url?` <img src="${esc(s.logo_url)}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`:` <img src="bilihan-logo.png" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`}<input name="logo_file" type="file" accept="image/*"></label><label>Hero title<input name="hero_title" value="${esc(s.hero_title||'')}"></label><label>Hero tagline<textarea name="hero_tagline">${esc(s.hero_tagline||'')}</textarea></label><label>Hero images<small class="muted" style="display:block;font-weight:400;margin:2px 0 8px">Best size 1600×1200px (4:3 ratio). Tap the + tile to add an image, tap × to remove one.</small><div id="heroSlotsWrap" class="hero-slots-grid"></div></label><label>About text<textarea name="about_text" rows="6">${esc(s.about_text||'')}</textarea></label><label>About image<input name="about_file" type="file" accept="image/*"></label><input name="about_image_url" value="${esc(s.about_image_url||'')}" placeholder="Or About image URL"><button class="primary-btn">Save Appearance</button></form>`;const wrap=document.getElementById('heroSlotsWrap');function renderHeroSlots(){wrap.innerHTML=heroItems.map((it,i)=>`<div class="hero-slot" data-id="${it.id}"><img src="${esc(it.file?URL.createObjectURL(it.file):it.url)}" alt="Hero image ${i+1}"><button type="button" class="hero-slot-remove" data-id="${it.id}" aria-label="Remove hero image ${i+1}" title="Remove">×</button></div>`).join('')+`<label class="hero-add-slot" title="Add hero image"><span>+</span><input type="file" accept="image/*" id="heroAddInput"></label>`;wrap.querySelectorAll('.hero-slot-remove').forEach(btn=>btn.onclick=()=>{heroItems=heroItems.filter(x=>x.id!==btn.dataset.id);renderHeroSlots()});document.getElementById('heroAddInput').onchange=ev=>{const f=ev.target.files[0];if(!f)return;heroItems.push({id:crypto.randomUUID(),url:null,file:f});renderHeroSlots()}}renderHeroSlots();document.getElementById('appearanceForm').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);let logo=s.logo_url||null;let about=String(fd.get('about_image_url')||'');const logoFile=fd.get('logo_file');const aboutFile=fd.get('about_file');try{if(logoFile&&logoFile.size)logo=await uploadImage(logoFile,'store-assets');if(aboutFile&&aboutFile.size)about=await uploadImage(aboutFile,'store-assets');const heroUrls=[];for(const it of heroItems){if(it.file){heroUrls.push(await uploadImage(it.file,'store-assets'))}else if(it.url){heroUrls.push(it.url)}}const row={logo_url:logo,hero_title:fd.get('hero_title'),hero_tagline:fd.get('hero_tagline'),hero_images:heroUrls,about_text:fd.get('about_text'),about_image_url:about};const {error}=await db.from('store_settings').update(row).eq('id',1);if(error)throw error;await loadAll();alert('Appearance saved.');renderShell()}catch(err){alert(err.message)}}}
-function security(m){m.innerHTML=`<span class="eyebrow">Access</span><h2>Security</h2><div class="panel"><p><strong>Signed in as:</strong> ${esc(A.session.user.email)}</p><p>Admin access is protected by Supabase Auth and the <code>admin_users</code> table. Your service-role key is never exposed to the browser.</p></div><div class="panel"><h3>This device</h3><p>You stay signed in on this browser, so you do not have to enter your password each visit. Anyone who can use this browser profile can therefore open Admin — log out below when you are on a shared or public computer.</p><button class="danger-btn" id="logout">Log Out</button></div>`;document.getElementById('logout').onclick=async()=>{await db.auth.signOut();A.session=null;renderLogin()}}
+/* ---- Capacity and latency (Security tab) ------------------------------------
+   Sizes come from admin_usage(), which reads pg_database_size and the storage
+   objects table, so the numbers are the real ones rather than an estimate.
+   Plan limits are not readable from the browser, so they come from config.js. */
+const LIMITS=Object.assign({plan_label:'Supabase Free',database_mb:500,storage_mb:1024},(window.BILIHAN_CONFIG||{}).USAGE_LIMITS||{});
+const USAGE={data:null,latency:null,loading:false};
+
+function fmtBytes(n){
+  const b=Number(n||0);
+  if(b<1024)return b+' B';
+  if(b<1048576)return (b/1024).toFixed(1)+' KB';
+  if(b<1073741824)return (b/1048576).toFixed(1)+' MB';
+  return (b/1073741824).toFixed(2)+' GB';
+}
+function meterHtml(label,used,limitBytes,hint){
+  const pct=limitBytes?Math.min(100,(used/limitBytes)*100):0;
+  const level=pct>=90?'danger':pct>=70?'warn':'ok';
+  return `<div class="usage-meter usage-${level}">
+    <div class="usage-meter-top"><strong>${esc(label)}</strong><span>${esc(fmtBytes(used))} of ${esc(fmtBytes(limitBytes))} · ${pct.toFixed(1)}%</span></div>
+    <div class="usage-bar"><span style="width:${pct.toFixed(2)}%"></span></div>
+    ${hint?`<p class="usage-hint">${esc(hint)}</p>`:''}</div>`;
+}
+
+/* Median of a few round trips, so one slow sample does not define the number. */
+async function timeCall(fn,samples=3){
+  const runs=[];
+  for(let i=0;i<samples;i++){
+    const t0=performance.now();
+    try{await fn()}catch{ return null }
+    runs.push(performance.now()-t0);
+  }
+  runs.sort((a,b)=>a-b);
+  return Math.round(runs[Math.floor(runs.length/2)]);
+}
+async function measureLatency(){
+  const database=await timeCall(()=>db.rpc('is_admin'));
+  const storage=await timeCall(()=>db.storage.from('product-images').list('',{limit:1}),2);
+  let sheet=null;
+  if(GOOGLE_SHEETS_WEB_APP_URL){
+    sheet=await timeCall(()=>fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'ping'})}),1);
+  }
+  return {database,storage,sheet};
+}
+function latencyRow(label,ms,note){
+  if(ms===null||ms===undefined)return `<tr><td>${esc(label)}</td><td>—</td><td><span class="usage-pill">unreachable</span></td></tr>`;
+  const level=ms<250?'ok':ms<700?'warn':'danger';
+  const word=ms<250?'fast':ms<700?'ok':'slow';
+  return `<tr><td>${esc(label)}${note?`<br><small class="muted">${esc(note)}</small>`:''}</td><td><strong>${ms<1?'<1':ms} ms</strong></td><td><span class="usage-pill usage-${level}">${word}</span></td></tr>`;
+}
+
+async function loadUsage(){
+  USAGE.loading=true;
+  try{
+    const [{data,error},latency]=await Promise.all([db.rpc('admin_usage'),measureLatency()]);
+    USAGE.latency=latency;
+    if(error)throw error;
+    USAGE.data=data?.ok?data:{error:data?.error||'Usage is unavailable.'};
+  }catch(err){
+    console.error('Bilihan admin: usage unavailable',err);
+    USAGE.data={error:/could not find the function|does not exist/i.test(err?.message||'')
+      ? 'Usage reporting is not installed yet. Run supabase-setup.sql in Supabase.'
+      : (err?.message||'Usage is unavailable.')};
+  }finally{
+    USAGE.loading=false;
+    if(A.section==='security')paintUsage();
+  }
+}
+
+function paintUsage(){
+  const host=document.getElementById('usagePanels');
+  if(!host)return;
+  if(USAGE.loading&&!USAGE.data){host.innerHTML='<p class="muted">Measuring…</p>';return}
+  const u=USAGE.data;
+  const lat=USAGE.latency||{};
+  const latencyBlock=`<div class="panel"><h3>Response time</h3>
+    <div class="table-wrap"><table class="table"><thead><tr><th>Service</th><th>Round trip</th><th></th></tr></thead><tbody>
+      ${latencyRow('Supabase database',lat.database)}
+      ${latencyRow('Supabase file storage',lat.storage)}
+      ${GOOGLE_SHEETS_WEB_APP_URL?latencyRow('Google Apps Script',lat.sheet,'approximate: the browser cannot read this response'):''}
+    </tbody></table></div>
+    <p class="usage-hint">Median of repeated calls from this device, so it reflects your connection as well as the service.</p></div>`;
+
+  if(!u||u.error){
+    host.innerHTML=`<div class="panel"><h3>Storage</h3><div class="status-banner">${esc(u?.error||'Usage is unavailable.')}</div></div>`+latencyBlock;
+    return;
+  }
+
+  const dbLimit=LIMITS.database_mb*1048576;
+  const stLimit=LIMITS.storage_mb*1048576;
+  const storageBytes=(u.storage||[]).reduce((n,b)=>n+Number(b.bytes||0),0);
+  const storageFiles=(u.storage||[]).reduce((n,b)=>n+Number(b.files||0),0);
+  const exact=u.tables?.exact||{};
+  const tables=u.tables?.list||[];
+
+  host.innerHTML=`
+    <div class="panel"><div class="usage-head"><h3>Capacity</h3><span class="muted">${esc(LIMITS.plan_label)}</span></div>
+      ${meterHtml('Database',u.database_bytes,dbLimit,'Rows, indexes and the database itself. Orders, order items and messages are what grow.')}
+      ${meterHtml('File storage',storageBytes,stLimit,`${storageFiles} uploaded file${storageFiles===1?'':'s'} across ${ (u.storage||[]).length } bucket${(u.storage||[]).length===1?'':'s'}. Product and hero images.`)}
+      <p class="usage-hint">Limits come from <code>config.js</code>. Your plan cannot be read from the browser, so check them against your Supabase plan.</p>
+    </div>
+
+    <div class="panel"><h3>What is taking the space</h3>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Table</th><th>Rows</th><th>Size</th></tr></thead><tbody>
+        ${tables.map(t=>`<tr><td>${esc(t.name)}</td><td>${Number(t.rows||0).toLocaleString()}</td><td>${esc(fmtBytes(t.bytes))}</td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="usage-hint">Exact counts — orders ${Number(exact.orders||0).toLocaleString()}, order items ${Number(exact.order_items||0).toLocaleString()}, conversations ${Number(exact.support_threads||0).toLocaleString()}, messages ${Number(exact.support_messages||0).toLocaleString()}. Prune from Orders and Messages; deleting a conversation removes its messages too.</p>
+    </div>
+
+    ${(u.storage||[]).length?`<div class="panel"><h3>Uploaded files</h3>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Bucket</th><th>Files</th><th>Size</th></tr></thead><tbody>
+        ${(u.storage||[]).map(b=>`<tr><td>${esc(b.bucket)}</td><td>${Number(b.files||0).toLocaleString()}</td><td>${esc(fmtBytes(b.bytes))}</td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="usage-hint">Images are compressed on upload, so these should stay small. Deleting a product does not delete its image file.</p></div>`:''}
+
+    ${latencyBlock}
+
+    <div class="panel"><h3>Not measurable from here</h3>
+      <ul class="usage-list">
+        <li><strong>Bandwidth / egress</strong> — Supabase does not expose this to the browser. Check Supabase → Reports.</li>
+        <li><strong>Google Drive space</strong> used by payment receipts — check your Google account storage.</li>
+        <li><strong>Project pausing</strong> — free Supabase projects pause after a week with no activity.</li>
+      </ul>
+    </div>`;
+}
+
+function security(m){
+  m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Access</span><h2>Security &amp; storage</h2></div>
+      <button type="button" id="refreshUsage">Refresh</button></div>
+    <div class="panel"><p><strong>Signed in as:</strong> ${esc(A.session.user.email)}</p>
+      <p>Admin access is protected by Supabase Auth and the <code>admin_users</code> table. Your service-role key is never exposed to the browser.</p></div>
+    <div id="usagePanels"><p class="muted">Measuring…</p></div>
+    <div class="panel"><h3>This device</h3>
+      <p>You stay signed in on this browser, so you do not have to enter your password each visit. Anyone who can use this browser profile can therefore open Admin — log out below when you are on a shared or public computer.</p>
+      <button class="danger-btn" id="logout">Log Out</button></div>`;
+  document.getElementById('logout').onclick=async()=>{await db.auth.signOut();A.session=null;renderLogin()};
+  document.getElementById('refreshUsage').onclick=()=>{USAGE.data=null;paintUsage();loadUsage()};
+  if(USAGE.data)paintUsage();
+  loadUsage();
+}
+
+function appearance(m){const s=A.data.settings;let heroItems=(s.hero_images||[]).map(url=>({id:crypto.randomUUID(),url,file:null}));m.innerHTML=`<span class="eyebrow">Storefront content</span><h2>Appearance</h2><form id="appearanceForm" class="panel admin-form"><label>Store Logo${s.logo_url?` <img src="${esc(s.logo_url)}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`:` <img src="bilihan-logo.png" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`}<input name="logo_file" type="file" accept="image/*"></label><label>Hero title<input name="hero_title" value="${esc(s.hero_title||'')}"></label><label>Hero tagline<textarea name="hero_tagline">${esc(s.hero_tagline||'')}</textarea></label><label>Hero images<small class="muted" style="display:block;font-weight:400;margin:2px 0 8px">Best size 1600×1200px (4:3 ratio). Tap the + tile to add an image, tap × to remove one.</small><div id="heroSlotsWrap" class="hero-slots-grid"></div></label><label>About text<textarea name="about_text" rows="6">${esc(s.about_text||'')}</textarea></label><label>About image<input name="about_file" type="file" accept="image/*"></label><input name="about_image_url" value="${esc(s.about_image_url||'')}" placeholder="Or About image URL"><button class="primary-btn">Save Appearance</button></form>`;const wrap=document.getElementById('heroSlotsWrap');function renderHeroSlots(){wrap.innerHTML=heroItems.map((it,i)=>`<div class="hero-slot" data-id="${it.id}"><img src="${esc(it.file?URL.createObjectURL(it.file):it.url)}" alt="Hero image ${i+1}"><button type="button" class="hero-slot-remove" data-id="${it.id}" aria-label="Remove hero image ${i+1}" title="Remove">×</button></div>`).join('')+`<label class="hero-add-slot" title="Add hero image"><span>+</span><input type="file" accept="image/*" id="heroAddInput"></label>`;wrap.querySelectorAll('.hero-slot-remove').forEach(btn=>btn.onclick=()=>{heroItems=heroItems.filter(x=>x.id!==btn.dataset.id);renderHeroSlots()});document.getElementById('heroAddInput').onchange=ev=>{const f=ev.target.files[0];if(!f)return;heroItems.push({id:crypto.randomUUID(),url:null,file:f});renderHeroSlots()}}renderHeroSlots();document.getElementById('appearanceForm').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);let logo=s.logo_url||null;let about=String(fd.get('about_image_url')||'');const logoFile=fd.get('logo_file');const aboutFile=fd.get('about_file');try{if(logoFile&&logoFile.size)logo=await uploadImage(logoFile,'store-assets');if(aboutFile&&aboutFile.size)about=await uploadImage(aboutFile,'store-assets');const heroUrls=[];for(const it of heroItems){if(it.file){heroUrls.push(await uploadImage(it.file,'store-assets'))}else if(it.url){heroUrls.push(it.url)}}const row={logo_url:logo,hero_title:fd.get('hero_title'),hero_tagline:fd.get('hero_tagline'),hero_images:heroUrls,about_text:fd.get('about_text'),about_image_url:about};const {error}=await db.from('store_settings').update(row).eq('id',1);if(error)throw error;await loadAll();alert('Appearance saved.');renderShell()}catch(err){alert(err.message)}}}
 /* Keep A.session in step with background token refreshes, and follow a sign-out
    that happened in another tab. */
 if(window.db){

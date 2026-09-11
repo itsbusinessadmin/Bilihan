@@ -260,6 +260,31 @@ New messages appear within about 4 seconds while the chat is open (Supabase
 Realtime would make it instant and can be layered on later without changing the
 schema).
 
+## Capacity and latency (Admin → Security)
+
+The Security tab reports what is actually filling your free tier, so you can see
+what to prune before you hit a limit.
+
+- **Database and file storage bars**, with warning colours from 70% and red from 90%.
+- **Per-table sizes and row counts**, so you can see whether orders, order items or
+  chat messages are the thing growing.
+- **Round-trip times** to the Supabase database, Supabase file storage, and your
+  Apps Script endpoint — median of repeated calls, so it measures your connection
+  as well as the service.
+
+Sizes come from `pg_database_size` and the storage objects table through the
+admin-only `admin_usage()` function, so they are real figures rather than
+estimates. **Run `supabase-setup.sql` again** to install that function.
+
+Plan limits live in `config.js` under `USAGE_LIMITS` — nothing can read your plan
+from the browser, so check them against your own Supabase plan and edit if they
+differ.
+
+Three things genuinely cannot be measured from a browser, and the tab says so
+rather than inventing numbers: **bandwidth/egress** (Supabase → Reports),
+**Google Drive space** used by payment receipts, and **project pausing** (free
+projects pause after a week of inactivity).
+
 ## Spam protection
 
 The checkout form has three client-side deterrents: a honeypot field no human can see, a minimum
