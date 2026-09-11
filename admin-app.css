@@ -341,6 +341,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .metric-action{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s var(--admin-ease-out),box-shadow .15s var(--admin-ease-out),transform .15s var(--admin-ease-out)}
 .metric-action:hover{border-color:var(--admin-green);box-shadow:var(--admin-shadow-lg)}
 .metric-action:active{transform:scale(.99)}
+/* A peso total is much longer than the plain counts in the other cards, so let it
+   scale down instead of wrapping mid-number. */
+.metric-action h2{font-size:clamp(1.25rem,2vw,var(--admin-text-metric))}
 .metric-hint{display:block;margin-top:8px;color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:640}
 .admin-modal-wide{width:min(920px,100%)}
 .sales-table td:nth-child(n+2),.sales-table th:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums}
