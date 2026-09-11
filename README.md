@@ -224,6 +224,16 @@ Admin sees one thread per customer rather than one per order.
 Replies are in **Admin → Messages**, which carries an unread count in the sidebar.
 The customer's button carries its own unread badge.
 
+The chat opens with a greeting that uses the name on the order — "Hi, Maria Santos
+— how can we help you today?". It is drawn in the browser rather than stored as a
+message, so it costs no database rows and appears on every visit.
+
+**Self-service cancellation has been removed.** The My Order dialog offers Copy
+Order Number, Message us, and Continue Shopping; a customer who wants to change or
+cancel now talks to you in the chat, and you cancel from Admin. The `cancel_order`
+function is still in the database, and a cancellation a customer had already queued
+offline before this change still goes through on their next visit.
+
 **Run the schema again** (`supabase-setup.sql`) to create the chat tables and
 functions — the new statements are all `if not exists` / `create or replace`, so
 re-running the whole file is safe.

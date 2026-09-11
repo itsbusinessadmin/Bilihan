@@ -111,12 +111,16 @@
     input.focus();
   }
 
+  function greetingHtml() {
+    const name = state.session?.name;
+    const who = name && name !== 'Customer' ? `Hi, ${esc(name)}` : 'Hi there';
+    return `<div class="support-msg support-msg-admin support-greeting"><p>${who} — how can we help you today?</p></div>`;
+  }
+
   function paintMessages() {
     const log = root.querySelector('#supportLog');
     if (!log) return;
-    log.innerHTML = state.messages.length
-      ? state.messages.map(bubbleHtml).join('')
-      : '<p class="support-empty">No messages yet. Ask us anything about your order.</p>';
+    log.innerHTML = greetingHtml() + state.messages.map(bubbleHtml).join('');
     log.scrollTop = log.scrollHeight;
   }
 
