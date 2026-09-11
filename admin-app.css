@@ -370,3 +370,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 /* The Orders summary cards sit beside the heading; let them take the rest of the
    row and fall back to the responsive .cards grid instead of a fixed flex row. */
 .orders-cards{flex:1 1 420px;min-width:0;margin-bottom:0}
+/* Link from Admin out to the live storefront. Opens in a new tab so the admin
+   page, and anything half-typed on it, stays put. */
+.view-store-btn{margin:var(--admin-space-md) 0 var(--admin-space-lg);text-decoration:none}
+.view-store-btn::after{content:"↗";margin-left:2px;font-weight:700}
