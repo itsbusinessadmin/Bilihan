@@ -342,7 +342,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .row-actions button[title="Move up"]::before,.row-actions button[title="Move down"]::before{width:15px;height:15px;flex-basis:15px}
 
 #orderSearch{padding-left:42px!important;background-color:var(--admin-card)!important;background-repeat:no-repeat!important;background-position:14px center!important;background-size:16px 16px!important;background-image:url("ios-icons/search.png")!important}
-[data-theme="dark"] #orderSearch{background-image:url("ios-icons/search-light.png")!important}
 
 /* ---- All Sales card + report ---- */
 .metric-action{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:border-color .15s var(--admin-ease-out),box-shadow .15s var(--admin-ease-out),transform .15s var(--admin-ease-out)}
