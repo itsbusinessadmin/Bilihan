@@ -303,9 +303,19 @@ Google Drive through the Apps Script, with `mode: 'no-cors'`, so the browser
 never receives the Drive URL and nothing in the database points at the file.
 
 The button therefore asks the Apps Script to resolve the order code and redirect.
-That needs one addition to your Apps Script, which is in
-`google-apps-script/receipt-endpoint.gs` along with install steps. Until you add
-it, the button still appears but the new tab shows an Apps Script error.
+`google-apps-script/Code.gs` is the complete script including that route: select
+everything in the Apps Script editor, delete it, paste that file in, then
+Deploy > Manage deployments > New version. The `/exec` URL does not change, so
+`config.js` needs no edit. Until you do this the button still appears but the
+new tab shows an Apps Script error.
+
+Replace the whole file rather than pasting the new route in beside the old one.
+Every `.gs` file in a project shares one global scope, so a second `doGet`,
+`RECEIPT_FOLDER_ID` or `jsonResponse` is a "has already been declared" error
+that stops the entire script — order sync and receipt uploads included.
+
+`testFindReceipt()` in that file checks the Drive lookup from the editor,
+without deploying.
 
 The endpoint only redirects; it never changes a receipt's sharing. Drive decides
 who may look, so signed in as the account that owns the receipts folder you see

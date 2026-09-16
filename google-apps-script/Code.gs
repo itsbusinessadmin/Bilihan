@@ -1,0 +1,635 @@
+/* =========================================================================
+   Bilihan — Orders Sheet + Drive receipts Apps Script (complete file)
+
+   This is the whole script. Select everything in your Apps Script editor,
+   delete it, and paste this in, then:
+
+     Deploy > Manage deployments > pencil on the active deployment >
+     Version: "New version" > Deploy
+
+   The /exec URL does not change, so config.js needs no edit.
+
+   WHAT IS NEW COMPARED WITH THE PREVIOUS VERSION
+   ----------------------------------------------
+   doGet() now answers ?action=receipt&order_code=... by redirecting to that
+   order's receipt in Drive. The admin's "View payment receipt" button links
+   there. With no parameters doGet() still returns the health check exactly as
+   before. Everything else — order sync, uploads, deletes — is unchanged.
+
+   ABOUT ACCESS
+   ------------
+   The receipt route only redirects; it never changes a file's sharing, so
+   Drive decides who may look. Signed in as the account that owns the receipts
+   folder you see the receipt; anyone else gets Google's "request access" page.
+
+   Do not add file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, ...) anywhere
+   in this file. Order codes are short and guessable, so that one line would
+   expose every customer's receipt, and whatever payment details it shows, to
+   anyone willing to try a few codes.
+   ========================================================================= */
+
+const RECEIPT_FOLDER_ID = '1TOCB7zls8S0kTETjuqg6BmCEku7OO21e';
+const SHEET_NAME = 'Orders';
+
+
+/* =========================================================
+   POST ROUTER
+   ========================================================= */
+
+function doPost(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      throw new Error('No POST data received.');
+    }
+
+    const payload = JSON.parse(e.postData.contents);
+
+    console.log('Received action:', payload.action || 'order_sync');
+    console.log('Order code:', payload.order_code || 'NONE');
+
+    /* Delete one order: Google Sheet row + Drive receipt. */
+    if (payload.action === 'delete_order') {
+      return deleteOrderEverywhere(payload);
+    }
+
+    /* Delete all orders: every Sheet row + every matching receipt. */
+    if (payload.action === 'delete_all_orders') {
+      return deleteAllOrdersEverywhere();
+    }
+
+    /* Receipt upload. */
+    if (payload.action === 'upload_receipt') {
+      const receipt = saveReceiptToDrive(payload);
+
+      updateReceiptInSheet(
+        payload.order_code,
+        receipt.file_url,
+        receipt.file_name
+      );
+
+      return jsonResponse({
+        ok: true,
+        action: 'receipt_uploaded',
+        receipt: receipt
+      });
+    }
+
+    /* Normal order sync. */
+    if (!payload.order_code) {
+      throw new Error('Missing order_code');
+    }
+
+    const sheet = SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getSheetByName(SHEET_NAME);
+
+    if (!sheet) {
+      throw new Error('Orders sheet not found');
+    }
+
+    const rowData = [
+      payload.order_id || '',
+      payload.order_code || '',
+      payload.order_date || '',
+      payload.customer_name || '',
+      payload.phone || '',
+      payload.fulfillment || '',
+      payload.address || '',
+      payload.preferred_date || '',
+      payload.payment_method || '',
+      payload.items || '',
+      Number(payload.subtotal || 0),
+      Number(payload.delivery_fee || 0),
+      Number(payload.total || 0),
+      payload.payment_status || 'Pending',
+      payload.order_status || '',
+      payload.cancellation_reason || '',
+      new Date()
+    ];
+
+    const lastRow = sheet.getLastRow();
+    let existingRow = 0;
+
+    if (lastRow >= 2) {
+      const orderCodes = sheet
+        .getRange(2, 2, lastRow - 1, 1)
+        .getValues()
+        .flat();
+
+      const index = orderCodes.findIndex(
+        code => String(code).trim() === String(payload.order_code).trim()
+      );
+
+      if (index !== -1) {
+        existingRow = index + 2;
+      }
+    }
+
+    if (existingRow) {
+      sheet
+        .getRange(existingRow, 1, 1, rowData.length)
+        .setValues([rowData]);
+    } else {
+      sheet.appendRow(rowData);
+    }
+
+    return jsonResponse({
+      ok: true,
+      action: existingRow ? 'updated' : 'inserted',
+      order_code: payload.order_code
+    });
+
+  } catch (err) {
+    console.error('doPost error:', err.stack || err.message);
+
+    return jsonResponse({
+      ok: false,
+      error: err.message
+    });
+  }
+}
+
+
+/* =========================================================
+   GET ROUTER
+
+   Health check, plus the receipt redirect the admin links to.
+   ========================================================= */
+
+function doGet(e) {
+  const params = (e && e.parameter) || {};
+
+  if (params.action === 'receipt') {
+    return serveReceiptRedirect(params.order_code);
+  }
+
+  /* Health check — unchanged. */
+  try {
+    const folder = DriveApp.getFolderById(RECEIPT_FOLDER_ID);
+
+    return jsonResponse({
+      ok: true,
+      service: 'Bilihan Orders Sheet',
+      receipt_folder: folder.getName()
+    });
+
+  } catch (err) {
+    return jsonResponse({
+      ok: false,
+      error: err.message
+    });
+  }
+}
+
+
+/* =========================================================
+   RECEIPT REDIRECT
+   ========================================================= */
+
+function serveReceiptRedirect(orderCode) {
+  orderCode = String(orderCode || '').trim();
+
+  if (!orderCode) {
+    return receiptMessage('Receipt', 'No order number was supplied.');
+  }
+
+  let file;
+  try {
+    file = findReceiptFileForOrder(orderCode);
+  } catch (err) {
+    return receiptMessage(
+      'Receipt unavailable',
+      'Could not open the receipts folder: ' + escapeReceiptHtml(err.message)
+    );
+  }
+
+  if (!file) {
+    return receiptMessage(
+      'No receipt for ' + escapeReceiptHtml(orderCode),
+      'Nothing is stored for this order. Cash orders never have a receipt, and ' +
+      'a QR order placed before receipt uploads were switched on will not have one either.'
+    );
+  }
+
+  const url = file.getUrl();
+
+  /*
+    HtmlService renders inside an iframe on script.google.com, and Drive
+    refuses to be framed, so navigating the iframe would show a blank box.
+    Both the script and the fallback link target the TOP window instead.
+  */
+  return HtmlService.createHtmlOutput(
+    '<!doctype html><meta charset="utf-8"><title>Opening receipt…</title>' +
+    '<p style="font:15px -apple-system,system-ui,sans-serif;padding:24px;line-height:1.55">' +
+    'Opening the receipt for ' + escapeReceiptHtml(orderCode) + '… ' +
+    '<a href="' + escapeReceiptHtml(url) + '" target="_top">Open it manually</a> ' +
+    'if nothing happens.</p>' +
+    '<script>window.top.location.href=' + JSON.stringify(url) + ';<\/script>'
+  );
+}
+
+
+/*
+  Finds an order's receipt.
+
+  saveReceiptToDrive names files `<safeOrderCode>.<ext>`, so this uses the same
+  sanitising and the same exact-or-prefix match as deleteReceiptForOrder. A
+  loose "contains" match would let order code BIL-ACC pull up BIL-ACCB75's
+  receipt, which is another customer's payment details.
+*/
+function findReceiptFileForOrder(orderCode) {
+  const safeOrderCode = safeOrderCodeFor(orderCode);
+
+  if (!safeOrderCode) {
+    return null;
+  }
+
+  const folder = DriveApp.getFolderById(RECEIPT_FOLDER_ID);
+  const files = folder.getFiles();
+
+  let newest = null;
+
+  while (files.hasNext()) {
+    const file = files.next();
+
+    if (!receiptNameMatches(file.getName(), safeOrderCode)) {
+      continue;
+    }
+
+    /* Newest wins, in case a receipt was ever uploaded more than once. */
+    if (!newest || file.getDateCreated() > newest.getDateCreated()) {
+      newest = file;
+    }
+  }
+
+  return newest;
+}
+
+
+/* The one place the receipt naming rule lives, so lookup and delete cannot drift. */
+function safeOrderCodeFor(orderCode) {
+  return String(orderCode || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9-_]/g, '_');
+}
+
+function receiptNameMatches(fileName, safeOrderCode) {
+  const name = String(fileName);
+  return name === safeOrderCode || name.startsWith(safeOrderCode + '.');
+}
+
+
+function receiptMessage(title, body) {
+  return HtmlService.createHtmlOutput(
+    '<!doctype html><meta charset="utf-8"><title>' + title + '</title>' +
+    '<div style="font:15px -apple-system,system-ui,sans-serif;max-width:34rem;' +
+    'padding:24px;line-height:1.55">' +
+    '<h1 style="font-size:1.1rem;margin:0 0 8px">' + title + '</h1>' +
+    '<p style="margin:0;color:#555">' + body + '</p></div>'
+  );
+}
+
+
+function escapeReceiptHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+
+/* =========================================================
+   DELETE ONE ORDER EVERYWHERE
+   ========================================================= */
+
+function deleteOrderEverywhere(payload) {
+  if (!payload.order_code) {
+    throw new Error('Missing order_code');
+  }
+
+  const orderCode = String(payload.order_code).trim();
+
+  const sheetResult = deleteOrderRowFromSheet(orderCode);
+  const driveResult = deleteReceiptForOrder(orderCode);
+
+  return jsonResponse({
+    ok: true,
+    action: 'delete_order',
+    order_code: orderCode,
+    sheet_deleted: sheetResult.deleted,
+    receipts_deleted: driveResult.deleted
+  });
+}
+
+
+/* =========================================================
+   DELETE ORDER ROW FROM GOOGLE SHEET
+   ========================================================= */
+
+function deleteOrderRowFromSheet(orderCode) {
+  const sheet = SpreadsheetApp
+    .getActiveSpreadsheet()
+    .getSheetByName(SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error('Orders sheet not found');
+  }
+
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return { deleted: false };
+  }
+
+  const orderCodes = sheet
+    .getRange(2, 2, lastRow - 1, 1)
+    .getValues()
+    .flat();
+
+  const index = orderCodes.findIndex(
+    code => String(code).trim() === String(orderCode).trim()
+  );
+
+  if (index === -1) {
+    console.log('Order not found in sheet:', orderCode);
+    return { deleted: false };
+  }
+
+  const rowNumber = index + 2;
+
+  sheet.deleteRow(rowNumber);
+
+  console.log('Deleted Google Sheet row:', rowNumber, 'Order:', orderCode);
+
+  return { deleted: true };
+}
+
+
+/* =========================================================
+   DELETE RECEIPT FOR ONE ORDER
+   ========================================================= */
+
+function deleteReceiptForOrder(orderCode) {
+  const folder = DriveApp.getFolderById(RECEIPT_FOLDER_ID);
+  const safeOrderCode = safeOrderCodeFor(orderCode);
+
+  const files = folder.getFiles();
+  let deleted = 0;
+
+  while (files.hasNext()) {
+    const file = files.next();
+    const fileName = String(file.getName());
+
+    /*
+      Examples: BIL-ABC123.jpg, BIL-ABC123.png, BIL-ABC123.pdf
+      These match the order number while unrelated files stay untouched.
+    */
+    if (receiptNameMatches(fileName, safeOrderCode)) {
+      file.setTrashed(true);
+      deleted++;
+
+      console.log('Receipt moved to trash:', fileName);
+    }
+  }
+
+  return { deleted: deleted };
+}
+
+
+/* =========================================================
+   DELETE ALL ORDERS EVERYWHERE
+   ========================================================= */
+
+function deleteAllOrdersEverywhere() {
+  const sheet = SpreadsheetApp
+    .getActiveSpreadsheet()
+    .getSheetByName(SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error('Orders sheet not found');
+  }
+
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return jsonResponse({
+      ok: true,
+      action: 'delete_all_orders',
+      orders_deleted: 0,
+      receipts_deleted: 0
+    });
+  }
+
+  /* Save all order numbers BEFORE deleting the rows. */
+  const orderCodes = sheet
+    .getRange(2, 2, lastRow - 1, 1)
+    .getValues()
+    .flat()
+    .map(code => String(code).trim())
+    .filter(Boolean);
+
+  let receiptsDeleted = 0;
+
+  orderCodes.forEach(orderCode => {
+    const result = deleteReceiptForOrder(orderCode);
+    receiptsDeleted += result.deleted;
+  });
+
+  const numberOfOrders = lastRow - 1;
+
+  /* Delete rows underneath the header. Row 1 remains untouched. */
+  sheet.deleteRows(2, numberOfOrders);
+
+  console.log('Deleted all order rows:', numberOfOrders);
+  console.log('Deleted matching receipts:', receiptsDeleted);
+
+  return jsonResponse({
+    ok: true,
+    action: 'delete_all_orders',
+    orders_deleted: numberOfOrders,
+    receipts_deleted: receiptsDeleted
+  });
+}
+
+
+/* =========================================================
+   SAVE RECEIPT TO GOOGLE DRIVE
+   ========================================================= */
+
+function saveReceiptToDrive(payload) {
+  if (!payload || !payload.order_code || !payload.file_base64) {
+    throw new Error('Missing receipt upload data');
+  }
+
+  const folder = DriveApp.getFolderById(RECEIPT_FOLDER_ID);
+
+  console.log('Receipt folder:', folder.getName());
+
+  const mimeType = payload.mime_type || 'image/jpeg';
+
+  let extension = getExtensionFromMimeType(mimeType);
+
+  if (payload.file_name && payload.file_name.includes('.')) {
+    const originalExtension = payload.file_name
+      .split('.')
+      .pop()
+      .toLowerCase();
+
+    if (['jpg', 'jpeg', 'png', 'webp', 'pdf'].includes(originalExtension)) {
+      extension = originalExtension === 'jpeg' ? 'jpg' : originalExtension;
+    }
+  }
+
+  const safeOrderCode = safeOrderCodeFor(payload.order_code);
+  const finalName = `${safeOrderCode}.${extension}`;
+
+  console.log('Saving receipt as:', finalName);
+
+  let base64 = String(payload.file_base64);
+
+  if (base64.includes(',')) {
+    base64 = base64.split(',').pop();
+  }
+
+  const bytes = Utilities.base64Decode(base64);
+
+  console.log('Decoded receipt bytes:', bytes.length);
+
+  const blob = Utilities.newBlob(bytes, mimeType, finalName);
+
+  /* Replace any old receipt for the same order. */
+  deleteReceiptForOrder(payload.order_code);
+
+  const file = folder.createFile(blob);
+
+  console.log('Drive file created:', file.getId());
+
+  return {
+    file_id: file.getId(),
+    file_name: file.getName(),
+    file_url: file.getUrl()
+  };
+}
+
+
+/* =========================================================
+   UPDATE RECEIPT LINK IN GOOGLE SHEET
+   ========================================================= */
+
+function updateReceiptInSheet(orderCode, receiptUrl, receiptName) {
+  const sheet = SpreadsheetApp
+    .getActiveSpreadsheet()
+    .getSheetByName(SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error('Orders sheet not found');
+  }
+
+  const lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return;
+  }
+
+  const orderCodes = sheet
+    .getRange(2, 2, lastRow - 1, 1)
+    .getValues()
+    .flat();
+
+  const index = orderCodes.findIndex(
+    code => String(code).trim() === String(orderCode).trim()
+  );
+
+  if (index === -1) {
+    console.log('Order not found in sheet:', orderCode);
+    return;
+  }
+
+  const row = index + 2;
+
+  sheet
+    .getRange(row, 18)
+    .setFormula(`=HYPERLINK("${receiptUrl}","View Receipt")`);
+
+  sheet
+    .getRange(row, 19)
+    .setValue(new Date());
+
+  console.log('Receipt link added to row:', row);
+}
+
+
+/* =========================================================
+   MIME TYPE -> FILE EXTENSION
+   ========================================================= */
+
+function getExtensionFromMimeType(mimeType) {
+  const types = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'application/pdf': 'pdf'
+  };
+
+  return types[mimeType] || 'jpg';
+}
+
+
+/* =========================================================
+   JSON RESPONSE
+   ========================================================= */
+
+function jsonResponse(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+/* =========================================================
+   EDITOR TESTS — run these from the Apps Script editor
+   ========================================================= */
+
+/* Checks the receipt lookup without deploying. Use a code you know has one. */
+function testFindReceipt() {
+  const orderCode = 'BIL-ACCB75';
+  const file = findReceiptFileForOrder(orderCode);
+
+  if (!file) {
+    console.log('No receipt found for', orderCode);
+    return;
+  }
+
+  console.log('Found:', file.getName());
+  console.log('URL:', file.getUrl());
+}
+
+
+function testReceiptFolder() {
+  const folder = DriveApp.getFolderById(RECEIPT_FOLDER_ID);
+
+  console.log('Folder name:', folder.getName());
+
+  const testFile = folder.createFile(
+    'BILIHAN_TEST.txt',
+    'Bilihan Google Drive receipt upload test.'
+  );
+
+  console.log('Test file created:', testFile.getUrl());
+}
+
+
+function testOrdersSheet() {
+  const sheet = SpreadsheetApp
+    .getActiveSpreadsheet()
+    .getSheetByName(SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error('Orders sheet not found');
+  }
+
+  console.log('Sheet name:', sheet.getName());
+  console.log('Last row:', sheet.getLastRow());
+}
