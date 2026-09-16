@@ -212,12 +212,25 @@ const PAY_COLORS={Paid:{bg:'#dcfce7',text:'#166534',border:'#86efac'},Pending:{b
 function paySelectHtml(o){const st=o.payment_status||'Pending';const c=PAY_COLORS[st]||PAY_COLORS.Pending;return `<select onchange="updatePaymentStatus('${o.id}',this.value)" style="font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid ${c.border};background:${c.bg};color:${c.text};cursor:pointer">${Object.keys(PAY_COLORS).map(k=>`<option value="${k}" ${k===st?'selected':''}>${k}</option>`).join('')}</select>`}
 /* The orders table shows only what you scan for. Everything else lives here,
    opened by clicking an order number. */
+/* Receipts live in Google Drive, not in Supabase: app.js uploads them through the
+   Apps Script with mode:'no-cors', so the browser never gets to read the Drive URL
+   back. receipt_url is honoured first in case a future upload path does store one;
+   otherwise we hand the order code to the Apps Script, which looks the file up and
+   redirects. Drive's own permissions decide who is allowed to see it. */
+function receiptUrlFor(order){
+  if(!order)return '';
+  if(order.receipt_url)return String(order.receipt_url);
+  if(order.payment_method!=='QR Payment')return '';
+  if(!GOOGLE_SHEETS_WEB_APP_URL)return '';
+  return GOOGLE_SHEETS_WEB_APP_URL+'?action=receipt&order_code='+encodeURIComponent(order.order_code||'');
+}
 function openOrderDetails(id){
   const o=(A.data.orders||[]).find(x=>x.id===id);
   if(!o){alert('That order is no longer available. Refresh the page.');return}
   const field=(label,value)=>value===''||value===null||value===undefined?'':`<dt>${esc(label)}</dt><dd>${esc(String(value))}</dd>`;
   const items=(o.order_items||[]);
   const itemRows=items.map(i=>`<tr><td>${esc(i.product_name)}</td><td>${i.qty}</td><td>${money(i.unit_price)}</td><td><strong>${money(Number(i.unit_price||0)*Number(i.qty||0))}</strong></td></tr>`).join('');
+  const receiptHref=receiptUrlFor(o);
   document.getElementById('orderDetailModal')?.remove();
   document.body.insertAdjacentHTML('beforeend',`<div class="admin-modal-backdrop" id="orderDetailModal"><div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="orderDetailTitle"><div class="admin-modal-header"><div><span class="eyebrow">Customer order</span><h2 id="orderDetailTitle">#${esc(o.order_code)}${o.status==='Cancelled'?' <span class="order-cancelled-tag">Cancelled</span>':''}</h2></div><button type="button" class="admin-modal-close" id="closeOrderDetail" aria-label="Close">&times;</button></div>
   <dl class="order-detail">
@@ -234,6 +247,7 @@ function openOrderDetails(id){
     ${o.cancelled_at?field('Cancelled at',new Date(o.cancelled_at).toLocaleString()):''}
     ${o.note?field('Customer note',o.note):''}
   </dl>
+  ${receiptHref?`<p class="order-receipt-row"><a class="modal-secondary-btn" id="viewReceipt" href="${esc(receiptHref)}" target="_blank" rel="noopener noreferrer">View payment receipt</a><span class="muted">Opens the customer's uploaded receipt in a new tab.</span></p>`:''}
   ${items.length?`<div class="table-wrap" style="margin-top:18px"><table class="table orders-items-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>${itemRows}</tbody><tfoot><tr><td><strong>Total</strong></td><td><strong>${items.reduce((n,i)=>n+Number(i.qty||0),0)}</strong></td><td></td><td><strong>${money(o.total)}</strong></td></tr></tfoot></table></div>`:'<p class="muted" style="margin-top:18px">This order has no line items recorded.</p>'}
   </div></div>`);
   document.body.classList.add('modal-open');
