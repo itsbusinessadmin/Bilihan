@@ -15,6 +15,18 @@
   </script>
   <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
 
+  <!-- Apply the saved theme before first paint. Without this the deferred app.js
+       sets it after parsing, which flashes the light theme at dark-mode users. -->
+  <script>
+    try {
+      var t = localStorage.getItem('bilihan_theme_v3');
+      document.documentElement.dataset.theme = t === 'dark' ? 'dark' : 'light';
+      if (t === 'dark') {
+        document.documentElement.style.colorScheme = 'dark';
+      }
+    } catch (e) { document.documentElement.dataset.theme = 'light'; }
+  </script>
+
   <title>Bilihan — Order Food Online for Pickup or Delivery</title>
   <meta name="description" content="Order food online from Bilihan. Everyday favorites, meals and snacks, ready for pickup or delivery. Browse the menu, add to cart, and check out in minutes." />
   <link rel="canonical" href="https://bilihan.shop/" />
@@ -98,7 +110,7 @@
         <a class="primary-btn" href="#menu">Shop Now</a>
       </div>
       <div class="hero-carousel" aria-label="Featured food">
-        <img id="heroImage" src="bilihan-logo.png" width="800" height="600" fetchpriority="high" alt="Featured food from Bilihan" />
+        <img id="heroImage" src="bilihan-logo.png" width="800" height="600" fetchpriority="high" decoding="async" alt="Featured food from Bilihan" />
         <div id="heroDots" class="hero-dots"></div>
       </div>
     </section>
@@ -115,13 +127,12 @@
       <div id="menuGrid" class="product-grid" aria-live="polite"></div>
     </section>
     <section id="about" class="section-pad split-section">
-      <img id="aboutImage" class="about-image" src="bilihan-logo.png" width="700" height="525" loading="lazy" alt="A selection of the food available at Bilihan" />
+      <img id="aboutImage" class="about-image" src="bilihan-logo.png" width="700" height="525" loading="lazy" decoding="async" alt="A selection of the food available at Bilihan" />
       <div><h2>Your easy online food stop</h2><p id="aboutText"></p></div>
     </section>
   </main>
   <footer class="footer">
     <div class="footer-brand"><img src="bilihan-mark.webp" width="32" height="32" data-store-logo alt=""><strong id="footerBrand">Bilihan</strong></div>
-    <nav class="footer-links" aria-label="Footer"><a href="#menu">Products</a><a href="#about">About</a></nav>
     <div id="footerContact" class="footer-contact"></div>
     <span>&copy; <span id="year">2026</span> <span class="footer-copy-name">Bilihan</span></span>
   </footer>
@@ -135,11 +146,11 @@
   <dialog id="checkoutDialog" class="modal wide-modal"></dialog>
   <dialog id="orderDialog" class="modal wide-modal"></dialog>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js"></script>
-  <script src="supabase.js"></script>
-  <script src="analytics.js"></script>
-  <script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="config.js" defer></script>
+  <script src="supabase.js" defer></script>
+  <script src="analytics.js" defer></script>
+  <script src="app.js" defer></script>
   <script src="support.js" defer></script>
 </body>
 </html>
