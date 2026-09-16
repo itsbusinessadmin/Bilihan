@@ -511,3 +511,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .usage-pill.usage-ok{background:#dcfce7;color:#166534}
 .usage-pill.usage-warn{background:#fef9c3;color:#854d0e}
 .usage-pill.usage-danger{background:#fee2e2;color:#991b1b}
+
+/* ---- Order detail: receipt action ---- */
+.order-receipt-row{display:flex;align-items:center;flex-wrap:wrap;gap:var(--admin-space-md);margin:var(--admin-space-lg) 0 0}
+.order-receipt-row .modal-secondary-btn{display:inline-flex;align-items:center;justify-content:center;padding:0 16px;white-space:nowrap;text-decoration:none}
+.order-receipt-row .muted{font-size:var(--admin-text-caption)}
+@media(max-width:560px){
+  .order-receipt-row .modal-secondary-btn{width:100%}
+}

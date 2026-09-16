@@ -295,6 +295,24 @@ rather than inventing numbers: **bandwidth/egress** (Supabase → Reports),
 **Google Drive space** used by payment receipts, and **project pausing** (free
 projects pause after a week of inactivity).
 
+## Viewing payment receipts
+
+QR Payment orders show a **View payment receipt** button in the admin order
+detail. Receipts are not stored in Supabase — `app.js` uploads them straight to
+Google Drive through the Apps Script, with `mode: 'no-cors'`, so the browser
+never receives the Drive URL and nothing in the database points at the file.
+
+The button therefore asks the Apps Script to resolve the order code and redirect.
+That needs one addition to your Apps Script, which is in
+`google-apps-script/receipt-endpoint.gs` along with install steps. Until you add
+it, the button still appears but the new tab shows an Apps Script error.
+
+The endpoint only redirects; it never changes a receipt's sharing. Drive decides
+who may look, so signed in as the account that owns the receipts folder you see
+the file, and anyone else gets Google's "request access" page. Do not add a
+`setSharing(ANYONE_WITH_LINK)` call to the upload or the endpoint — order codes
+are short and guessable, and that would make every customer's receipt public.
+
 ## Spam protection
 
 The checkout form has three client-side deterrents: a honeypot field no human can see, a minimum
