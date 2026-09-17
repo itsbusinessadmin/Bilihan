@@ -62,6 +62,7 @@ function renderSettings(){
   renderContact(s);
   $('year').textContent=new Date().getFullYear();
   renderHero();
+  syncHeroTimer();
 }
 function renderContact(s){
   const methods=[];
@@ -74,8 +75,50 @@ function renderContact(s){
   const footer=$('footerContact');if(footer)footer.innerHTML=html;
   const nav=$('mobileNavContact');if(nav)nav.innerHTML=html;
 }
-function renderHero(){const imgs=state.data.settings?.hero_images||[];if(!imgs.length){$('heroImage').src='bilihan-logo.png';$('heroDots').innerHTML='';return}$('heroImage').onerror=()=>{$('heroImage').src='bilihan-logo.png';$('heroImage').onerror=null};$('heroImage').src=imgs[state.heroIndex%imgs.length];$('heroDots').innerHTML=imgs.length>1?imgs.map((_,i)=>`<button class="${i===state.heroIndex?'active':''}" data-i="${i}" aria-label="Show featured image ${i+1}" aria-current="${i===state.heroIndex?'true':'false'}"></button>`).join(''):'';[...$('heroDots').children].forEach(b=>b.onclick=()=>{state.heroIndex=+b.dataset.i;renderHero()})}
-setInterval(()=>{if(state.data&&!document.hidden&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const n=state.data.settings?.hero_images?.length||1;state.heroIndex=(state.heroIndex+1)%n;renderHero()}},4000);
+/* The dots are rebuilt only when the image list itself changes. The old version
+   re-wrote their innerHTML and re-bound every click handler on each rotation —
+   a full teardown of the same markup, four seconds apart, forever. */
+let heroDotsKey='';
+function buildHeroDots(imgs){
+  const key=imgs.join('|');
+  if(key===heroDotsKey)return;
+  heroDotsKey=key;
+  const dots=$('heroDots');
+  dots.innerHTML=imgs.length>1?imgs.map((_,i)=>`<button data-i="${i}" aria-label="Show featured image ${i+1}"></button>`).join(''):'';
+  if(imgs.length>1&&!dots.dataset.bound){
+    dots.dataset.bound='1';
+    dots.addEventListener('click',e=>{const b=e.target.closest('button[data-i]');if(!b)return;state.heroIndex=+b.dataset.i;renderHero()});
+  }
+}
+function renderHero(){
+  const imgs=state.data.settings?.hero_images||[];
+  const img=$('heroImage');
+  if(!imgs.length){img.src='bilihan-logo.png';$('heroDots').innerHTML='';heroDotsKey='';return}
+  img.onerror=()=>{img.src='bilihan-logo.png';img.onerror=null};
+  const i=state.heroIndex%imgs.length;
+  img.src=imgs[i];
+  buildHeroDots(imgs);
+  /* Toggling two classes beats re-rendering the whole strip. */
+  for(const b of $('heroDots').children){
+    const on=+b.dataset.i===i;
+    b.classList.toggle('active',on);
+    b.setAttribute('aria-current',String(on));
+  }
+  /* Warm the next slide so the swap has no blank frame. */
+  if(imgs.length>1)new Image().src=imgs[(i+1)%imgs.length];
+}
+/* One rotation timer, started only when there is something to rotate, and the
+   reduced-motion query is created once instead of on every tick. */
+const heroReduceMotion=matchMedia('(prefers-reduced-motion: reduce)');
+let heroTimer=0;
+function syncHeroTimer(){
+  const n=state.data?.settings?.hero_images?.length||0;
+  const wanted=n>1&&!heroReduceMotion.matches;
+  if(wanted&&!heroTimer)heroTimer=setInterval(()=>{if(document.hidden)return;state.heroIndex=(state.heroIndex+1)%(state.data.settings.hero_images.length||1);renderHero()},4000);
+  else if(!wanted&&heroTimer){clearInterval(heroTimer);heroTimer=0}
+}
+heroReduceMotion.addEventListener('change',syncHeroTimer);
+
 function visibleCategories(){return (state.data.categories||[]).filter(c=>(state.data.products||[]).some(p=>p.category_id===c.id)).sort((a,b)=>a.sort_order-b.sort_order)}
 function renderCategories(){const cats=visibleCategories();$('categoryTabs').innerHTML=[{id:'all',name:'All'},...cats].map(c=>`<button class="tab ${state.category===c.id?'active':''}" type="button" role="tab" aria-selected="${state.category===c.id?'true':'false'}" data-id="${c.id}">${esc(c.name)}</button>`).join('');bindCategoryTabs()}
 function bindCategoryTabs(){const tabs=$('categoryTabs');if(!tabs||tabs.dataset.bound)return;tabs.dataset.bound='1';tabs.addEventListener('click',e=>{const b=e.target.closest('.tab');if(!b)return;state.category=b.dataset.id;renderCategories();renderProducts()})}
@@ -114,8 +157,45 @@ async function fetchLiveProducts(){const {data,error}=await db.from('products').
 async function syncOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;const items=(order.items||[]).map(i=>`${i.product_name} x ${i.qty}`).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||''};await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(err){console.warn('Google Sheets sync failed:',err)}}
 function fileToBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');reader.onerror=()=>reject(new Error('Unable to read receipt file.'));reader.readAsDataURL(file)})}
 function formatFileSize(bytes){if(bytes<1024)return `${bytes} B`;if(bytes<1024*1024)return `${(bytes/1024).toFixed(0)} KB`;return `${(bytes/1024/1024).toFixed(1)} MB`}
-async function compressReceiptImage(file){const allowed=['image/jpeg','image/png','image/webp','application/pdf'];if(!allowed.includes(file.type))throw new Error('Receipt must be JPG, PNG, WEBP, or PDF.');if(file.type==='application/pdf'){if(file.size>3*1024*1024)throw new Error('PDF receipt must be 3 MB or smaller.');return file}if(file.size>12*1024*1024)throw new Error('Receipt image is too large. Please use an image smaller than 12 MB.');const bitmap=await createImageBitmap(file);const maxSide=1400;const scale=Math.min(1,maxSide/Math.max(bitmap.width,bitmap.height));const width=Math.max(1,Math.round(bitmap.width*scale));const height=Math.max(1,Math.round(bitmap.height*scale));const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const ctx=canvas.getContext('2d',{alpha:false});ctx.drawImage(bitmap,0,0,width,height);bitmap.close?.();const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Unable to optimize receipt image.')),'image/jpeg',0.72));const baseName=(file.name||'receipt').replace(/\.[^.]+$/,'');return new File([blob],`${baseName}.jpg`,{type:'image/jpeg',lastModified:Date.now()})}
-async function uploadReceiptToGoogleDrive(order,file){if(!order?.order_code)throw new Error('Order number is missing.');if(!file)throw new Error('Please upload your payment receipt.');const file_base64=await fileToBase64(file);const payload={action:'upload_receipt',order_code:order.order_code,file_name:file.name,mime_type:file.type,file_base64};const response=await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),cache:'no-store'});return response}
+/* Receipts are read, not admired: 1280px at a size budget keeps every digit
+   legible while cutting what has to cross a phone connection. */
+const RECEIPT_MAX_SIDE=1280,RECEIPT_TARGET_BYTES=180*1024,RECEIPT_QUALITY_STEPS=[.7,.55,.42];
+function encodeCanvasToJpeg(canvas,quality){
+  /* OffscreenCanvas keeps the encode off the main thread, so the UI never janks
+     while a large photo is being squeezed. */
+  if(canvas.convertToBlob)return canvas.convertToBlob({type:'image/jpeg',quality});
+  return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Unable to optimize receipt image.')),'image/jpeg',quality));
+}
+async function compressReceiptImage(file){
+  const allowed=['image/jpeg','image/png','image/webp','application/pdf'];
+  if(!allowed.includes(file.type))throw new Error('Receipt must be JPG, PNG, WEBP, or PDF.');
+  if(file.type==='application/pdf'){if(file.size>3*1024*1024)throw new Error('PDF receipt must be 3 MB or smaller.');return file}
+  if(file.size>12*1024*1024)throw new Error('Receipt image is too large. Please use an image smaller than 12 MB.');
+  const bitmap=await createImageBitmap(file);
+  const scale=Math.min(1,RECEIPT_MAX_SIDE/Math.max(bitmap.width,bitmap.height));
+  const width=Math.max(1,Math.round(bitmap.width*scale)),height=Math.max(1,Math.round(bitmap.height*scale));
+  const canvas=typeof OffscreenCanvas==='function'?new OffscreenCanvas(width,height):Object.assign(document.createElement('canvas'),{width,height});
+  const ctx=canvas.getContext('2d',{alpha:false});
+  ctx.drawImage(bitmap,0,0,width,height);
+  bitmap.close?.();
+  /* Step the quality down only while the result is still over budget, so a
+     small receipt is never degraded to pay for a large one. */
+  let blob=await encodeCanvasToJpeg(canvas,RECEIPT_QUALITY_STEPS[0]);
+  for(let i=1;i<RECEIPT_QUALITY_STEPS.length&&blob.size>RECEIPT_TARGET_BYTES;i++)blob=await encodeCanvasToJpeg(canvas,RECEIPT_QUALITY_STEPS[i]);
+  /* An already-small original beats anything re-encoding produces. */
+  if(blob.size>=file.size)return file;
+  const baseName=(file.name||'receipt').replace(/\.[^.]+$/,'');
+  return new File([blob],`${baseName}.jpg`,{type:'image/jpeg',lastModified:Date.now()});
+}
+
+async function uploadReceiptToGoogleDrive(order,file,cachedBase64){
+  if(!order?.order_code)throw new Error('Order number is missing.');
+  if(!file)throw new Error('Please upload your payment receipt.');
+  const file_base64=cachedBase64||await fileToBase64(file);
+  const payload={action:'upload_receipt',order_code:order.order_code,file_name:file.name,mime_type:file.type,file_base64};
+  return fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),cache:'no-store'});
+}
+
 function isExplicitlyEnabled(settings,key){return settings?.[key]===true}
 function checkoutError(message){const box=$('checkoutError');if(!box)return;box.textContent=message||'';box.classList.toggle('hidden',!message)}
 function clearFieldErrors(form){form.querySelectorAll('.field-error').forEach(node=>node.remove());form.querySelectorAll('[aria-invalid="true"]').forEach(el=>{el.removeAttribute('aria-invalid');el.classList.remove('invalid')})}
@@ -152,19 +232,19 @@ function openCheckout(){
   $('checkoutDialog').innerHTML=`<div class="modal-body checkout-modal"><button class="icon-btn modal-close" aria-label="Close" onclick="checkoutDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="checkout-heading"><h2>Complete your order</h2><p>Review your contact, fulfillment, and payment details before placing the order.</p></div><div id="checkoutError" class="status-banner hidden" role="alert" aria-live="assertive"></div><form id="checkoutForm" class="checkout-form" novalidate><div class="hp-field" aria-hidden="true"><label>Leave this field empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div><div class="checkout-layout"><div class="checkout-main"><section class="checkout-group" aria-labelledby="checkoutContactTitle"><div class="checkout-group-title"><h3 id="checkoutContactTitle">Contact</h3></div><div class="form-grid"><label class="field"><span class="field-label">Name *</span><input name="name" maxlength="100" autocomplete="name" required></label><label class="field"><span class="field-label">Mobile number <span class="muted">(optional)</span></span><input name="phone" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="09XXXXXXXXX"></label></div></section><section class="checkout-group" aria-labelledby="checkoutFulfillmentTitle"><div class="checkout-group-title"><h3 id="checkoutFulfillmentTitle">Fulfillment</h3></div><div class="form-grid">${fulfillmentField}${preferredDateField}<label id="addressField" class="field full"><span class="field-label">Delivery address *</span><textarea name="address" maxlength="500" autocomplete="street-address" rows="2"></textarea></label><div id="pickupInfo" class="field full hidden"><div class="status-banner" style="margin:0"><strong>Pickup location:</strong> ${esc(s.pickup_location||'Please contact the store for the pickup location.')}</div></div></div></section><section class="checkout-group" aria-labelledby="checkoutPaymentTitle"><div class="checkout-group-title"><h3 id="checkoutPaymentTitle">Payment</h3></div><div class="form-grid">${paymentField}<label class="field checkout-note"><span class="field-label">Customer note <span class="muted">(optional)</span></span><textarea name="note" maxlength="500" rows="2" placeholder="Anything the store should know?"></textarea></label><div id="paymentInfo" class="field full"></div></div></section></div><aside class="checkout-aside" aria-labelledby="checkoutSummaryTitle"><div class="checkout-aside-inner"><div class="checkout-group-title"><h3 id="checkoutSummaryTitle">Your order</h3></div><div class="summary" id="checkoutSummary"></div><div class="checkout-actions"><label class="checkout-confirm"><input type="checkbox" name="confirm" id="confirmOrder" required><span>I confirm that my order and contact details are correct.</span></label><button class="primary-btn" id="placeOrderBtn" disabled>Place Order</button><p class="muted checkout-progress" id="orderProgress" role="status" aria-live="polite"></p></div></div></aside></div></form></div>`;
   $('checkoutDialog').showModal();
   const f=$('checkoutForm');
-  f._receiptPrepared=null;f._receiptPreparing=false;f.dataset.openedAt=String(Date.now());
+  f._receiptPrepared=null;f._receiptBase64=null;f._receiptPreparing=false;f.dataset.openedAt=String(Date.now());
   const updatePlaceOrderButton=()=>{const qr=f.payment.value==='QR Payment';const hasReceipt=!qr||!!f._receiptPrepared;const confirmed=$('confirmOrder')?.checked;$('placeOrderBtn').disabled=!!f._receiptPreparing||!(hasReceipt&&confirmed)};
   const renderDynamic=()=>{
     checkoutError('');
     const pickup=f.fulfillment.value==='Pickup';
     $('addressField').classList.toggle('hidden',pickup);$('pickupInfo').classList.toggle('hidden',!pickup);f.address.required=!pickup;
-    f._receiptPrepared=null;f._receiptPreparing=false;
+    f._receiptPrepared=null;f._receiptBase64=null;f._receiptPreparing=false;
     if(f.payment.value==='QR Payment'){
       const qrUrl=String(s.qr_image_url||'').trim();
       if(!qrUrl){checkoutError('QR payment is no longer available. Please choose another payment method.');updatePlaceOrderButton();return}
       $('paymentInfo').innerHTML=`<div class="qr-payment-card"><div id="qrImageState"><img id="paymentQrImage" src="${esc(qrUrl)}" alt="Store payment QR code"></div><div class="qr-payment-actions"><p><strong>Pay by QR</strong><br><span class="muted">Scan or save the code, then upload your payment receipt.</span></p><a class="secondary-btn" href="${esc(qrUrl)}" download="Bilihan-QR-Code" target="_blank" rel="noopener">Save QR Code</a><label class="field"><strong>Payment receipt *</strong><input name="receipt" id="paymentReceipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label><p class="muted" id="receiptStatus" role="status" aria-live="polite">No receipt selected yet.</p></div></div>`;
       const qrImg=$('paymentQrImage');if(qrImg)qrImg.onerror=()=>{$('qrImageState').innerHTML='<div class="status-banner" role="alert">The payment QR code could not be loaded. Please choose another payment method.</div>'};
-      const receipt=$('paymentReceipt');receipt.onchange=async()=>{const file=receipt.files[0];f._receiptPrepared=null;if(!file){$('receiptStatus').textContent='No receipt selected yet.';updatePlaceOrderButton();return}f._receiptPreparing=true;$('receiptStatus').textContent='Preparing receipt…';updatePlaceOrderButton();try{const prepared=await compressReceiptImage(file);f._receiptPrepared=prepared;$('receiptStatus').textContent=`Receipt ready: ${prepared.name} (${formatFileSize(prepared.size)})`}catch(err){receipt.value='';f._receiptPrepared=null;$('receiptStatus').textContent=err.message||'Unable to prepare this receipt. Please choose a JPG, PNG, WEBP, or PDF file.'}finally{f._receiptPreparing=false;updatePlaceOrderButton()}}
+      const receipt=$('paymentReceipt');receipt.onchange=async()=>{const file=receipt.files[0];f._receiptPrepared=null;f._receiptBase64=null;if(!file){$('receiptStatus').textContent='No receipt selected yet.';updatePlaceOrderButton();return}f._receiptPreparing=true;$('receiptStatus').textContent='Preparing receipt…';updatePlaceOrderButton();try{const prepared=await compressReceiptImage(file);f._receiptPrepared=prepared;f._receiptBase64=null;$('receiptStatus').textContent=`Receipt ready: ${prepared.name} (${formatFileSize(prepared.size)})`;fileToBase64(prepared).then(b64=>{if(f._receiptPrepared===prepared)f._receiptBase64=b64}).catch(()=>{})}catch(err){receipt.value='';f._receiptPrepared=null;f._receiptBase64=null;$('receiptStatus').textContent=err.message||'Unable to prepare this receipt. Please choose a JPG, PNG, WEBP, or PDF file.'}finally{f._receiptPreparing=false;updatePlaceOrderButton()}}
     }else{$('paymentInfo').innerHTML='<div class="status-banner">Please prepare the exact amount when possible.</div>'}
     updatePlaceOrderButton();
     $('checkoutSummary').innerHTML=state.cart.map(i=>`<div class="summary-row"><span>${esc(i.name)} × ${i.qty}</span><strong>${money(i.price*i.qty)}</strong></div>`).join('')+`<hr><div class="summary-row"><strong>Total</strong><strong>${money(state.cart.reduce((sum,i)=>sum+i.qty*i.price,0))}</strong></div>`
@@ -212,8 +292,17 @@ async function placeOrder(e){
     const items=state.cart.map(i=>({product_id:i.productId,qty:i.qty}));
     const {data,error}=await db.rpc('place_order',{p_customer_name:String(d.name||'').trim(),p_phone:phone||null,p_fulfillment:fulfillment,p_address:address,p_preferred_date:preferredDate,p_payment_method:d.payment,p_note:String(d.note||'').trim()||null,p_items:items});
     if(error)throw error;if(!data?.ok)throw new Error(data?.error||'Order could not be placed.');const order=data.order;
-    if(isQr&&receiptFile){btn.textContent='Uploading receipt…';if(progress)progress.textContent=`Uploading receipt for Order #${order.order_code}…`;await uploadReceiptToGoogleDrive(order,receiptFile)}
-    btn.textContent='Finalizing…';if(progress)progress.textContent='Finalizing order…';syncOrderToGoogleSheet(order);localStorage.setItem(LS.latestOrder,JSON.stringify(order));localStorage.setItem(LS.lastOrderAt,String(Date.now()));state.cart=[];saveCart();$('checkoutDialog').close();await bootstrap();showOrder(order);toast(`Order #${order.order_code} placed ✓`);track('order_placed')
+    /* The order is in the database now. Everything below is bookkeeping the
+       customer has no reason to wait behind, so none of it blocks the receipt.
+       The upload was awaited before, even though mode:'no-cors' makes its
+       response unreadable — the wait bought nothing but a slower checkout. */
+    if(isQr&&receiptFile)uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>console.warn('Receipt upload failed:',err));
+    syncOrderToGoogleSheet(order);
+    localStorage.setItem(LS.latestOrder,JSON.stringify(order));localStorage.setItem(LS.lastOrderAt,String(Date.now()));
+    state.cart=[];saveCart();$('checkoutDialog').close();
+    showOrder(order);toast(`Order #${order.order_code} placed ✓`);track('order_placed');
+    /* Refresh stock in the background; the confirmation is already on screen. */
+    bootstrap().catch(err=>console.warn('Post-order refresh failed:',err))
   }catch(err){console.error(err);checkoutError(err?.message||'Unable to place your order. Please check your connection and try again.')}finally{delete f.dataset.submitting;btn.disabled=false;btn.textContent='Place Order';if(progress)progress.textContent=''}
 }
 function showOrder(order){
