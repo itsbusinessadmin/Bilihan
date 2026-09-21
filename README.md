@@ -201,10 +201,10 @@ file has no effect at all while **Original** is selected. The chosen design is a
 into `localStorage` so a returning visitor gets the right look on first paint instead of a flash
 of the other one.
 
-**Bilihan Storefront is not imported yet.** `theme-storefront.css` is still empty, so the option
-is listed in Admin but cannot be selected — the shop can never be pointed at a design that is not
-there. To finish it: fill in `theme-storefront.css`, then set `ready` to `true` for the
-`storefront` entry in `SKIN_OPTIONS` near the top of `appearance()` in `admin.js`.
+**Bilihan Storefront is imported.** It reskins the existing storefront markup in place (colors,
+type, radii, borders, shadows) rather than changing any HTML — the checkout's Pickup/Delivery and
+Cash/QR pickers stay real `<select>` elements restyled to match, and the header logo's tagline and
+star badge are decorative CSS, not real DOM.
 
 ## Turning on analytics
 

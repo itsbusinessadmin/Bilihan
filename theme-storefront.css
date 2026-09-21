@@ -13,38 +13,475 @@
    designs share the light/dark switch, so any token you redefine below needs a
    dark counterpart under the [data-theme="dark"] block.
 
-   STATUS: empty. This file is the import target for the "Bilihan Storefront"
-   design (claude.ai/design project 08e5b0d6-ade5-44fe-93d8-8843a3f0e7d0,
-   file "Bilihan Storefront.dc.html"). That project could not be read from this
-   session, so nothing has been imported yet and selecting this design in Admin
-   is disabled until it is. Filling in the two blocks below is all that is left.
+   Imported from claude.ai/design project 08e5b0d6-ade5-44fe-93d8-8843a3f0e7d0,
+   file "Bilihan Storefront.dc.html" (the "CES Fun Club" design system —
+   chunky ink outlines, hard "sticker" shadows, pill radii, hand-lettered
+   display type). The mockup was built against a component library rather
+   than the storefront's real markup, so a few spots are approximated with
+   plain CSS instead of literal 1:1 markup:
+     - the checkout's Pickup/Delivery and Cash/QR pickers stay real <select>
+       elements (restyled), not the mockup's segmented toggle buttons — the
+       real checkout also has fields (preferred date, QR receipt upload,
+       confirm checkbox) the mockup doesn't model at all
+     - the header logo's tagline and star badge are added as generated
+       content (decorative, not real DOM)
+     - icons stay the site's existing set, just recolored to the new palette
    ========================================================================= */
 
-/* ---- Design tokens -------------------------------------------------------
-   Redefine any of the tokens styles.css sets on :root. Names, for reference:
+@import url("https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Outfit:wght@300..800&family=Space+Mono:wght@400;700&display=swap");
 
-     Palette    --bg --bg-elevated --card --card-soft --card-soft-2 --text
-                --muted --muted-2 --accent --accent-soft --accent-2 --accent-3
-                --accent-tint --line --line-strong --success --danger
-                --danger-tint
-     Elevation  --shadow-xs --shadow-sm --shadow --shadow-lg --shadow-brand
-     Shape      --radius-sm --radius --radius-lg --radius-pill --content
-     Motion     --ease --ease-spring --fast --med
-     Space      --space-xs … --space-4xl --touch
-     Type       --font-ui --text-caption --text-secondary --text-body
-                --text-subheading --text-heading --text-display
-                --leading-tight --leading-ui --leading-body
+/* ---- Design tokens -------------------------------------------------------
+   Redefine any of the tokens styles.css sets on :root. Values are taken
+   from the CES Fun Club design system's token files (colors, effects,
+   spacing, typography, motion) and hand-mapped onto Bilihan's own token
+   names so the rest of styles.css picks up the new look automatically.
    ------------------------------------------------------------------------ */
 
 html[data-skin="storefront"] {
-  /* light-mode tokens go here */
+  /* extra tokens the design needs that styles.css has no equivalent for */
+  --font-display: "Bagel Fat One", system-ui, sans-serif;
+  --font-mono: "Space Mono", ui-monospace, monospace;
+  --border-w: 2px;
+  --border-w-thick: 3px;
+  --badge-sun-bg: #FEF3D6;   --badge-sun-fg: #C3860C;
+  --badge-pink-bg: #FDE7EE;  --badge-pink-fg: #B32F58;
+  --badge-blue-bg: #E2EAFB;  --badge-blue-fg: #12357C;
+  --badge-leaf-bg: #DFF0E7;  --badge-leaf-fg: #1F5A41;
+  --badge-hot-bg: #FDE3DE;   --badge-hot-fg: #B32C18;
+  --badge-ink-bg: #201A24;   --badge-ink-fg: #FFFDF7;
+  --plaque-bg: #FBDC8B;
+
+  /* Palette */
+  --bg: #FFF6E9;
+  --bg-elevated: #FFFDF7;
+  --card: #FFFFFF;
+  --card-soft: #F7EAD6;
+  --card-soft-2: #F0E2C4;
+  --text: #201A24;
+  --muted: #6B6275;
+  --muted-2: #A79FB0;
+  --accent: #F5B324;
+  --accent-soft: #FEF3D6;
+  --accent-2: #E0567F;
+  --accent-3: #B32F58;
+  --accent-tint: #FDE7EE;
+  --line: #201A24;
+  --line-strong: #201A24;
+  --success: #2F7D5C;
+  --danger: #E8452C;
+  --danger-tint: #FDE3DE;
+
+  /* Elevation — hard offset "sticker" shadows for cards/controls, a soft
+     "pop" shadow kept for floating overlays (drawer, modals, toast). */
+  --shadow-xs: 2px 2px 0 var(--line);
+  --shadow-sm: 4px 4px 0 var(--line);
+  --shadow: 4px 4px 0 var(--line);
+  --shadow-lg: 0 14px 40px rgba(32,26,36,.18);
+  --shadow-brand: 4px 4px 0 var(--line);
+
+  /* Shape — pill-first, chunkier radii */
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 28px;
+  --radius-pill: 999px;
+
+  /* Motion */
+  --ease: cubic-bezier(.2,.8,.3,1);
+  --ease-spring: cubic-bezier(.34,1.56,.64,1);
+  --fast: 120ms;
+  --med: 200ms;
+
+  /* Type */
+  --font-ui: "Outfit", system-ui, sans-serif;
+  --text-caption: 12.5px;
+  --text-secondary: 14px;
+  --text-body: 16px;
+  --text-subheading: 19px;
+  --text-heading: 30px;
+  --text-display: clamp(40px, 6vw, 56px);
+  --leading-tight: 1.02;
+  --leading-ui: 1.2;
+  --leading-body: 1.55;
 }
 
 html[data-skin="storefront"][data-theme="dark"] {
-  /* dark-mode counterparts go here */
+  --badge-sun-bg: #3C2F16;  --badge-sun-fg: #FBDC8B;
+  --badge-pink-bg: #3E2533; --badge-pink-fg: #F3A7C0;
+  --badge-blue-bg: #1E2A48; --badge-blue-fg: #8FAAE8;
+  --badge-leaf-bg: #1B3128; --badge-leaf-fg: #8FCBAD;
+  --badge-hot-bg: #3E231C;  --badge-hot-fg: #F5A896;
+  --badge-ink-bg: #FFF6E9;  --badge-ink-fg: #19141C;
+
+  --bg: #19141C;
+  --bg-elevated: #241E28;
+  --card: #282130;
+  --card-soft: #2E2633;
+  --card-soft-2: #382E3F;
+  --text: #FFF6E9;
+  --muted: #B6ABA0;
+  --muted-2: #7C7285;
+  --accent: #FBDC8B;
+  --accent-soft: #3C2F16;
+  --accent-3: #F3A7C0;
+  --accent-tint: #3E2533;
+  --line: #FFF6E9;
+  --line-strong: #FFF6E9;
+  --success: #8FCBAD;
+  --danger: #F5A896;
+  --danger-tint: #3E231C;
+
+  --shadow-xs: 2px 2px 0 var(--line);
+  --shadow-sm: 4px 4px 0 var(--line);
+  --shadow: 4px 4px 0 var(--line);
+  --shadow-lg: 0 14px 40px rgba(0,0,0,.5);
+  --shadow-brand: 4px 4px 0 var(--line);
 }
 
 /* ---- Component overrides -------------------------------------------------
    Anything the design changes beyond tokens (header, hero, product cards,
-   drawer, modals, footer). Keep the html[data-skin="storefront"] prefix.
+   drawer, modals, footer).
    ------------------------------------------------------------------------ */
+
+html[data-skin="storefront"] body { font-family: var(--font-ui); }
+html[data-skin="storefront"] h1,
+html[data-skin="storefront"] h2,
+html[data-skin="storefront"] h3 { font-family: var(--font-display); font-weight: 400; letter-spacing: 0; }
+
+/* Header */
+html[data-skin="storefront"] .site-header {
+  background: var(--bg-elevated);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: var(--border-w-thick) solid var(--line);
+}
+html[data-skin="storefront"] .brand-lockup {
+  position: relative;
+  padding: 5px 14px 5px 7px;
+  background: var(--plaque-bg);
+  border: var(--border-w-thick) solid var(--line);
+  border-radius: 15px 19px 15px 19px;
+  box-shadow: var(--shadow);
+  transform: rotate(-2.5deg);
+  transition: transform var(--med) var(--ease-spring);
+}
+html[data-skin="storefront"] .brand-lockup:hover { transform: rotate(-1deg) translateY(-2px) scale(1.02); }
+html[data-skin="storefront"] .brand-lockup img {
+  width: 30px; height: 30px;
+  background: var(--bg-elevated);
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+  box-shadow: none;
+  transform: rotate(4deg);
+  padding: 2px;
+  object-fit: contain;
+}
+html[data-skin="storefront"] .brand-lockup span {
+  display: block;
+  overflow: visible;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--bg-elevated);
+  -webkit-text-stroke: 1.5px var(--line);
+  paint-order: stroke fill;
+  letter-spacing: 0;
+}
+html[data-skin="storefront"] .brand-lockup span::after {
+  content: "All food. All good.";
+  display: block;
+  margin-top: 2px;
+  -webkit-text-stroke: 0;
+  font-family: var(--font-ui);
+  font-weight: 800;
+  font-size: 7.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--line);
+}
+html[data-skin="storefront"] .brand-lockup::after {
+  content: "★";
+  position: absolute;
+  top: -7px; right: -8px;
+  display: grid;
+  place-items: center;
+  width: 18px; height: 18px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--bg-elevated);
+  background: var(--accent-2);
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+  transform: rotate(12deg);
+}
+html[data-skin="storefront"] .desktop-nav { background: transparent; padding: 0; gap: 24px; }
+html[data-skin="storefront"] .desktop-nav a,
+html[data-skin="storefront"] .nav-link {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  min-height: auto;
+  font-weight: 700;
+  color: var(--text);
+}
+html[data-skin="storefront"] .desktop-nav a:hover,
+html[data-skin="storefront"] .nav-link:hover { color: var(--accent-2); background: transparent; }
+html[data-skin="storefront"] .desktop-nav a[href="#home"] { color: var(--accent-2); }
+html[data-skin="storefront"] .icon-btn,
+html[data-skin="storefront"] .cart-btn {
+  border-width: var(--border-w);
+  border-color: var(--line);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-xs);
+}
+html[data-skin="storefront"] .icon-btn:hover,
+html[data-skin="storefront"] .cart-btn:hover { background: var(--card-soft); transform: translate(-1px,-1px); box-shadow: var(--shadow-sm); }
+html[data-skin="storefront"] .cart-btn { background: var(--plaque-bg); color: var(--line); font-weight: 800; }
+html[data-skin="storefront"] .cart-btn:hover { background: var(--plaque-bg); }
+html[data-skin="storefront"] .cart-btn span {
+  background: transparent; color: inherit; min-width: 0; height: auto; padding: 0;
+  font-family: var(--font-ui); font-weight: 800;
+}
+
+/* Mobile nav panel */
+html[data-skin="storefront"] .mobile-nav {
+  background: var(--bg-elevated);
+  border-bottom: var(--border-w-thick) solid var(--line);
+  box-shadow: var(--shadow-lg);
+}
+html[data-skin="storefront"] .mobile-nav > a,
+html[data-skin="storefront"] .mobile-nav > button { font-weight: 700; }
+
+/* Hero */
+html[data-skin="storefront"] .eyebrow {
+  padding: 4px 12px;
+  gap: 6px;
+  background: var(--badge-sun-bg);
+  color: var(--badge-sun-fg);
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: var(--text-caption);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+html[data-skin="storefront"] .eyebrow::before { display: none; }
+html[data-skin="storefront"] .hero-copy h1 { color: var(--text); text-wrap: pretty; }
+html[data-skin="storefront"] .hero-copy .primary-btn { font-size: var(--text-body); }
+html[data-skin="storefront"] .hero-carousel img {
+  border-width: var(--border-w-thick);
+  border-color: var(--line);
+  box-shadow: var(--shadow);
+}
+html[data-skin="storefront"] .hero-dots button::after {
+  width: 16px; height: 16px;
+  background: var(--card-soft);
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+  box-shadow: none;
+  opacity: 1;
+}
+html[data-skin="storefront"] .hero-dots button.active::after { width: 16px; background: var(--accent-2); }
+
+/* Buttons */
+html[data-skin="storefront"] .primary-btn,
+html[data-skin="storefront"] .secondary-btn,
+html[data-skin="storefront"] .danger-btn {
+  border-width: var(--border-w);
+  border-radius: 999px;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+  transition: transform var(--fast) var(--ease-spring), box-shadow var(--fast) var(--ease-spring), background var(--fast) linear;
+}
+html[data-skin="storefront"] .primary-btn { background: var(--accent-2); border-color: var(--line); color: #FFFDF7; }
+html[data-skin="storefront"] .primary-btn:hover { background: var(--accent-3); border-color: var(--line); box-shadow: var(--shadow); transform: translate(-1px,-1px); }
+html[data-skin="storefront"] .primary-btn:active { transform: translate(2px,2px); box-shadow: var(--shadow-xs); }
+html[data-skin="storefront"] .secondary-btn { background: var(--bg-elevated); border-color: var(--line); color: var(--text); }
+html[data-skin="storefront"] .secondary-btn:hover { background: var(--card-soft); transform: translate(-1px,-1px); }
+html[data-skin="storefront"] .danger-btn { background: var(--danger-tint); border-color: var(--line); color: var(--danger); }
+html[data-skin="storefront"] .danger-btn:hover { background: var(--danger); color: #FFFDF7; }
+html[data-skin="storefront"] button:disabled,
+html[data-skin="storefront"] .primary-btn:disabled,
+html[data-skin="storefront"] .secondary-btn:disabled,
+html[data-skin="storefront"] .danger-btn:disabled { box-shadow: none !important; }
+
+/* Category tabs + view switch */
+html[data-skin="storefront"] .tab {
+  border-width: var(--border-w);
+  border-radius: 999px;
+  font-weight: 700;
+  background: var(--bg-elevated);
+}
+html[data-skin="storefront"] .tab:hover { border-color: var(--line); color: var(--text); background: var(--card-soft); }
+html[data-skin="storefront"] .tab.active { background: var(--text); border-color: var(--line); color: var(--bg-elevated); box-shadow: var(--shadow-xs); }
+html[data-skin="storefront"] .view-switch { background: var(--bg-elevated); border: var(--border-w) solid var(--line); border-radius: 999px; padding: 4px; }
+html[data-skin="storefront"] .view-btn { border-radius: 999px; }
+html[data-skin="storefront"] .view-btn.active { background: var(--accent-2); color: #FFFDF7; box-shadow: none; }
+
+/* Product cards */
+html[data-skin="storefront"] .product-card {
+  padding: 10px;
+  gap: 10px;
+  border-width: var(--border-w);
+  border-color: var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+html[data-skin="storefront"] .product-card:hover {
+  box-shadow: 7px 7px 0 var(--line);
+  border-color: var(--line);
+  transform: translate(-3px,-3px);
+}
+html[data-skin="storefront"] .product-card-image {
+  border: var(--border-w) solid var(--line);
+  border-radius: var(--radius);
+}
+html[data-skin="storefront"] .product-info { padding: 0 2px 2px; }
+html[data-skin="storefront"] .price { font-family: var(--font-display); font-weight: 400; color: var(--text); }
+html[data-skin="storefront"] .product-grid:not(.list-view) .product-card { position: relative; }
+html[data-skin="storefront"] .product-grid:not(.list-view) .product-card .stock {
+  position: absolute;
+  top: 18px; left: 18px;
+  z-index: 2;
+  padding: 4px 10px;
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+  background: var(--badge-hot-bg);
+  color: var(--badge-hot-fg);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+html[data-skin="storefront"] .product-grid:not(.list-view) .product-card .stock.sold {
+  background: var(--badge-ink-bg);
+  color: var(--badge-ink-fg);
+}
+html[data-skin="storefront"] .product-card-add {
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-xs);
+}
+html[data-skin="storefront"] .product-card-add:hover { background: var(--accent-3); }
+html[data-skin="storefront"] .icon-only-action { border-radius: var(--radius); border: var(--border-w) solid var(--line); box-shadow: var(--shadow-xs); }
+html[data-skin="storefront"] .empty-state {
+  border: var(--border-w) dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--card-soft);
+}
+html[data-skin="storefront"] .status-banner {
+  border: var(--border-w) solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card-soft);
+}
+
+/* About */
+html[data-skin="storefront"] .about-image { border: var(--border-w) solid var(--line); box-shadow: var(--shadow); }
+
+/* Footer */
+html[data-skin="storefront"] .footer { border-top: var(--border-w-thick) solid var(--line); background: var(--bg-elevated); }
+html[data-skin="storefront"] .footer-brand img { border: var(--border-w) solid var(--line); }
+html[data-skin="storefront"] .footer-brand strong { font-family: var(--font-display); font-weight: 400; }
+
+/* Cart drawer */
+html[data-skin="storefront"] .drawer { border-left: var(--border-w-thick) solid var(--line); box-shadow: var(--shadow-lg); }
+html[data-skin="storefront"] .drawer-header,
+html[data-skin="storefront"] .drawer-footer { border-color: var(--line); background: var(--bg-elevated); }
+html[data-skin="storefront"] .drawer-header h2 { font-family: var(--font-display); font-weight: 400; }
+html[data-skin="storefront"] .cart-item { border-bottom-color: var(--card-soft); }
+html[data-skin="storefront"] .cart-item img { border: var(--border-w) solid var(--line); }
+html[data-skin="storefront"] .cart-controls .qty-btn,
+html[data-skin="storefront"] .qty button {
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+  background: var(--card-soft);
+}
+html[data-skin="storefront"] .cart-controls .remove-btn,
+html[data-skin="storefront"] .icon-remove-btn { border-radius: 999px; }
+
+/* Modals */
+html[data-skin="storefront"] .modal { border: var(--border-w-thick) solid var(--line); background: var(--bg-elevated); box-shadow: var(--shadow-lg); }
+html[data-skin="storefront"] .modal-close { background: var(--bg-elevated); border: var(--border-w) solid var(--line); border-radius: 999px; box-shadow: var(--shadow-xs); }
+html[data-skin="storefront"] .product-modal-image { border: var(--border-w) solid var(--line); box-shadow: var(--shadow); }
+html[data-skin="storefront"] .checkout-heading h2,
+html[data-skin="storefront"] .product-modal-grid h2,
+html[data-skin="storefront"] .checkout-group-title h3 { font-family: var(--font-display); font-weight: 400; }
+html[data-skin="storefront"] .order-status {
+  display: inline-flex;
+  padding: 4px 12px;
+  background: var(--badge-leaf-bg);
+  color: var(--badge-leaf-fg);
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+  font-size: var(--text-caption);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+/* Checkout form fields, selects, summary */
+html[data-skin="storefront"] .field input,
+html[data-skin="storefront"] .field textarea,
+html[data-skin="storefront"] .field select,
+html[data-skin="storefront"] .choice-value {
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-xs);
+}
+html[data-skin="storefront"] .field textarea,
+html[data-skin="storefront"] .cancel-form textarea { border-radius: var(--radius); }
+html[data-skin="storefront"] .field select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--line) 50%), linear-gradient(135deg, var(--line) 50%, transparent 50%);
+  background-position: calc(100% - 22px) center, calc(100% - 16px) center;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+html[data-skin="storefront"] .field input:focus,
+html[data-skin="storefront"] .field textarea:focus,
+html[data-skin="storefront"] .field select:focus { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--accent-2); }
+html[data-skin="storefront"] .checkout-group { border: var(--border-w) solid var(--line); border-radius: var(--radius); }
+html[data-skin="storefront"] .checkout-aside-inner { border: var(--border-w) solid var(--line); border-radius: var(--radius); background: var(--card-soft); }
+html[data-skin="storefront"] .summary { border: var(--border-w) solid var(--line); border-radius: var(--radius); }
+html[data-skin="storefront"] .checkout-confirm input { accent-color: var(--accent-2); }
+html[data-skin="storefront"] .qr-payment-card img { border: var(--border-w) solid var(--line); }
+html[data-skin="storefront"] .field input[type=file]::file-selector-button {
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+}
+
+/* Toast */
+html[data-skin="storefront"] .toast {
+  background: var(--text);
+  color: var(--bg-elevated);
+  border: var(--border-w) solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-ui);
+  font-weight: 700;
+}
+
+/* Support chat widget (support.js) */
+html[data-skin="storefront"] .support-fab {
+  border: var(--border-w-thick) solid var(--line);
+  background: var(--accent-2);
+  box-shadow: var(--shadow-lg);
+}
+html[data-skin="storefront"] .support-badge {
+  border: var(--border-w) solid var(--line);
+  background: var(--plaque-bg);
+  color: var(--line);
+}
+html[data-skin="storefront"] .support-panel { border: var(--border-w-thick) solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-lg); }
+html[data-skin="storefront"] .support-head { border-color: var(--line); background: var(--bg-elevated); }
+html[data-skin="storefront"] .support-head strong { font-family: var(--font-display); font-weight: 400; }
+html[data-skin="storefront"] .support-msg { border-radius: 16px; }
+html[data-skin="storefront"] .support-msg-me { border: var(--border-w) solid var(--line); border-bottom-right-radius: 5px; }
+html[data-skin="storefront"] .support-msg-admin { border: var(--border-w) solid var(--line); border-bottom-left-radius: 5px; }
+html[data-skin="storefront"] .support-compose { border-color: var(--line); background: var(--bg-elevated); }
+html[data-skin="storefront"] .support-compose textarea { border: var(--border-w) solid var(--line); border-radius: var(--radius); }
+
+/* Order number, monospace where the design calls for it */
+html[data-skin="storefront"] #orderDialog h2 { font-family: var(--font-mono); font-size: var(--text-subheading); }

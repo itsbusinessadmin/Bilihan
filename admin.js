@@ -773,13 +773,11 @@ function security(m){
 
 /* Storefront theme: which of the two designs customers see. 'original' is the
    look the store ships with. 'storefront' is the imported "Bilihan Storefront"
-   design, which lives entirely in theme-storefront.css. While that file is still
-   empty the option is listed but not selectable, so the shop can never be pointed
-   at a design that is not there — flip `ready` to true once it is imported. */
+   design, which lives entirely in theme-storefront.css. */
 const SKIN_OPTIONS=[
   {id:'original',name:'Original',ready:true,
    desc:'The design Bilihan ships with — warm ivory, deep forest and burnished gold.'},
-  {id:'storefront',name:'Bilihan Storefront',ready:false,
+  {id:'storefront',name:'Bilihan Storefront',ready:true,
    desc:'The imported Bilihan Storefront design.'}
 ];
 function skinIdOrDefault(v){return SKIN_OPTIONS.some(o=>o.id===v&&o.ready)?v:'original'}
