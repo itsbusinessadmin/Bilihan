@@ -519,3 +519,20 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 @media(max-width:560px){
   .order-receipt-row .modal-secondary-btn{width:100%}
 }
+
+/* ---- Storefront theme chooser (Appearance tab) ---- */
+.theme-choice{margin:0 0 var(--admin-space-lg);padding:0;border:0}
+.theme-choice legend{padding:0;margin-bottom:6px;font-weight:700;color:var(--admin-text)}
+.theme-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:var(--admin-space-sm)}
+.theme-option{display:flex;align-items:flex-start;gap:var(--admin-space-sm);margin:0;padding:var(--admin-space-md);border:1.5px solid var(--admin-line);border-radius:16px;background:var(--admin-card);cursor:pointer;transition:border-color .18s var(--admin-ease-out),background .18s var(--admin-ease-out)}
+.theme-option:hover{border-color:var(--admin-line-strong)}
+.theme-option input{flex:none;width:18px;height:18px;margin:2px 0 0;accent-color:var(--admin-green)}
+.theme-option-text{display:flex;flex-direction:column;gap:3px}
+.theme-option-text strong{color:var(--admin-text);line-height:var(--admin-leading-ui)}
+.theme-option-text small{font-size:var(--admin-text-caption);font-weight:500;line-height:1.5}
+.theme-option.is-selected{border-color:var(--admin-green);background:color-mix(in srgb,var(--admin-card) 90%,var(--admin-green) 10%)}
+/* A design that has not been imported yet stays visible but unpickable. */
+.theme-option.is-pending{cursor:not-allowed;background:var(--admin-soft);border-style:dashed}
+.theme-option.is-pending:hover{border-color:var(--admin-line)}
+.theme-option.is-pending .theme-option-text strong{color:var(--admin-muted)}
+.theme-option-flag{color:var(--admin-gold);font-weight:700;text-transform:uppercase;letter-spacing:.03em}

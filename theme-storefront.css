@@ -1,0 +1,50 @@
+/* =========================================================================
+   Bilihan — "Bilihan Storefront" theme (alternate storefront design)
+
+   The storefront ships two designs. The owner picks one in
+   Admin -> Appearance; the choice is stored in store_settings.storefront_skin
+   and applied as data-skin on <html>:
+
+     <html data-skin="original">    -> styles.css only (the shipped design)
+     <html data-skin="storefront">  -> styles.css + everything in this file
+
+   Every rule here MUST stay scoped under html[data-skin="storefront"] so this
+   stylesheet is completely inert while the original design is selected. Both
+   designs share the light/dark switch, so any token you redefine below needs a
+   dark counterpart under the [data-theme="dark"] block.
+
+   STATUS: empty. This file is the import target for the "Bilihan Storefront"
+   design (claude.ai/design project 08e5b0d6-ade5-44fe-93d8-8843a3f0e7d0,
+   file "Bilihan Storefront.dc.html"). That project could not be read from this
+   session, so nothing has been imported yet and selecting this design in Admin
+   is disabled until it is. Filling in the two blocks below is all that is left.
+   ========================================================================= */
+
+/* ---- Design tokens -------------------------------------------------------
+   Redefine any of the tokens styles.css sets on :root. Names, for reference:
+
+     Palette    --bg --bg-elevated --card --card-soft --card-soft-2 --text
+                --muted --muted-2 --accent --accent-soft --accent-2 --accent-3
+                --accent-tint --line --line-strong --success --danger
+                --danger-tint
+     Elevation  --shadow-xs --shadow-sm --shadow --shadow-lg --shadow-brand
+     Shape      --radius-sm --radius --radius-lg --radius-pill --content
+     Motion     --ease --ease-spring --fast --med
+     Space      --space-xs … --space-4xl --touch
+     Type       --font-ui --text-caption --text-secondary --text-body
+                --text-subheading --text-heading --text-display
+                --leading-tight --leading-ui --leading-body
+   ------------------------------------------------------------------------ */
+
+html[data-skin="storefront"] {
+  /* light-mode tokens go here */
+}
+
+html[data-skin="storefront"][data-theme="dark"] {
+  /* dark-mode counterparts go here */
+}
+
+/* ---- Component overrides -------------------------------------------------
+   Anything the design changes beyond tokens (header, hero, product cards,
+   drawer, modals, footer). Keep the html[data-skin="storefront"] prefix.
+   ------------------------------------------------------------------------ */

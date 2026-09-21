@@ -16,6 +16,7 @@ Bilihan v3 replaces Google Sheets / Apps Script with Supabase.
 - `app.js` — customer logic
 - `admin.js` — admin logic
 - `styles.css` — UI
+- `theme-storefront.css` — the alternate storefront design, off unless it is selected in Admin
 - `bilihan-logo.png` — Bilihan logo
 - `404.html` — custom not-found page (GitHub Pages serves this automatically)
 - `analytics.js` — analytics loader (does nothing until configured)
@@ -168,6 +169,10 @@ and cookie consent banner.
    ```sql
    alter table public.store_settings add column if not exists logo_url text;
    alter table public.store_settings add column if not exists email text;
+   alter table public.store_settings add column if not exists storefront_skin text not null default 'original';
+   alter table public.store_settings drop constraint if exists store_settings_storefront_skin_check;
+   alter table public.store_settings add constraint store_settings_storefront_skin_check
+     check (storefront_skin in ('original','storefront'));
    ```
 2. **Fill in Store Settings** in Admin: business name, contact number, contact email, Messenger,
    Instagram, pickup location. Anything left at its seeded default is hidden from customers rather
@@ -176,6 +181,30 @@ and cookie consent banner.
 4. **Submit the sitemap** at `https://bilihan.shop/sitemap.xml` in Google Search Console.
 5. **If you change domain**, update the canonical/Open Graph URLs in `index.html`, `robots.txt`,
    `sitemap.xml`, and `SITE_URL` in `config.js`.
+
+## Storefront theme
+
+The storefront can wear one of two designs, chosen in **Admin → Appearance → Storefront theme**:
+
+| Option | What it is |
+| --- | --- |
+| **Original** | The design the store ships with, in `styles.css`. |
+| **Bilihan Storefront** | The imported Bilihan Storefront design, in `theme-storefront.css`. |
+
+The choice is stored once in `store_settings.storefront_skin` and applies to every customer.
+It is a separate thing from the light/dark toggle in the storefront header, which stays a
+per-visitor choice and keeps working under either design.
+
+How it is applied: `app.js` puts the chosen design on the page as `<html data-skin="…">`, and
+every rule in `theme-storefront.css` is scoped under `html[data-skin="storefront"]`, so that
+file has no effect at all while **Original** is selected. The chosen design is also mirrored
+into `localStorage` so a returning visitor gets the right look on first paint instead of a flash
+of the other one.
+
+**Bilihan Storefront is not imported yet.** `theme-storefront.css` is still empty, so the option
+is listed in Admin but cannot be selected — the shop can never be pointed at a design that is not
+there. To finish it: fill in `theme-storefront.css`, then set `ready` to `true` for the
+`storefront` entry in `SKIN_OPTIONS` near the top of `appearance()` in `admin.js`.
 
 ## Turning on analytics
 
