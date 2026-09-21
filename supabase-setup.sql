@@ -60,6 +60,16 @@ alter table public.store_settings add column if not exists show_cash_payment boo
 alter table public.store_settings add column if not exists logo_url text;
 alter table public.store_settings add column if not exists email text;
 
+-- Which visual design the storefront wears. 'original' is the shipped Bilihan
+-- look; 'storefront' is the imported "Bilihan Storefront" design. The owner
+-- picks one in Admin -> Appearance. Light/dark mode is a separate, per-visitor
+-- choice and keeps working under either design.
+-- The constraint is dropped first so this file stays safe to re-run.
+alter table public.store_settings add column if not exists storefront_skin text not null default 'original';
+alter table public.store_settings drop constraint if exists store_settings_storefront_skin_check;
+alter table public.store_settings add constraint store_settings_storefront_skin_check
+  check (storefront_skin in ('original','storefront'));
+
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_code text not null unique,

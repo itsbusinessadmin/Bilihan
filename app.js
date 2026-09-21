@@ -1,5 +1,5 @@
 const GOOGLE_SHEETS_WEB_APP_URL = (window.BILIHAN_CONFIG||{}).GOOGLE_SHEETS_WEB_APP_URL || '';
-const LS = { cart:'bilihan_cart_v3', theme:'bilihan_theme_v3', latestOrder:'bilihan_latest_order_v3', cache:'bilihan_cache_v3', pendingCancel:'bilihan_pending_cancel_v3', productView:'bilihan_product_view_v1', lastOrderAt:'bilihan_last_order_at_v1' };
+const LS = { cart:'bilihan_cart_v3', theme:'bilihan_theme_v3', skin:'bilihan_skin_v1', latestOrder:'bilihan_latest_order_v3', cache:'bilihan_cache_v3', pendingCancel:'bilihan_pending_cancel_v3', productView:'bilihan_product_view_v1', lastOrderAt:'bilihan_last_order_at_v1' };
 const TITLE_SUFFIX='Order Food Online for Pickup or Delivery';
 /* Order cooldown and form dwell time: cheap client-side deterrents against bots and
    accidental double submissions. Server-side limits still belong in Supabase. */
@@ -42,6 +42,25 @@ async function bootstrap(){
   renderAll();retryPendingCancel();
 }
 function renderSkeletons(){$('menuGrid').innerHTML=Array.from({length:8},()=>'<div class="skeleton"></div>').join('')}
+/* The browser chrome colour follows the design's own --bg token rather than a
+   hardcoded pair, so a second design does not need this file edited to match. */
+function syncThemeColor(){
+  const meta=document.querySelector('meta[name="theme-color"]');
+  if(!meta)return;
+  const dark=document.documentElement.dataset.theme==='dark';
+  const bg=getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  meta.setAttribute('content',bg||(dark?'#0d100e':'#faf8f3'));
+}
+/* Which of the two storefront designs to wear. The owner picks this in
+   Admin -> Appearance and it arrives with the rest of store_settings; we mirror it
+   into localStorage so the inline script in index.html can apply it before first
+   paint on the next visit. Light/dark mode stays a separate, per-visitor choice. */
+const SKINS=['original','storefront'];
+function applySkin(name){
+  const skin=SKINS.includes(name)?name:'original';
+  if(document.documentElement.dataset.skin!==skin){document.documentElement.dataset.skin=skin;syncThemeColor()}
+  try{localStorage.setItem(LS.skin,skin)}catch(e){}
+}
 function renderAll(){renderSettings();renderCategories();renderViewSwitch();renderProducts();renderCart();renderLatestOrderButton();renderConnection()}
 function renderConnection(){
   const b=$('connectionBanner');
@@ -50,6 +69,7 @@ function renderConnection(){
 }
 function renderSettings(){
   const s=state.data.settings||FALLBACK.settings;
+  applySkin(s.storefront_skin);
   const name=realSetting(s.business_name)||'Bilihan';
   const logo=s.logo_url||'bilihan-mark.webp';
   $('brandName').textContent=$('footerBrand').textContent=name;
@@ -323,6 +343,6 @@ function renderLatestOrderButton(){
     btn.onclick=()=>{closeMobileNav();if(o)showOrder(safeJsonParse(localStorage.getItem(LS.latestOrder),o))};
   });
 }
-function syncThemeIcon(){const dark=document.documentElement.dataset.theme==='dark';const icon=$('themeIcon');if(icon)icon.src=dark?'ios-icons/light-mode.png':'ios-icons/dark-mode.png';$('themeToggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('themeToggle').setAttribute('aria-pressed',String(dark));const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute('content',dark?'#0d100e':'#faf8f3')}document.documentElement.dataset.theme=localStorage.getItem(LS.theme)||'light';syncThemeIcon();$('themeToggle').onclick=()=>{const dark=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=dark?'light':'dark';localStorage.setItem(LS.theme,dark?'light':'dark');syncThemeIcon()};
+function syncThemeIcon(){const dark=document.documentElement.dataset.theme==='dark';const icon=$('themeIcon');if(icon)icon.src=dark?'ios-icons/light-mode.png':'ios-icons/dark-mode.png';$('themeToggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('themeToggle').setAttribute('aria-pressed',String(dark));syncThemeColor()}document.documentElement.dataset.theme=localStorage.getItem(LS.theme)||'light';syncThemeIcon();$('themeToggle').onclick=()=>{const dark=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=dark?'light':'dark';localStorage.setItem(LS.theme,dark?'light':'dark');syncThemeIcon()};
 window.addEventListener('offline',()=>{state.online=false;renderConnection()});window.addEventListener('online',()=>bootstrap());
 bootstrap();
