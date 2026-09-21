@@ -113,6 +113,20 @@ hidden, so the storefront never shows placeholder text to a customer.
 Categories with no products in them are not shown. Hero rotation stops entirely for
 visitors who have `prefers-reduced-motion` set.
 
+**Animated GIFs work.** Every image Admin uploads — product photos, the logo, hero images,
+the about image, the QR code — accepts any image type the browser offers, including GIF.
+Admin downscales and re-encodes ordinary photos to WebP before upload, but deliberately
+skips GIF and SVG, because a canvas re-encode captures only the first frame and would
+silently flatten the animation. The GIF is stored and served exactly as picked, and the
+storefront renders it in a plain `<img>`, so it animates.
+
+Two things follow from that. A GIF gets **no compression at all**, so Admin rejects any
+image over 5 MB rather than let one large animation fill the storage bucket and sit in
+front of the storefront on a phone connection. And a GIF's own animation **cannot be
+stopped by `prefers-reduced-motion`** — the hero *rotation* respects that setting, but the
+frames inside a GIF keep moving regardless, so an animated hero image is worth using
+sparingly.
+
 ### 3.3 The cart
 
 The cart is an array in `localStorage` under `bilihan_cart_v3` holding
