@@ -73,6 +73,9 @@ function renderSettings(){
   const name=realSetting(s.business_name)||'Bilihan';
   const logo=s.logo_url||'bilihan-mark.webp';
   $('brandName').textContent=$('footerBrand').textContent=name;
+  /* On phones the name is hidden and this label is all a screen reader gets, so it
+     has to follow the store's actual name rather than stay at the seeded one. */
+  document.querySelector('.brand-lockup')?.setAttribute('aria-label',`${name} Home`);
   document.querySelectorAll('.footer-copy-name').forEach(el=>{el.textContent=name});
   document.title=`${name} — ${TITLE_SUFFIX}`;
   document.querySelectorAll('img[data-store-logo]').forEach(img=>{img.src=logo});
