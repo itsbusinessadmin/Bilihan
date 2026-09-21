@@ -244,14 +244,15 @@ html[data-skin="storefront"] .cart-btn span {
   font-family: var(--font-ui); font-weight: 800;
 }
 
-/* Mobile nav panel */
-html[data-skin="storefront"] .mobile-nav {
+/* Bottom tab bar */
+html[data-skin="storefront"] .bottom-nav {
   background: var(--bg-elevated);
-  border-bottom: var(--border-w-thick) solid var(--line);
+  border-top: var(--border-w-thick) solid var(--line);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
   box-shadow: var(--shadow-lg);
 }
-html[data-skin="storefront"] .mobile-nav > a,
-html[data-skin="storefront"] .mobile-nav > button { font-weight: 700; }
+html[data-skin="storefront"] .bottom-nav-link { font-weight: 700; border-radius: 999px; }
+html[data-skin="storefront"] .bottom-nav-link.active { background: var(--accent-2); color: #FFFDF7; }
 
 /* Hero */
 html[data-skin="storefront"] .eyebrow {

@@ -99,16 +99,8 @@
     <div class="header-actions">
       <button id="themeToggle" class="icon-btn" type="button" aria-label="Toggle theme"><img id="themeIcon" class="ui-icon" src="ios-icons/dark-mode.png" width="22" height="22" alt="" aria-hidden="true"></button>
       <button id="cartBtn" class="cart-btn" type="button" aria-label="Open cart"><img class="ui-icon" src="ios-icons/cart.png" width="22" height="22" alt="" aria-hidden="true"> <span id="cartCount">0</span></button>
-      <button id="menuBtn" class="icon-btn menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="mobileNav"><span class="menu-bars" aria-hidden="true"></span></button>
     </div>
   </header>
-  <nav id="mobileNav" class="mobile-nav" aria-label="Mobile" hidden>
-    <a href="#home">Home</a>
-    <a href="#menu">Products</a>
-    <a href="#about">About</a>
-    <button id="myOrderBtnMobile" class="hidden" type="button">My Order</button>
-    <div id="mobileNavContact" class="mobile-nav-contact"></div>
-  </nav>
   <main>
     <section id="home" class="hero section-pad">
       <div class="hero-copy">
@@ -151,6 +143,12 @@
     <div id="cartItems" class="drawer-content"></div>
     <div id="cartFooter" class="drawer-footer"></div>
   </aside>
+  <nav id="bottomNav" class="bottom-nav" aria-label="Sections">
+    <a class="bottom-nav-link" href="#home" data-section="home">Home</a>
+    <a class="bottom-nav-link" href="#menu" data-section="menu">Products</a>
+    <a class="bottom-nav-link" href="#about" data-section="about">About</a>
+    <button id="myOrderBtnMobile" class="bottom-nav-link hidden" type="button">My Order</button>
+  </nav>
   <div id="backdrop" class="backdrop hidden"></div>
   <dialog id="productDialog" class="modal"></dialog>
   <dialog id="checkoutDialog" class="modal wide-modal"></dialog>
