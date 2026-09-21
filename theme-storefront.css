@@ -364,7 +364,6 @@ html[data-skin="storefront"] .product-card-add {
   box-shadow: var(--shadow-xs);
 }
 html[data-skin="storefront"] .product-card-add:hover { background: var(--accent-3); }
-html[data-skin="storefront"] .icon-only-action { border-radius: var(--radius); border: var(--border-w) solid var(--line); box-shadow: var(--shadow-xs); }
 html[data-skin="storefront"] .empty-state {
   border: var(--border-w) dashed var(--line);
   border-radius: var(--radius);

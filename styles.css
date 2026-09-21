@@ -137,8 +137,7 @@ p{color:var(--muted);line-height:var(--leading-body);text-wrap:pretty;font-size:
 [data-theme="dark"] .primary-btn,
 [data-theme="dark"] .tab.active,
 [data-theme="dark"] .danger-btn:hover,
-[data-theme="dark"] .product-card-add,
-[data-theme="dark"] .icon-only-action{color:#0d100e}
+[data-theme="dark"] .product-card-add{color:#0d100e}
 [data-theme="dark"] .primary-btn:hover{box-shadow:var(--shadow-sm)}
 .primary-btn:active{transform:scale(.965)}
 .secondary-btn{background:var(--card);color:var(--text);border-color:var(--line-strong);box-shadow:var(--shadow-xs)}
@@ -220,7 +219,6 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .product-card-add:hover{background:var(--accent-3)}
 .product-card-add:active{transform:scale(.9)}
 .product-card-add.added{transform:scale(.88);opacity:.7}
-.icon-only-action{width:56px;height:56px;flex:0 0 56px;padding:0;border-radius:16px;display:inline-grid;place-items:center}
 
 .skeleton{height:auto;aspect-ratio:1/1.42;border-radius:var(--radius);background:linear-gradient(100deg,var(--card-soft) 30%,var(--card) 50%,var(--card-soft) 70%);background-size:220% 100%;animation:shimmer 1.25s infinite}
 @keyframes shimmer{to{background-position:-220% 0}}
@@ -329,11 +327,11 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
    text color. This is more robust than filter:invert across renderers
    and avoids any filter/compositing artifacts at small sizes. */
 .icon-btn img,.cart-btn img,.view-btn img,.product-card-add img,
-.icon-only-action img,.qty-btn img,.icon-remove-btn img{display:none}
+.qty-btn img,.icon-remove-btn img{display:none}
 
 .icon-btn,.cart-btn,.view-btn,.qty-btn,.icon-remove-btn{position:relative}
 .icon-btn::before,.cart-btn::before,.view-btn::before,.product-card-add::before,
-.icon-only-action::before,.qty-btn::before,.icon-remove-btn::before{content:"";display:block;flex:0 0 auto;background-color:currentColor;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;-webkit-mask-size:contain;mask-size:contain}
+.qty-btn::before,.icon-remove-btn::before{content:"";display:block;flex:0 0 auto;background-color:currentColor;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;-webkit-mask-size:contain;mask-size:contain}
 
 .icon-btn::before{width:19px;height:19px;-webkit-mask-image:var(--icon,url(ios-icons/close.png));mask-image:var(--icon,url(ios-icons/close.png))}
 #themeToggle::before{--icon:url(ios-icons/dark-mode.png)}
@@ -351,9 +349,8 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .icon-remove-btn{color:var(--danger)}
 .icon-remove-btn::before{width:19px;height:19px;-webkit-mask-image:url(ios-icons/trash.png);mask-image:url(ios-icons/trash.png)}
 
-.product-card-add,.icon-only-action{color:#fff}
+.product-card-add{color:#fff}
 .product-card-add::before{width:18px;height:18px;-webkit-mask-image:url(ios-icons/add-to-cart.png);mask-image:url(ios-icons/add-to-cart.png)}
-.icon-only-action::before{width:22px;height:22px;-webkit-mask-image:url(ios-icons/add-to-cart.png);mask-image:url(ios-icons/add-to-cart.png)}
 
 .desktop-nav .nav-icon{display:none!important}
 [data-theme="dark"] .brand-lockup img,[data-theme="dark"] .footer-brand img{background:#fff}
