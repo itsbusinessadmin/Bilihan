@@ -140,8 +140,19 @@ function syncHeroTimer(){
 heroReduceMotion.addEventListener('change',syncHeroTimer);
 
 function visibleCategories(){return (state.data.categories||[]).filter(c=>(state.data.products||[]).some(p=>p.category_id===c.id)).sort((a,b)=>a.sort_order-b.sort_order)}
-function renderCategories(){const cats=visibleCategories();$('categoryTabs').innerHTML=[{id:'all',name:'All'},...cats].map(c=>`<button class="tab ${state.category===c.id?'active':''}" type="button" role="tab" aria-selected="${state.category===c.id?'true':'false'}" data-id="${c.id}">${esc(c.name)}</button>`).join('');bindCategoryTabs()}
-function bindCategoryTabs(){const tabs=$('categoryTabs');if(!tabs||tabs.dataset.bound)return;tabs.dataset.bound='1';tabs.addEventListener('click',e=>{const b=e.target.closest('.tab');if(!b)return;state.category=b.dataset.id;renderCategories();renderProducts()})}
+/* Categories are a dropdown rather than a row of pills: the owner can add as many
+   as they like, and a native select gets the platform's own picker on phones. */
+function renderCategories(){
+  const sel=$('categorySelect');
+  sel.innerHTML=[{id:'all',name:'All'},...visibleCategories()].map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  /* A category can disappear while it is the selected one (the owner deletes it, or
+     it empties out). Assigning a value no option carries leaves the select blank, so
+     fall back to All instead of showing an empty filter. */
+  sel.value=state.category;
+  if(!sel.value){state.category='all';sel.value='all'}
+  bindCategorySelect();
+}
+function bindCategorySelect(){const sel=$('categorySelect');if(!sel||sel.dataset.bound)return;sel.dataset.bound='1';sel.addEventListener('change',()=>{state.category=sel.value;renderProducts()})}
 function renderViewSwitch(){const grid=$('gridViewBtn'),list=$('listViewBtn'),menu=$('menuGrid');if(!grid||!list||!menu)return;const isList=state.productView==='list';menu.classList.toggle('list-view',isList);grid.classList.toggle('active',!isList);list.classList.toggle('active',isList);grid.setAttribute('aria-pressed',String(!isList));list.setAttribute('aria-pressed',String(isList));grid.onclick=()=>setProductView('grid');list.onclick=()=>setProductView('list')}
 function setProductView(view){state.productView=view==='list'?'list':'grid';localStorage.setItem(LS.productView,state.productView);renderViewSwitch()}
 function renderProducts(){const showStock=state.data.settings?.show_stock!==false;const ps=(state.data.products||[]).filter(p=>state.category==='all'||p.category_id===state.category).sort((a,b)=>a.sort_order-b.sort_order);const allSold=ps.length&&ps.every(p=>!p.is_available||p.stock<=0);const empty=!ps.length?'<div class="empty-state"><h3>No products here yet</h3><p>Try another category or check back soon.</p></div>':'';$('menuGrid').innerHTML=empty+(allSold?'<div class="status-banner" style="grid-column:1/-1">We’re currently sold out. Please check back again soon!</div>':'')+ps.map(p=>{const sold=!p.is_available||p.stock<=0;const stock=sold?'Sold Out':p.stock<=5?`Only ${p.stock} left!`:`${p.stock} available`;const stockHtml=(showStock||sold)?`<div class="stock ${sold?'sold':''}">${stock}</div>`:'';const addButton=sold?'':`<button class="product-card-add" type="button" data-add-id="${p.id}" aria-label="Add ${esc(p.name)} to cart" title="Add to cart"><img class="ui-icon" src="ios-icons/add-to-cart.png" alt="" aria-hidden="true"></button>`;return `<article class="product-card" data-id="${p.id}"><img class="product-card-image" loading="lazy" decoding="async" src="${esc(p.image_url||'bilihan-logo.png')}" onerror="this.onerror=null;this.src='bilihan-logo.png'" alt="${esc(p.name)}"><div class="product-info"><div class="product-row"><strong>${esc(p.name)}</strong><span class="price">${money(p.price)}</span></div><div class="product-card-bottom">${stockHtml}${addButton}</div></div></article>`}).join('');bindMenuGrid()}
@@ -343,6 +354,6 @@ function renderLatestOrderButton(){
     btn.onclick=()=>{closeMobileNav();if(o)showOrder(safeJsonParse(localStorage.getItem(LS.latestOrder),o))};
   });
 }
-function syncThemeIcon(){const dark=document.documentElement.dataset.theme==='dark';const icon=$('themeIcon');if(icon)icon.src=dark?'ios-icons/light-mode.png':'ios-icons/dark-mode.png';$('themeToggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('themeToggle').setAttribute('aria-pressed',String(dark));syncThemeColor()}document.documentElement.dataset.theme=localStorage.getItem(LS.theme)||'light';syncThemeIcon();$('themeToggle').onclick=()=>{const dark=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=dark?'light':'dark';localStorage.setItem(LS.theme,dark?'light':'dark');syncThemeIcon()};
+function syncThemeIcon(){const dark=document.documentElement.dataset.theme==='dark';document.documentElement.style.colorScheme=dark?'dark':'light';const icon=$('themeIcon');if(icon)icon.src=dark?'ios-icons/light-mode.png':'ios-icons/dark-mode.png';$('themeToggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('themeToggle').setAttribute('aria-pressed',String(dark));syncThemeColor()}document.documentElement.dataset.theme=localStorage.getItem(LS.theme)||'light';syncThemeIcon();$('themeToggle').onclick=()=>{const dark=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=dark?'light':'dark';localStorage.setItem(LS.theme,dark?'light':'dark');syncThemeIcon()};
 window.addEventListener('offline',()=>{state.online=false;renderConnection()});window.addEventListener('online',()=>bootstrap());
 bootstrap();

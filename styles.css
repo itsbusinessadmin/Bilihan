@@ -135,7 +135,6 @@ p{color:var(--muted);line-height:var(--leading-body);text-wrap:pretty;font-size:
 /* In dark mode the brand green and red lighten, so white text on them drops to ~3.3:1.
    Dark ink on those same fills restores AA. */
 [data-theme="dark"] .primary-btn,
-[data-theme="dark"] .tab.active,
 [data-theme="dark"] .danger-btn:hover,
 [data-theme="dark"] .product-card-add{color:#0d100e}
 [data-theme="dark"] .primary-btn:hover{box-shadow:var(--shadow-sm)}
@@ -184,11 +183,15 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .section-heading h2{margin-bottom:0}
 .status-banner{margin:0 0 var(--space-md);border:1px solid var(--line);color:var(--muted);padding:13px 15px;border-radius:var(--radius-sm);background:var(--card-soft);font-size:var(--text-secondary);line-height:var(--leading-ui)}
 .menu-controls{display:flex;align-items:center;gap:var(--space-sm);margin-bottom:var(--space-md);min-width:0}
-.tabs{display:flex;overflow-x:auto;scrollbar-width:none;overscroll-behavior-inline:contain;scroll-snap-type:x proximity;flex:1;min-width:0;margin:0;padding:2px;gap:8px}
-.tabs::-webkit-scrollbar{display:none}
-.tab{flex:0 0 auto;scroll-snap-align:start;transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease);min-height:40px;padding:0 16px;border:1px solid var(--line);border-radius:var(--radius-pill);background:var(--card);color:var(--muted);font-size:var(--text-secondary);font-weight:600}
-.tab:hover{border-color:var(--line-strong);color:var(--text)}
-.tab.active{background:var(--accent-2);border-color:var(--accent-2);color:#fff;box-shadow:var(--shadow-brand)}
+/* Category filter. A dropdown rather than a row of pills: the owner controls the
+   category list and it grows, and a native select brings the platform's own
+   picker on phones instead of a strip that scrolls sideways. */
+.category-select{position:relative;display:inline-flex;align-items:center;min-width:0;margin-inline-end:auto}
+.category-select select{appearance:none;-webkit-appearance:none;max-width:100%;min-height:40px;padding:0 42px 0 16px;border:1px solid var(--line);border-radius:var(--radius-pill);background:var(--card);color:var(--text);font-size:var(--text-secondary);font-weight:600;text-overflow:ellipsis;transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease)}
+.category-select select:hover{border-color:var(--line-strong)}
+/* The popup itself is drawn by the OS; these keep it readable in dark mode. */
+.category-select select option{background:var(--bg-elevated);color:var(--text)}
+.category-select::after{content:"";position:absolute;inset-inline-end:16px;top:50%;translate:0 -50%;width:13px;height:13px;pointer-events:none;background-color:var(--muted);-webkit-mask:url(ios-icons/chevron-down.png) no-repeat center/contain;mask:url(ios-icons/chevron-down.png) no-repeat center/contain}
 .view-switch{display:flex;flex:0 0 auto;gap:2px;padding:3px;border-radius:12px;background:var(--card-soft)}
 .view-btn{width:38px;height:38px;display:grid;place-items:center;padding:9px;border:0;border-radius:12px;background:transparent;transition:background var(--fast) var(--ease),box-shadow var(--fast) var(--ease)}
 .view-btn.active{background:var(--card);box-shadow:var(--shadow-xs)}
@@ -424,8 +427,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .hero-copy .primary-btn{width:100%;min-height:52px}
   #menu{padding-top:var(--space-xl)}
   .section-heading{margin-bottom:var(--space-sm)}
-  .tabs{margin-inline:-12px;padding-inline:12px}
-  .tab{min-height:38px;padding-inline:14px;font-size:.83rem}
+  .category-select select{min-height:38px;padding-inline:14px 38px;font-size:.83rem}
   .menu-controls{gap:var(--space-xs);margin-bottom:var(--space-sm);align-items:flex-end}
   .view-switch{border-radius:12px}
   .view-btn{width:36px;height:36px}
@@ -487,7 +489,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .product-row{gap:6px}
   .product-row strong{font-size:.87rem}
   .price{font-size:.8rem}
-  .tab{padding-inline:12px}
+  .category-select select{padding-inline:12px 36px}
 }
 @media (max-width:340px){
   .brand-lockup span{max-width:76px}
@@ -499,10 +501,10 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .product-card{cursor:pointer}
 }
 @media (hover:none),(pointer:coarse){
-  .desktop-nav a:hover,.nav-link:hover,.icon-btn:hover,.cart-btn:hover,.secondary-btn:hover,.tab:hover,.product-card:hover,.icon-remove-btn:hover{background-color:initial;transform:none;box-shadow:var(--shadow-xs)}
-  .icon-btn,.cart-btn,.tab,.view-btn,.product-card-add,.cart-controls .qty-btn,.cart-controls .remove-btn,.icon-remove-btn{min-width:var(--touch);min-height:var(--touch)}
+  .desktop-nav a:hover,.nav-link:hover,.icon-btn:hover,.cart-btn:hover,.secondary-btn:hover,.product-card:hover,.icon-remove-btn:hover{background-color:initial;transform:none;box-shadow:var(--shadow-xs)}
+  .icon-btn,.cart-btn,.view-btn,.product-card-add,.cart-controls .qty-btn,.cart-controls .remove-btn,.icon-remove-btn{min-width:var(--touch);min-height:var(--touch)}
   .view-btn{width:var(--touch);height:var(--touch)}
-  .tab{min-height:var(--touch)}
+  .category-select select{min-height:var(--touch)}
   .product-card,.product-grid.list-view .product-card{--card-action:var(--touch)}
   .cart-controls .qty-btn,.cart-controls .remove-btn{width:var(--touch);height:var(--touch);min-height:var(--touch);flex-basis:var(--touch)}
 }
@@ -510,7 +512,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   *{scroll-behavior:auto!important;animation:none!important;transition:none!important}
 }
 @media (forced-colors:active){
-  .primary-btn,.secondary-btn,.danger-btn,.tab,.view-btn,.icon-btn,.cart-btn,.product-card{forced-color-adjust:auto;border:1px solid ButtonText}
+  .primary-btn,.secondary-btn,.danger-btn,.category-select select,.view-btn,.icon-btn,.cart-btn,.product-card{forced-color-adjust:auto;border:1px solid ButtonText}
   :where(a,button,input,select,textarea):focus-visible{outline:2px solid Highlight}
 }
 @media (prefers-contrast:more){
