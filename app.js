@@ -93,7 +93,6 @@ function renderContact(s){
   if(instagram)methods.push({href:instagram,label:'Instagram',external:true});
   const html=methods.map(m=>`<a class="contact-link${m.icon?' contact-'+m.icon:''}" href="${esc(m.href)}"${m.external?' target="_blank" rel="noopener noreferrer"':''}>${esc(m.label)}</a>`).join('');
   const footer=$('footerContact');if(footer)footer.innerHTML=html;
-  const nav=$('mobileNavContact');if(nav)nav.innerHTML=html;
 }
 /* The dots are rebuilt only when the image list itself changes. The old version
    re-wrote their innerHTML and re-bound every click handler on each rotation —
@@ -170,19 +169,37 @@ function renderCart(){
   $('cartItems').querySelectorAll('button').forEach(b=>b.onclick=()=>cartAction(b.dataset.a,+b.dataset.i));$('checkoutBtn').onclick=openCheckout;
 }
 async function cartAction(a,i){const item=state.cart[i];if(a==='minus')item.qty=Math.max(1,item.qty-1);if(a==='plus'){const p=state.data.products.find(p=>p.id===item.productId);if(item.qty<(p?.stock||0))item.qty++;else toast('Maximum available stock reached')}if(a==='remove'&&confirm('Remove this item from your cart?'))state.cart.splice(i,1);saveCart()}
-function openCart(){closeMobileNav();const d=$('cartDrawer');d.classList.add('open');d.setAttribute('aria-hidden','false');d.removeAttribute('inert');$('backdrop').classList.remove('hidden');$('closeCart').focus()}
+function openCart(){const d=$('cartDrawer');d.classList.add('open');d.setAttribute('aria-hidden','false');d.removeAttribute('inert');$('backdrop').classList.remove('hidden');$('closeCart').focus()}
 function closeCart(){const d=$('cartDrawer');d.classList.remove('open');d.setAttribute('aria-hidden','true');d.setAttribute('inert','');$('backdrop').classList.add('hidden')}
-$('cartBtn').onclick=openCart;$('closeCart').onclick=closeCart;$('backdrop').onclick=()=>{closeCart();closeMobileNav()};
+$('cartBtn').onclick=openCart;$('closeCart').onclick=closeCart;$('backdrop').onclick=closeCart;
 $('cartDrawer').setAttribute('inert','');
 
 /* ---- Mobile navigation (the desktop nav is hidden below 820px) ---- */
-function mobileNavOpen(){return $('menuBtn')?.getAttribute('aria-expanded')==='true'}
-function openMobileNav(){closeCart();$('mobileNav').hidden=false;requestAnimationFrame(()=>$('mobileNav').classList.add('open'));$('menuBtn').setAttribute('aria-expanded','true');$('menuBtn').setAttribute('aria-label','Close menu');$('backdrop').classList.remove('hidden')}
-function closeMobileNav(){const nav=$('mobileNav');if(!nav||nav.hidden)return;nav.classList.remove('open');nav.hidden=true;$('menuBtn').setAttribute('aria-expanded','false');$('menuBtn').setAttribute('aria-label','Open menu');if(!$('cartDrawer').classList.contains('open'))$('backdrop').classList.add('hidden')}
-if($('menuBtn'))$('menuBtn').onclick=()=>mobileNavOpen()?closeMobileNav():openMobileNav();
-if($('mobileNav'))$('mobileNav').addEventListener('click',e=>{if(e.target.closest('a'))closeMobileNav()});
-document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(mobileNavOpen())closeMobileNav();if($('cartDrawer').classList.contains('open'))closeCart()});
-addEventListener('resize',()=>{if(innerWidth>820)closeMobileNav()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('cartDrawer').classList.contains('open'))closeCart()});
+
+/* Bottom tab bar (phones), in place of the old hamburger. Home/Products/About are
+   anchors on this one page, so the bar is a jump bar rather than a router: it marks
+   whichever section the reader is actually looking at. */
+function syncBottomNav(id){
+  document.querySelectorAll('.bottom-nav-link[data-section]').forEach(a=>{
+    const on=a.dataset.section===id;
+    a.classList.toggle('active',on);
+    if(on)a.setAttribute('aria-current','true');else a.removeAttribute('aria-current');
+  });
+}
+(function watchSections(){
+  const secs=['home','menu','about'].map(id=>$(id)).filter(Boolean);
+  if(!secs.length)return;
+  if(!('IntersectionObserver' in window)){syncBottomNav('home');return}
+  /* A zero-height band across the middle of the viewport. The sections are stacked
+     with no gaps, so exactly one crosses the midline at a time — no ratio tie-break
+     and no guessing from scroll offsets. */
+  const io=new IntersectionObserver(entries=>{
+    for(const e of entries)if(e.isIntersecting)syncBottomNav(e.target.id);
+  },{rootMargin:'-50% 0px -50% 0px',threshold:0});
+  secs.forEach(sec=>io.observe(sec));
+  syncBottomNav('home');
+})();
 function validateCartAgainstLive(liveProducts){let changed=false, invalid=[];for(const item of state.cart){const p=liveProducts.find(x=>x.id===item.productId);if(!p){invalid.push(`${item.name} is no longer available.`);changed=true;continue}if(!p.is_available||p.stock<item.qty){invalid.push(`${item.name} no longer has enough stock.`);changed=true}if(+p.price!==+item.price){item.price=+p.price;invalid.push(`${item.name} price was updated.`);changed=true}}if(changed)saveCart();return invalid}
 async function fetchLiveProducts(){const {data,error}=await db.from('products').select('*');if(error)throw error;return data}
 async function syncOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;const items=(order.items||[]).map(i=>`${i.product_name} x ${i.qty}`).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||''};await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(err){console.warn('Google Sheets sync failed:',err)}}
@@ -351,7 +368,7 @@ function renderLatestOrderButton(){
   [$('myOrderBtn'),$('myOrderBtnMobile')].forEach(btn=>{
     if(!btn)return;
     btn.classList.toggle('hidden',!o);
-    btn.onclick=()=>{closeMobileNav();if(o)showOrder(safeJsonParse(localStorage.getItem(LS.latestOrder),o))};
+    btn.onclick=()=>{if(o)showOrder(safeJsonParse(localStorage.getItem(LS.latestOrder),o))};
   });
 }
 function syncThemeIcon(){const dark=document.documentElement.dataset.theme==='dark';document.documentElement.style.colorScheme=dark?'dark':'light';const icon=$('themeIcon');if(icon)icon.src=dark?'ios-icons/light-mode.png':'ios-icons/dark-mode.png';$('themeToggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('themeToggle').setAttribute('aria-pressed',String(dark));syncThemeColor()}document.documentElement.dataset.theme=localStorage.getItem(LS.theme)||'light';syncThemeIcon();$('themeToggle').onclick=()=>{const dark=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=dark?'light':'dark';localStorage.setItem(LS.theme,dark?'light':'dark');syncThemeIcon()};
