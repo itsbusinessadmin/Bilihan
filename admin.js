@@ -115,6 +115,27 @@ function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal
    WebP is used so logos with transparency survive; if anything about the re-encode
    fails, or it would not actually be smaller, the original file is uploaded. */
 const IMAGE_MAX_SIDE=1600, IMAGE_QUALITY=0.82, IMAGE_SKIP_BELOW=200*1024;
+/* Animated GIFs and SVGs skip the re-encode below, so nothing shrinks them: the
+   file that is picked is the file every customer downloads on every visit. Cap
+   what may be uploaded so one large animation cannot fill the storage bucket or
+   sit in front of the storefront on a phone connection. */
+const UPLOAD_MAX_BYTES=5*1024*1024;
+/* Rounds up, so a file one byte over the cap never prints as the same figure as
+   the cap it just broke ("5.0 MB, over the 5.0 MB limit"). */
+function formatBytes(bytes){
+  const up=(n,dp)=>(Math.ceil(n*10**dp)/10**dp).toFixed(dp);
+  if(bytes<1024)return `${bytes} B`;
+  if(bytes<1024*1024)return `${up(bytes/1024,0)} KB`;
+  return `${up(bytes/1024/1024,1)} MB`;
+}
+/* Returns '' when the file may be uploaded, or the reason it may not. */
+function uploadSizeProblem(file){
+  if(!file||file.size<=UPLOAD_MAX_BYTES)return '';
+  const animated=file.type==='image/gif';
+  return `${file.name||'That image'} is ${formatBytes(file.size)}, over the ${formatBytes(UPLOAD_MAX_BYTES)} limit.`
+    +(animated?' Animated GIFs are uploaded exactly as they are, so please use a shorter or smaller one.'
+              :' Please use a smaller image.');
+}
 async function compressImage(file){
   if(!file.type?.startsWith('image/')||file.type==='image/gif'||file.type==='image/svg+xml')return file;
   let bitmap;
@@ -134,6 +155,10 @@ async function compressImage(file){
 async function uploadImage(file,bucket='product-images'){
   if(!file)return null;
   const prepared=await compressImage(file);
+  /* Checked after compressing, so a big JPEG that shrinks under the cap is still
+     accepted; a GIF or SVG skipped the re-encode and is measured as picked. */
+  const problem=uploadSizeProblem(prepared);
+  if(problem)throw new Error(problem);
   const ext=(prepared.name.split('.').pop()||'jpg').toLowerCase();
   const path=`${crypto.randomUUID()}.${ext}`;
   const {error}=await db.storage.from(bucket).upload(path,prepared,{upsert:false,contentType:prepared.type});
@@ -748,6 +773,25 @@ function security(m){
 }
 
 function appearance(m){const s=A.data.settings;let heroItems=(s.hero_images||[]).map(url=>({id:crypto.randomUUID(),url,file:null}));m.innerHTML=`<span class="eyebrow">Storefront content</span><h2>Appearance</h2><form id="appearanceForm" class="panel admin-form"><label>Store Logo${s.logo_url?` <img src="${esc(s.logo_url)}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`:` <img src="bilihan-logo.png" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`}<input name="logo_file" type="file" accept="image/*"></label><label>Hero title<input name="hero_title" value="${esc(s.hero_title||'')}"></label><label>Hero tagline<textarea name="hero_tagline">${esc(s.hero_tagline||'')}</textarea></label><label>Hero images<small class="muted" style="display:block;font-weight:400;margin:2px 0 8px">Best size 1600×1200px (4:3 ratio). Tap the + tile to add an image, tap × to remove one.</small><div id="heroSlotsWrap" class="hero-slots-grid"></div></label><label>About text<textarea name="about_text" rows="6">${esc(s.about_text||'')}</textarea></label><label>About image<input name="about_file" type="file" accept="image/*"></label><input name="about_image_url" value="${esc(s.about_image_url||'')}" placeholder="Or About image URL"><button class="primary-btn">Save Appearance</button></form>`;const wrap=document.getElementById('heroSlotsWrap');function renderHeroSlots(){wrap.innerHTML=heroItems.map((it,i)=>`<div class="hero-slot" data-id="${it.id}"><img src="${esc(it.file?URL.createObjectURL(it.file):it.url)}" alt="Hero image ${i+1}"><button type="button" class="hero-slot-remove" data-id="${it.id}" aria-label="Remove hero image ${i+1}" title="Remove">×</button></div>`).join('')+`<label class="hero-add-slot" title="Add hero image"><span>+</span><input type="file" accept="image/*" id="heroAddInput"></label>`;wrap.querySelectorAll('.hero-slot-remove').forEach(btn=>btn.onclick=()=>{heroItems=heroItems.filter(x=>x.id!==btn.dataset.id);renderHeroSlots()});document.getElementById('heroAddInput').onchange=ev=>{const f=ev.target.files[0];if(!f)return;heroItems.push({id:crypto.randomUUID(),url:null,file:f});renderHeroSlots()}}renderHeroSlots();document.getElementById('appearanceForm').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);let logo=s.logo_url||null;let about=String(fd.get('about_image_url')||'');const logoFile=fd.get('logo_file');const aboutFile=fd.get('about_file');try{if(logoFile&&logoFile.size)logo=await uploadImage(logoFile,'store-assets');if(aboutFile&&aboutFile.size)about=await uploadImage(aboutFile,'store-assets');const heroUrls=[];for(const it of heroItems){if(it.file){heroUrls.push(await uploadImage(it.file,'store-assets'))}else if(it.url){heroUrls.push(it.url)}}const row={logo_url:logo,hero_title:fd.get('hero_title'),hero_tagline:fd.get('hero_tagline'),hero_images:heroUrls,about_text:fd.get('about_text'),about_image_url:about};const {error}=await db.from('store_settings').update(row).eq('id',1);if(error)throw error;await loadAll();alert('Appearance saved.');renderShell()}catch(err){alert(err.message)}}}
+/* Say so the moment an oversized image is picked, rather than after the whole
+   form has been filled in and saved. One delegated listener covers every image
+   input in Admin, including the ones built later inside modals. uploadImage()
+   still enforces the same limit, so this is convenience, not the control.
+
+   Capture phase, because the inputs carry their own onchange handlers that add
+   the file to the hero grid or swap the preview image. Those run at the target,
+   so validating there first - and stopping the event when the file is rejected -
+   is what keeps an oversized pick from being accepted before it is cleared. */
+document.addEventListener('change',e=>{
+  const input=e.target;
+  if(input?.type!=='file'||!String(input.accept||'').includes('image'))return;
+  const problem=uploadSizeProblem(input.files?.[0]);
+  if(!problem)return;
+  e.stopPropagation();
+  input.value='';
+  alert(problem);
+},true);
+
 /* Keep A.session in step with background token refreshes, and follow a sign-out
    that happened in another tab. */
 if(window.db){

@@ -323,6 +323,27 @@ the file, and anyone else gets Google's "request access" page. Do not add a
 `setSharing(ANYONE_WITH_LINK)` call to the upload or the endpoint — order codes
 are short and guessable, and that would make every customer's receipt public.
 
+## Store images
+
+Every image picker in Admin — product photo, store logo, hero images, about image, QR code
+— takes any image type your browser offers, **animated GIFs included**. Ordinary photos are
+downscaled to 1600px and re-encoded to WebP in the browser before upload, because a photo
+straight off a phone is several megabytes and that exact file was then served to every
+customer on every visit.
+
+GIFs and SVGs skip that re-encode on purpose: drawing them to a canvas captures only the
+first frame, which would silently flatten an animation into a still. So a GIF is uploaded
+and served exactly as you picked it, and it animates on the storefront.
+
+Because nothing shrinks them, **uploads are capped at 5 MB**. Anything larger is refused as
+soon as you pick it, with a message naming the file's size — and for a GIF, saying why it
+was not compressed. The same limit is enforced again in the upload helper, so a form that
+somehow gets past the picker cannot store an oversized file either.
+
+Worth knowing before you use an animated hero image: a GIF's animation cannot be paused by
+a visitor's "reduce motion" setting. The hero *rotation* between images respects it; the
+frames inside a GIF do not.
+
 ## Spam protection
 
 The checkout form has three client-side deterrents: a honeypot field no human can see, a minimum
