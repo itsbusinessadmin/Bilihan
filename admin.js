@@ -54,7 +54,64 @@ async function loadAll(){const [p,c,o,s,t]=await Promise.all([db.from('products'
      a failure there must not stop the rest of Admin from loading. */
   if(t.error)console.warn('Bilihan admin: support threads unavailable',t.error);
   A.data={products:p.data,categories:c.data,orders:o.data,settings:s.data,threads:t.error?[]:(t.data||[])}}
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="bilihan-logo.png"><div><strong>Bilihan</strong><small style="display:block">ADMIN</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,messages,settings,appearance,security}[A.section]||dashboard)(m)}
+/* Auto-refresh ---------------------------------------------------------------
+   Orders and messages arrive while this page sits open, so the data refetches on a
+   timer instead of waiting for someone to hit reload.
+
+   This deliberately does not reload the page. A reload every three seconds would
+   throw away whatever the owner is in the middle of — a half-typed product, an open
+   order, their place in a long list. Instead the data is refetched and the current
+   section repainted, and even the repaint is skipped whenever it would take
+   something away from the person using the page. */
+const AUTO={ms:3000,timer:null,busy:false,fails:0};
+/* Sections that own their markup: forms would lose unsaved edits to a repaint, the
+   messages view runs its own poll and holds a reply box, and Security holds
+   measurements it took itself. Their data still refreshes underneath. */
+const AUTO_KEEP_MARKUP=new Set(['settings','appearance','messages','security']);
+
+function autoRefreshPaused(){
+  if(document.hidden)return true;                              /* a background tab spends quota for nothing */
+  if(document.querySelector('.admin-modal-backdrop'))return true;  /* a modal is open over the page */
+  if(document.querySelector('dialog[open]'))return true;
+  if(bulk.section)return true;                                 /* mid bulk-select: a repaint drops the ticks */
+  const el=document.activeElement;
+  if(el&&el.closest&&el.closest('form'))return true;           /* someone is typing */
+  return false;
+}
+
+async function autoRefresh(){
+  if(AUTO.busy||!A.session||autoRefreshPaused())return;
+  AUTO.busy=true;
+  try{
+    await loadAll();
+    AUTO.fails=0;
+    /* loadAll() is a round trip, so re-check: a modal may have opened or typing may
+       have started while it was in flight. */
+    if(autoRefreshPaused())return;
+    paintNavBadge();
+    if(AUTO_KEEP_MARKUP.has(A.section))return;
+    const m=document.getElementById('adminMain');
+    const paint={dashboard,products,categories,orders}[A.section];
+    if(!m||!paint)return;
+    const y=window.scrollY;
+    paint(m);
+    window.scrollTo(0,y);   /* a repaint must not throw the reader back to the top */
+  }catch(err){
+    /* A blip must not drop the owner onto the reconnect screen — the next tick
+       retries. Logged once per outage rather than every three seconds. */
+    if(++AUTO.fails===1)console.warn('Bilihan admin: auto-refresh failed, will retry',err);
+  }finally{AUTO.busy=false}
+}
+
+function startAutoRefresh(){
+  clearInterval(AUTO.timer);
+  AUTO.timer=setInterval(autoRefresh,AUTO.ms);
+}
+/* Coming back to the tab should show current data at once, not up to three seconds
+   of stale figures. */
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefresh()});
+
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="bilihan-logo.png"><div><strong>Bilihan</strong><small style="display:block">ADMIN</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
 /* ---- Sales reporting ----------------------------------------------------
    Resolve the original-price / interest split for one order line. An order item
    may carry its own original_price and interest recorded at order time; when it
