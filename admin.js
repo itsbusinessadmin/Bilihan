@@ -473,6 +473,12 @@ function paintThread(){
         return `<div class="admin-msg admin-msg-${m.sender==='admin'?'out':'in'}"><p>${esc(m.body)}</p><time>${esc(when)}</time></div>`;
       }).join(''):'<p class="muted" style="padding:14px">No messages in this conversation yet.</p>');
   const atBottom=(()=>{const l=host.querySelector('.thread-log');return !l||l.scrollHeight-l.scrollTop-l.clientHeight<40})();
+  /* This rebuilds the compose box along with the log, and the poll calls it while
+     the admin may be mid-reply. Carry the draft, the caret and the focus across. */
+  const prev=document.getElementById('threadInput');
+  const draft=prev?prev.value:'';
+  const caret=prev?prev.selectionStart:null;
+  const hadFocus=prev&&document.activeElement===prev;
   host.innerHTML=`<div class="thread-head"><div><strong>${esc(thread.customer_name||'Customer')}</strong><span class="thread-row-sub">${esc(thread.phone||'No phone on file')}</span></div></div>
     <div class="thread-log">${log}<div class="msg-seen" id="threadSeen" hidden></div></div>
     <form class="thread-compose" id="threadCompose"><label class="sr-only" for="threadInput">Reply</label>
@@ -484,6 +490,8 @@ function paintThread(){
   const form=document.getElementById('threadCompose');
   const input=document.getElementById('threadInput');
   const grow=()=>{input.style.height='auto';input.style.height=Math.min(input.scrollHeight,120)+'px'};
+  if(draft){input.value=draft;grow()}
+  if(hadFocus){input.focus();if(caret!=null)input.setSelectionRange(caret,caret)}
   input.addEventListener('input',grow);
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit()}});
   form.onsubmit=async e=>{
@@ -537,7 +545,9 @@ function messages(m){
   document.getElementById('deleteAllThreads').onclick=deleteAllThreads;
   MSG.sync=wireBulk('messages',document.getElementById('threadList'),'conversation',removeThreads);
   stopMessagePolling();
-  MSG.timer=setInterval(()=>{if(!document.hidden&&A.section==='messages')refreshThreads()},12000);
+  /* 4s rather than 12s: this is what carries the customer's read receipt while the
+     admin has focus in the reply box, which pauses the page-wide refresh. */
+  MSG.timer=setInterval(()=>{if(!document.hidden&&A.section==='messages')refreshThreads()},4000);
 }
 
 function settings(m){

@@ -11,8 +11,12 @@
   const LS_KEY = 'bilihan_support_v1';
   const LS_MSGS = 'bilihan_support_msgs_v1';
   const LS_ORDER = 'bilihan_latest_order_v3';
-  const POLL_OPEN = 4000;      /* while the panel is open        */
-  const POLL_IDLE = 45000;     /* badge refresh while it is shut */
+  /* Half a second, so a reply lands and a read receipt goes back near-instantly.
+     Two things keep that from being as heavy as it sounds: a hidden tab polls
+     nothing, and pollUnread returns immediately when there is no conversation yet,
+     so a visitor who never opened the chat makes no requests at all. */
+  const POLL_OPEN = 500;       /* while the panel is open        */
+  const POLL_IDLE = 500;       /* badge refresh while it is shut */
 
   const read = (key, fallback) => {
     try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; }
