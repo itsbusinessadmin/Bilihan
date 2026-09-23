@@ -49,11 +49,11 @@ async function init(){
 }
 function renderSetup(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-logo.png" style="width:90px;border-radius:50%"><span class="eyebrow">Bilihan v3</span><h2>Connect Supabase</h2><p>Edit <strong>config.js</strong> once and paste your Supabase Project URL and anon public key, then reload this page.</p><p class="muted">Never paste a service_role key into the website.</p></div></div>`}
 function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword(d);if(error)return renderLogin(error.message);A.session=data.session;const status=await adminStatus();if(status==='no'){await db.auth.signOut();A.session=null;return renderLogin('This account is not listed as a Bilihan admin.')}if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');try{await loadAll()}catch(err){console.error(err);return renderReconnect(err?.message)}renderShell()}}
-async function loadAll(){const [p,c,o,s,t]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single(),db.from('support_threads').select('*').order('last_message_at',{ascending:false})]);for(const r of [p,c,o,s])if(r.error)throw r.error;
+async function loadAll(){const [p,c,o,s,t,sl]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single(),db.from('support_threads').select('*').order('last_message_at',{ascending:false}),db.from('seller_links').select('token').eq('id',1).single()]);for(const r of [p,c,o,s])if(r.error)throw r.error;
   /* The support tables may not exist yet on a database that predates the chat, so
      a failure there must not stop the rest of Admin from loading. */
   if(t.error)console.warn('Bilihan admin: support threads unavailable',t.error);
-  A.data={products:p.data,categories:c.data,orders:o.data,settings:s.data,threads:t.error?[]:(t.data||[])}}
+  A.data={products:p.data,categories:c.data,orders:o.data,settings:s.data,threads:t.error?[]:(t.data||[]),sellerToken:sl.error?'':(sl.data?.token||'')}}
 /* Auto-refresh ---------------------------------------------------------------
    Orders and messages arrive while this page sits open, so the data refetches on a
    timer instead of waiting for someone to hit reload.
@@ -164,8 +164,33 @@ function openAllSalesModal(){
   document.getElementById('closeAllSales').focus();
 }
 
-function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal=salesByProduct().reduce((sum,r)=>sum+r.overall,0);m.innerHTML=`<span class="eyebrow">Overview</span><h2>Dashboard</h2><a class="primary-btn view-store-btn" href="index.html" target="_blank" rel="noopener">View customer store</a><div class="cards"><div class="metric"><small>Total Products</small><h2>${ps.length}</h2></div><div class="metric"><small>Available</small><h2>${ps.filter(p=>p.is_available&&p.stock>0).length}</h2></div><div class="metric"><small>Sold Out</small><h2>${ps.filter(p=>!p.is_available||p.stock<=0).length}</h2></div><div class="metric"><small>Total Orders</small><h2>${os.length}</h2></div><button type="button" class="metric metric-action metric-money" id="openAllSales"><small>All Sales</small><h2>${money(salesTotal)}</h2><span class="metric-hint">View per-item breakdown</span></button></div>`;
+function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal=salesByProduct().reduce((sum,r)=>sum+r.overall,0);m.innerHTML=`<span class="eyebrow">Overview</span><h2>Dashboard</h2><a class="primary-btn view-store-btn" href="index.html" target="_blank" rel="noopener">View customer store</a><button type="button" class="secondary-btn view-store-btn" id="copySellerLink">Copy seller page link</button><button type="button" class="view-store-btn" id="rotateSellerLink" title="Stop the old link working and make a new one">New link</button><p class="muted seller-link-hint" id="sellerLinkHint">The seller page shows live sales only: item, quantity and totals. Anyone with the link can open it without signing in.</p><div class="cards"><div class="metric"><small>Total Products</small><h2>${ps.length}</h2></div><div class="metric"><small>Available</small><h2>${ps.filter(p=>p.is_available&&p.stock>0).length}</h2></div><div class="metric"><small>Sold Out</small><h2>${ps.filter(p=>!p.is_available||p.stock<=0).length}</h2></div><div class="metric"><small>Total Orders</small><h2>${os.length}</h2></div><button type="button" class="metric metric-action metric-money" id="openAllSales"><small>All Sales</small><h2>${money(salesTotal)}</h2><span class="metric-hint">View per-item breakdown</span></button></div>`;
   document.getElementById('openAllSales').onclick=openAllSalesModal;
+  /* The seller link is a shared secret in a URL: anyone holding it sees sales. That
+     is the point, so it comes with a way to revoke it. */
+  const sellerUrl=()=>A.data.sellerToken?`${location.origin}${location.pathname.replace(/[^/]*$/,'')}seller.html?t=${encodeURIComponent(A.data.sellerToken)}`:'';
+  const hint=document.getElementById('sellerLinkHint');
+  document.getElementById('copySellerLink').onclick=async()=>{
+    const url=sellerUrl();
+    if(!url){hint.textContent='No seller link yet. Run the setup SQL, then reload this page.';return}
+    try{
+      await navigator.clipboard.writeText(url);
+      hint.textContent='Link copied. Paste it to your seller.';
+    }catch(err){
+      /* Clipboard access is refused outside a secure context and in some browsers,
+         so show the link to copy by hand rather than failing silently. */
+      hint.textContent=url;
+      const r=document.createRange();r.selectNodeContents(hint);
+      const sel=getSelection();sel.removeAllRanges();sel.addRange(r);
+    }
+  };
+  document.getElementById('rotateSellerLink').onclick=async()=>{
+    if(!confirm('Make a new seller link?\n\nThe old link stops working straight away, and anyone still using it will need the new one.'))return;
+    const {error}=await db.from('seller_links').update({token:crypto.randomUUID(),rotated_at:new Date().toISOString()}).eq('id',1);
+    if(error){alert(error.message);return}
+    await loadAll();
+    hint.textContent='New link made. The old one no longer works. Copy the new one to share it.';
+  };
 }
 /* Product and storefront images are usually picked straight from a phone camera,
    where one photo is several megabytes - and that exact file was then served to

@@ -355,6 +355,11 @@ drop policy if exists "admins manage products" on public.products;
 create policy "admins manage products" on public.products for all using (public.is_admin()) with check (public.is_admin());
 drop policy if exists "admins manage settings" on public.store_settings;
 create policy "admins manage settings" on public.store_settings for all using (public.is_admin()) with check (public.is_admin());
+alter table public.seller_links enable row level security;
+drop policy if exists "admins manage seller link" on public.seller_links;
+create policy "admins manage seller link" on public.seller_links for all using (public.is_admin()) with check (public.is_admin());
+-- No public select policy on purpose: the token is what the link is worth.
+
 drop policy if exists "admins manage orders" on public.orders;
 create policy "admins manage orders" on public.orders for all using (public.is_admin()) with check (public.is_admin());
 drop policy if exists "admins manage order items" on public.order_items;
@@ -427,6 +432,17 @@ alter table public.support_threads add column if not exists admin_last_read_at t
 alter table public.support_threads add column if not exists customer_last_read_at timestamptz;
 
 create index if not exists support_threads_recent_idx on public.support_threads(last_message_at desc);
+
+-- Seller link: one shared secret that lets someone open the read-only sales page
+-- without an account. Deliberately NOT a column on store_settings, which anyone can
+-- read, since that would hand the token to every visitor. Nothing but the admin can
+-- read this table, and seller_sales() checks the token with definer rights.
+create table if not exists public.seller_links (
+  id integer primary key default 1 check (id = 1),
+  token uuid not null default gen_random_uuid(),
+  rotated_at timestamptz not null default now()
+);
+insert into public.seller_links(id) values (1) on conflict (id) do nothing;
 
 -- Normalises the key both sides resolve a customer to.
 create or replace function public.support_key(p_phone text, p_name text)
@@ -645,6 +661,65 @@ grant execute on function public.support_unread(uuid,uuid) to anon, authenticate
 grant execute on function public.support_send(uuid,uuid,text) to anon, authenticated;
 grant execute on function public.support_admin_reply(uuid,text) to authenticated;
 grant execute on function public.support_admin_mark_read(uuid) to authenticated;
+
+-- Read-only sales for the seller page. Returns totals only: no customer, no order,
+-- no contact detail ever leaves this function, so the link cannot be turned into a
+-- view of who bought what.
+--
+-- The figures mirror what the admin dashboard shows, on purpose. order_items keeps
+-- no original price of its own, so it comes from the product, matched by id and
+-- falling back to name for a product that has since been deleted. Interest is not
+-- returned at all.
+create or replace function public.seller_sales(p_token uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_rows jsonb;
+  v_qty bigint;
+  v_total numeric;
+begin
+  if p_token is null
+     or not exists (select 1 from public.seller_links where id = 1 and token = p_token) then
+    return jsonb_build_object('ok', false, 'error', 'This link is no longer valid. Ask the store for a new one.');
+  end if;
+
+  with lines as (
+    select
+      coalesce(nullif(btrim(i.product_name), ''), '(unnamed product)') as name,
+      i.qty,
+      coalesce(p.original_price, i.unit_price) as original
+    from public.order_items i
+    join public.orders o on o.id = i.order_id and o.status <> 'Cancelled'
+    -- lateral, not a plain join: two products sharing a name would otherwise
+    -- duplicate the line and double-count the sale.
+    left join lateral (
+      select pr.original_price
+      from public.products pr
+      where (i.product_id is not null and pr.id = i.product_id)
+         or (i.product_id is null and lower(btrim(pr.name)) = lower(btrim(i.product_name)))
+      limit 1
+    ) p on true
+  ), agg as (
+    select name, sum(qty)::bigint as qty, sum(original * qty) as original_total
+    from lines group by name
+  )
+  select
+    coalesce(jsonb_agg(jsonb_build_object('name', name, 'qty', qty, 'original_total', original_total)
+             order by original_total desc, name), '[]'::jsonb),
+    coalesce(sum(qty), 0),
+    coalesce(sum(original_total), 0)
+  into v_rows, v_qty, v_total
+  from agg;
+
+  return jsonb_build_object('ok', true, 'items', v_rows, 'total_qty', v_qty,
+                            'overall', v_total, 'as_of', now());
+end;
+$$;
+
+grant execute on function public.seller_sales(uuid) to anon, authenticated;
 
 alter table public.support_threads enable row level security;
 alter table public.support_messages enable row level security;

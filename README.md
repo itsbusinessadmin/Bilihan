@@ -17,6 +17,8 @@ Bilihan v3 replaces Google Sheets / Apps Script with Supabase.
 - `admin.js` — admin logic
 - `styles.css` — UI
 - `theme-storefront.css` — the alternate storefront design, off unless it is selected in Admin
+- `seller.html`, `seller.js` — read-only live sales, opened from a shared link with no sign-in
+- `store-logo.png` — shop logo, used to sign off the order confirmation email
 - `bilihan-logo.png` — Bilihan logo
 - `404.html` — custom not-found page (GitHub Pages serves this automatically)
 - `analytics.js` — analytics loader (does nothing until configured)
@@ -271,6 +273,27 @@ confirmation to the account that owns the script, and it is what triggers Google
 permission prompt. If a real order sends nothing, run that first — it fails out
 loud, where a live send only writes to the Executions log. The orders sheet gains an **Email** column at the
 far right; add a header for it if you keep one.
+
+## Seller page
+
+**Dashboard → Copy seller page link** puts a link on the clipboard that shows live
+sales and nothing else: each item, the quantity sold, that item's total at the
+original price, and the overall total. No interest, and no customer, order or
+contact detail is reachable from it. Whoever holds the link opens it without an
+account.
+
+The figures come from `seller_sales()`, which returns totals only, so the page
+cannot be coaxed into showing anything more. They match the admin dashboard on
+purpose: `order_items` keeps no original price of its own, so it comes from the
+product, matched by id and falling back to name for a product since deleted.
+
+The token is a row in `seller_links`, not a column on `store_settings` — every
+visitor can read store_settings, which would hand the token to all of them. Nothing
+but the admin can read `seller_links`.
+
+**The link is a shared secret.** Anyone who has it can see sales, which is the
+point, so **New link** next to the copy button issues a fresh token and stops the
+old link working straight away. Use it when someone should no longer have access.
 
 ## Storefront theme
 
