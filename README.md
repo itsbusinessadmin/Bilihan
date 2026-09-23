@@ -207,9 +207,20 @@ executions view and swallowed. The order is already saved in Supabase and writte
 to the sheet before the email is attempted, so a failed send never costs an order.
 
 To set it up: re-run `supabase-setup.sql` (new `orders.email` column and a
-`place_order` that takes it), then redeploy the Apps Script from
-`google-apps-script/Code.gs`. The first time it runs, Google asks you to authorise
-the script to send mail as you. The orders sheet gains an **Email** column at the
+`place_order` that takes it), then update the Apps Script from
+`google-apps-script/Code.gs`.
+
+**The file in this repo is only a copy.** Editing it changes nothing on its own —
+the live script is the one in the Apps Script editor, so the code has to be pasted
+in there and the web app deployed again. A deployment that points at a fixed
+version keeps running the old code until a new version is created.
+
+**Sending mail needs permission the script did not have before.** `MailApp` adds an
+OAuth scope, so a script authorised before this change refuses to send until it is
+approved again. Run `testOrderEmail` from the editor once: it sends a sample
+confirmation to the account that owns the script, and it is what triggers Google's
+permission prompt. If a real order sends nothing, run that first — it fails out
+loud, where a live send only writes to the Executions log. The orders sheet gains an **Email** column at the
 far right; add a header for it if you keep one.
 
 ## Storefront theme

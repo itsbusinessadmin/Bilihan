@@ -729,6 +729,39 @@ function testReceiptFolder() {
 }
 
 
+/* Run this from the Apps Script editor to check the confirmation email end to end.
+   It sends a sample order to the address that owns this script.
+
+   The first run is also what triggers Google's permission prompt for sending mail.
+   Adding MailApp introduced a scope the script did not have before, so a deployment
+   authorised earlier will refuse to send until this is approved once. If no email
+   arrives from a real order, run this first: it fails loudly, where a live send only
+   writes to the Executions log. */
+function testOrderEmail() {
+  var me = Session.getActiveUser().getEmail();
+  console.log('Sending a test confirmation to: ' + me);
+  console.log('Sends left today: ' + MailApp.getRemainingDailyQuota());
+
+  var sent = sendOrderConfirmation({
+    order_code: 'BIL-TEST01',
+    customer_name: 'Test Customer',
+    email: me,
+    fulfillment: 'Pickup',
+    pickup_location: 'Test pickup location',
+    preferred_date: new Date().toISOString().slice(0, 10),
+    payment_method: 'Cash on Delivery / Pickup',
+    items: 'Sample item x 1',
+    total: 100,
+    store_name: 'CE Fun Club Store'
+  });
+
+  if (sent) {
+    console.log('Sent. Check the inbox for ' + me + ' (look in Spam too).');
+  } else {
+    console.error('Not sent. The reason is logged just above this line.');
+  }
+}
+
 function testOrdersSheet() {
   const sheet = SpreadsheetApp
     .getActiveSpreadsheet()
