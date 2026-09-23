@@ -189,8 +189,19 @@ There is no SMS cost and no third-party service: the send happens in the Google
 Apps Script that already receives every order, using `MailApp`. A consumer Gmail
 account can send roughly 100 a day, a Workspace account roughly 1,500.
 
-Leaving the field blank is fine — the order goes through, there is simply nothing
-to send to.
+Whether checkout asks for an email at all, and whether it is compulsory, is set in
+**Admin → Settings → Contact fields at checkout**, alongside the same pair for the
+mobile number. Both default to asked-for and optional, which is what the shop did
+before these settings existed.
+
+A field that is not asked for is never required, whatever the Required box once
+said: the box greys out and clears when Ask for comes off, `place_order` ignores a
+stale flag, and a value posted for a hidden field is discarded. Required is checked
+in `place_order` as well as in the page, because a check in the browser can be
+skipped by posting straight to the function.
+
+With the email left optional, leaving it blank is fine — the order goes through,
+there is simply nothing to send to.
 
 The email closes with a short note about what the shop's takings go towards. Edit
 `THANK_YOU_NOTE` near the top of `google-apps-script/Code.gs` to change the wording,

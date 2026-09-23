@@ -537,3 +537,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .theme-option.is-pending:hover{border-color:var(--admin-line)}
 .theme-option.is-pending .theme-option-text strong{color:var(--admin-muted)}
 .theme-option-flag{color:var(--admin-gold);font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+
+/* ---- Checkout contact-field toggles (Settings tab) ---- */
+.form-subhead{margin:var(--admin-space-lg) 0 2px;font-size:var(--admin-text-body);font-weight:700;color:var(--admin-text)}
+.field-toggle-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--admin-space-md);padding:2px 0}
+.field-toggle-row .check-row{margin:0}
+.field-toggle-row .check-row:last-child{margin-left:auto}
+/* A "Required" box that cannot apply reads as off, not merely unticked. */
+.check-row.is-disabled{opacity:.45;cursor:not-allowed}

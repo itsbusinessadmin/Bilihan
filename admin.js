@@ -588,6 +588,17 @@ function settings(m){
         <label class="check-row"><input type="checkbox" name="show_preferred_date" ${s.show_preferred_date===true?'checked':''}> Show preferred date</label>
         <label class="check-row"><input type="checkbox" name="show_stock" ${s.show_stock===true?'checked':''}> Show available stock on the customer page</label>
 
+        <h4 class="form-subhead">Contact fields at checkout</h4>
+        <p class="muted form-hint">Untick <strong>Ask for</strong> to drop the field from checkout entirely. <strong>Required</strong> only applies while the field is being asked for.</p>
+        <div class="field-toggle-row">
+          <label class="check-row"><input type="checkbox" name="checkout_show_phone" data-field-toggle="phone" ${s.checkout_show_phone!==false?'checked':''}> Ask for mobile number</label>
+          <label class="check-row"><input type="checkbox" name="checkout_require_phone" data-field-require="phone" ${s.checkout_require_phone===true?'checked':''}> Required</label>
+        </div>
+        <div class="field-toggle-row">
+          <label class="check-row"><input type="checkbox" name="checkout_show_email" data-field-toggle="email" ${s.checkout_show_email!==false?'checked':''}> Ask for email <small class="muted">(order confirmations go here)</small></label>
+          <label class="check-row"><input type="checkbox" name="checkout_require_email" data-field-require="email" ${s.checkout_require_email===true?'checked':''}> Required</label>
+        </div>
+
         <div class="form-row">
           <label>Preferred date mode
             <select name="preferred_date_mode" id="preferredDateMode">
@@ -621,6 +632,21 @@ function settings(m){
   `;
 
   const form=document.getElementById('settingsForm');
+
+  /* "Required" means nothing for a field nobody is asked for, so it greys out and
+     unticks the moment "Ask for" comes off. */
+  function syncFieldToggles(){
+    form.querySelectorAll('[data-field-toggle]').forEach(ask=>{
+      const req=form.querySelector(`[data-field-require="${ask.dataset.fieldToggle}"]`);
+      if(!req)return;
+      req.disabled=!ask.checked;
+      if(!ask.checked)req.checked=false;
+      req.closest('.check-row')?.classList.toggle('is-disabled',!ask.checked);
+    });
+  }
+  form.querySelectorAll('[data-field-toggle]').forEach(el=>el.addEventListener('change',syncFieldToggles));
+  syncFieldToggles();
+
   const modeSelect=document.getElementById('preferredDateMode');
   const dateText=document.getElementById('orderAvailableDateText');
 
@@ -694,6 +720,21 @@ function settings(m){
 
         show_stock:
           fd.get('show_stock')==='on',
+
+        checkout_show_phone:
+          fd.get('checkout_show_phone')==='on',
+
+        /* A field nobody is asked for cannot be compulsory. Storing it that way
+           keeps the saved settings honest rather than leaving a flag that reads as
+           on but does nothing. */
+        checkout_require_phone:
+          fd.get('checkout_show_phone')==='on' && fd.get('checkout_require_phone')==='on',
+
+        checkout_show_email:
+          fd.get('checkout_show_email')==='on',
+
+        checkout_require_email:
+          fd.get('checkout_show_email')==='on' && fd.get('checkout_require_email')==='on',
 
         show_qr_payment:
           showQr,
