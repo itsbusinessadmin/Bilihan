@@ -182,6 +182,31 @@ and cookie consent banner.
 5. **If you change domain**, update the canonical/Open Graph URLs in `index.html`, `robots.txt`,
    `sitemap.xml`, and `SITE_URL` in `config.js`.
 
+## Order confirmation emails
+
+Customers can leave an optional email at checkout and get a confirmation for free.
+There is no SMS cost and no third-party service: the send happens in the Google
+Apps Script that already receives every order, using `MailApp`. A consumer Gmail
+account can send roughly 100 a day, a Workspace account roughly 1,500.
+
+Leaving the field blank is fine — the order goes through, there is simply nothing
+to send to.
+
+The email goes out **once**, the first time Apps Script sees that order. The admin
+page re-posts an order whenever its status or payment changes, so keying off "was
+this a new row in the sheet" is what stops a customer being emailed again every
+time you touch their order.
+
+A send that fails — over quota, bad address — is logged in the Apps Script
+executions view and swallowed. The order is already saved in Supabase and written
+to the sheet before the email is attempted, so a failed send never costs an order.
+
+To set it up: re-run `supabase-setup.sql` (new `orders.email` column and a
+`place_order` that takes it), then redeploy the Apps Script from
+`google-apps-script/Code.gs`. The first time it runs, Google asks you to authorise
+the script to send mail as you. The orders sheet gains an **Email** column at the
+far right; add a header for it if you keep one.
+
 ## Storefront theme
 
 The storefront can wear one of two designs, chosen in **Admin → Appearance → Storefront theme**:

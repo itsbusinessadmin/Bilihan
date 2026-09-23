@@ -104,7 +104,8 @@ function doPost(e) {
       payload.payment_status || 'Pending',
       payload.order_status || '',
       payload.cancellation_reason || '',
-      new Date()
+      new Date(),
+      payload.email || ''
     ];
 
     const lastRow = sheet.getLastRow();
@@ -133,10 +134,20 @@ function doPost(e) {
       sheet.appendRow(rowData);
     }
 
+    /* Confirmation email, only the first time this order is seen. The admin page
+       re-posts the same order whenever its status or payment changes, so keying off
+       "was this a new row" is what stops the customer being mailed again every time
+       you touch their order. */
+    var emailed = false;
+    if (!existingRow && payload.email) {
+      emailed = sendOrderConfirmation(payload);
+    }
+
     return jsonResponse({
       ok: true,
       action: existingRow ? 'updated' : 'inserted',
-      order_code: payload.order_code
+      order_code: payload.order_code,
+      emailed: emailed
     });
 
   } catch (err) {
@@ -580,6 +591,89 @@ function getExtensionFromMimeType(mimeType) {
 /* =========================================================
    JSON RESPONSE
    ========================================================= */
+
+/* ---------------------------------------------------------------------------
+   Order confirmation email.
+
+   Sent with MailApp, which costs nothing: a consumer Gmail account can send about
+   100 of these a day, a Workspace account about 1,500. The "from" address is
+   whichever Google account owns this script.
+
+   A failure here must never fail the order. The order is already saved in Supabase
+   and written to the sheet by the time this runs, so a bounced or over-quota send
+   is logged and swallowed rather than thrown.
+   --------------------------------------------------------------------------- */
+function sendOrderConfirmation(payload) {
+  try {
+    var remaining = MailApp.getRemainingDailyQuota();
+    if (remaining < 1) {
+      console.warn('Email quota spent for today; order ' + payload.order_code + ' not mailed.');
+      return false;
+    }
+
+    var name = String(payload.customer_name || 'there').trim();
+    var code = String(payload.order_code || '').trim();
+    var fulfillment = String(payload.fulfillment || '').trim();
+    var isDelivery = fulfillment === 'Delivery';
+
+    var rows = [
+      ['Order number', code],
+      ['Name', name],
+      ['For', fulfillment],
+      [isDelivery ? 'Deliver to' : 'Pickup', isDelivery ? String(payload.address || '') : String(payload.pickup_location || 'See the store for pickup details')],
+      ['Date', String(payload.preferred_date || '')],
+      ['Payment', String(payload.payment_method || '')],
+      ['Items', String(payload.items || '')],
+      ['Total', peso(payload.total)]
+    ];
+
+    var tableRows = rows.map(function (r) {
+      return '<tr>' +
+        '<td style="padding:7px 14px 7px 0;color:#676d65;vertical-align:top;white-space:nowrap">' + escapeReceiptHtml(r[0]) + '</td>' +
+        '<td style="padding:7px 0;color:#181c19;font-weight:600">' + escapeReceiptHtml(r[1]) + '</td>' +
+        '</tr>';
+    }).join('');
+
+    var store = String(payload.store_name || 'Bilihan');
+    var subject = store + ' order ' + code + ' — we got it';
+
+    var html =
+      '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#181c19">' +
+        '<h1 style="margin:0 0 6px;font-size:22px">Thanks, ' + escapeReceiptHtml(name) + '!</h1>' +
+        '<p style="margin:0 0 20px;color:#676d65;line-height:1.6">We have your order and we are getting it ready. Keep this email — your order number is how we find it.</p>' +
+        '<div style="padding:16px 18px;border:1px solid #e9e4d8;border-radius:14px;background:#faf8f3">' +
+          '<table style="border-collapse:collapse;width:100%;font-size:14px">' + tableRows + '</table>' +
+        '</div>' +
+        '<p style="margin:20px 0 0;color:#676d65;font-size:13px;line-height:1.6">Need to change or cancel something? Just reply to this email and we will sort it out.</p>' +
+        '<p style="margin:14px 0 0;color:#96988f;font-size:12px">' + escapeReceiptHtml(store) + '</p>' +
+      '</div>';
+
+    var text =
+      'Thanks, ' + name + '!\n\n' +
+      'We have your order and we are getting it ready.\n\n' +
+      rows.map(function (r) { return r[0] + ': ' + r[1]; }).join('\n') +
+      '\n\nNeed to change or cancel something? Just reply to this email.\n' + store;
+
+    MailApp.sendEmail({
+      to: String(payload.email).trim(),
+      subject: subject,
+      body: text,
+      htmlBody: html,
+      name: store
+    });
+
+    console.log('Confirmation emailed for ' + code + ' (' + (remaining - 1) + ' sends left today)');
+    return true;
+  } catch (err) {
+    console.error('Confirmation email failed for ' + (payload.order_code || '?') + ': ' + (err.stack || err.message));
+    return false;
+  }
+}
+
+function peso(value) {
+  var n = Number(value || 0);
+  return '\u20B1' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 function jsonResponse(obj) {
   return ContentService

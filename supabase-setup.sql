@@ -93,6 +93,10 @@ create table if not exists public.orders (
 -- table was just created above with phone already nullable.
 alter table public.orders alter column phone drop not null;
 
+-- Optional: the customer leaves an address here to get an order confirmation by
+-- email. Blank when they would rather not give one.
+alter table public.orders add column if not exists email text;
+
 create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
@@ -157,9 +161,15 @@ grant execute on function public.is_admin() to anon, authenticated;
 -- Customer order placement. Security definer lets customers call one safe transaction
 -- without direct INSERT/UPDATE permission on order or product tables.
 -- NOTE: phone number is OPTIONAL. Only customer_name is required.
+-- Adding a parameter makes a NEW signature rather than replacing the old one, so
+-- the previous eight-argument version is dropped first. Without this both would
+-- exist and the old one would quietly keep saving orders with no email.
+drop function if exists public.place_order(text,text,text,text,date,text,text,jsonb);
+
 create or replace function public.place_order(
   p_customer_name text,
   p_phone text,
+  p_email text,
   p_fulfillment text,
   p_address text,
   p_preferred_date date,
@@ -182,6 +192,7 @@ declare
   v_qty integer;
   v_items_out jsonb := '[]'::jsonb;
   v_phone text;
+  v_email text;
 begin
   if coalesce(trim(p_customer_name),'') = '' then
     return jsonb_build_object('ok',false,'error','Name is required.');
@@ -189,6 +200,14 @@ begin
 
   -- Phone is optional: normalize blank/whitespace-only input to NULL.
   v_phone := nullif(trim(p_phone),'');
+
+  -- Email is optional too. Checked loosely: this only decides whether a
+  -- confirmation is worth attempting, and a real typo can only be caught by the
+  -- mail bouncing. Rejecting here beats silently never sending.
+  v_email := nullif(lower(trim(p_email)),'');
+  if v_email is not null and v_email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
+    return jsonb_build_object('ok',false,'error','That email address does not look right. Check it, or leave it blank.');
+  end if;
 
   if p_fulfillment not in ('Delivery','Pickup') then return jsonb_build_object('ok',false,'error','Invalid fulfillment method.'); end if;
   if p_fulfillment='Delivery' and coalesce(trim(p_address),'')='' then return jsonb_build_object('ok',false,'error','Delivery address is required.'); end if;
@@ -225,8 +244,8 @@ begin
     ));
   end loop;
 
-  insert into public.orders(id,order_code,cancel_token,customer_name,phone,fulfillment,address,preferred_date,payment_method,note,total,status)
-  values(v_order_id,v_code,v_token,trim(p_customer_name),v_phone,p_fulfillment,case when p_fulfillment='Delivery' then trim(p_address) else null end,p_preferred_date,p_payment_method,nullif(trim(p_note),''),v_total,'New');
+  insert into public.orders(id,order_code,cancel_token,customer_name,phone,email,fulfillment,address,preferred_date,payment_method,note,total,status)
+  values(v_order_id,v_code,v_token,trim(p_customer_name),v_phone,v_email,p_fulfillment,case when p_fulfillment='Delivery' then trim(p_address) else null end,p_preferred_date,p_payment_method,nullif(trim(p_note),''),v_total,'New');
 
   for v_item in select * from jsonb_array_elements(v_items_out)
   loop
@@ -239,7 +258,7 @@ begin
   end loop;
 
   return jsonb_build_object('ok',true,'order',jsonb_build_object(
-    'id',v_order_id,'order_code',v_code,'cancel_token',v_token,'customer_name',trim(p_customer_name),'phone',v_phone,
+    'id',v_order_id,'order_code',v_code,'cancel_token',v_token,'customer_name',trim(p_customer_name),'phone',v_phone,'email',v_email,
     'fulfillment',p_fulfillment,'address',case when p_fulfillment='Delivery' then trim(p_address) else null end,
     'preferred_date',p_preferred_date,'payment_method',p_payment_method,'note',nullif(trim(p_note),''),'total',v_total,'status','New',
     'created_at',now(),'items',v_items_out
@@ -249,7 +268,7 @@ exception when others then
 end;
 $$;
 
-grant execute on function public.place_order(text,text,text,text,date,text,text,jsonb) to anon, authenticated;
+grant execute on function public.place_order(text,text,text,text,text,date,text,text,jsonb) to anon, authenticated;
 
 -- Customer cancellation using the private token stored only in that customer's browser.
 create or replace function public.cancel_order(
