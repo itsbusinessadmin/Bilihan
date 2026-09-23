@@ -55,6 +55,15 @@ alter table public.store_settings add column if not exists show_stock boolean no
 alter table public.store_settings add column if not exists show_qr_payment boolean not null default true;
 alter table public.store_settings add column if not exists show_cash_payment boolean not null default true;
 
+-- Which contact fields checkout asks for, and whether they are compulsory. The
+-- defaults are what the shop did before this existed: both shown, both optional.
+-- A hidden field is never required, whatever its 'require' flag says — the customer
+-- was never given the chance to fill it in.
+alter table public.store_settings add column if not exists checkout_show_phone boolean not null default true;
+alter table public.store_settings add column if not exists checkout_require_phone boolean not null default false;
+alter table public.store_settings add column if not exists checkout_show_email boolean not null default true;
+alter table public.store_settings add column if not exists checkout_require_email boolean not null default false;
+
 -- Storefront identity and contact details surfaced in the customer footer.
 -- All optional: the storefront hides any that are not set.
 alter table public.store_settings add column if not exists logo_url text;
@@ -193,7 +202,11 @@ declare
   v_items_out jsonb := '[]'::jsonb;
   v_phone text;
   v_email text;
+  v_cfg public.store_settings%rowtype;
 begin
+  -- Read the shop's checkout rules here rather than trusting what the page sent:
+  -- anything the browser enforces can be skipped by posting straight to this function.
+  select * into v_cfg from public.store_settings where id = 1;
   if coalesce(trim(p_customer_name),'') = '' then
     return jsonb_build_object('ok',false,'error','Name is required.');
   end if;
@@ -208,6 +221,20 @@ begin
   if v_email is not null and v_email !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
     return jsonb_build_object('ok',false,'error','That email address does not look right. Check it, or leave it blank.');
   end if;
+
+  -- Required only counts while the field is actually on the form.
+  if coalesce(v_cfg.checkout_show_phone,true) and coalesce(v_cfg.checkout_require_phone,false)
+     and v_phone is null then
+    return jsonb_build_object('ok',false,'error','Please enter your mobile number.');
+  end if;
+  if coalesce(v_cfg.checkout_show_email,true) and coalesce(v_cfg.checkout_require_email,false)
+     and v_email is null then
+    return jsonb_build_object('ok',false,'error','Please enter your email address.');
+  end if;
+
+  -- A field the shop has turned off keeps no value, even if one was posted anyway.
+  if not coalesce(v_cfg.checkout_show_phone,true) then v_phone := null; end if;
+  if not coalesce(v_cfg.checkout_show_email,true) then v_email := null; end if;
 
   if p_fulfillment not in ('Delivery','Pickup') then return jsonb_build_object('ok',false,'error','Invalid fulfillment method.'); end if;
   if p_fulfillment='Delivery' and coalesce(trim(p_address),'')='' then return jsonb_build_object('ok',false,'error','Delivery address is required.'); end if;
