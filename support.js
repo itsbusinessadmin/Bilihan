@@ -24,7 +24,8 @@
   const state = {
     session: read(LS_KEY, null),      /* {threadId, token, name, orderCode} */
     messages: read(LS_MSGS, []),
-    open: false, busy: false, unread: 0, timer: null, lastError: ''
+    open: false, busy: false, unread: 0, timer: null, lastError: '',
+    adminLastReadAt: null       /* when the store last had this conversation open */
   };
 
   const db = () => (window.BILIHAN_SUPABASE_CONFIGURED ? window.db : null);
@@ -117,10 +118,26 @@
     return `<div class="support-msg support-msg-admin support-greeting"><p>${who} — how can we help you today?</p></div>`;
   }
 
+  /* Messenger-style read receipt: "Seen" under our own last message, once the
+     store's last-read stamp has caught up with it. Nothing is shown when the store
+     replied last — their reply already says they read it. */
+  function seenHtml() {
+    const last = state.messages[state.messages.length - 1];
+    const seenAt = state.adminLastReadAt ? new Date(state.adminLastReadAt) : null;
+    /* A message still in flight has a local id and no server time, so it cannot
+       have been read yet. */
+    const sent = last && !String(last.id).startsWith('local-') ? new Date(last.created_at) : null;
+    if (!last || last.sender !== 'customer' || !seenAt || !sent || seenAt < sent) return '';
+    const when = seenAt.toLocaleString([], { hour: 'numeric', minute: '2-digit' });
+    return `<div class="support-seen">Seen ${esc(when)}</div>`;
+  }
+
   function paintMessages() {
     const log = root.querySelector('#supportLog');
     if (!log) return;
-    log.innerHTML = greetingHtml() + state.messages.map(bubbleHtml).join('');
+    /* The compose box is a sibling of the log, not inside it, so repainting here
+       never costs anyone a half-typed message. */
+    log.innerHTML = greetingHtml() + state.messages.map(bubbleHtml).join('') + seenHtml();
     log.scrollTop = log.scrollHeight;
   }
 
@@ -187,7 +204,12 @@
       if (error) throw error;
       if (!data?.ok) { clearSession(); renderIdentify('Please identify yourself again to continue.'); return; }
       const next = data.messages || [];
-      const changed = force || next.length !== state.messages.length;
+      /* The receipt moves without the message count changing, so it counts as a
+         change in its own right — otherwise "Seen" would not appear until the next
+         message arrived. */
+      const seenMoved = (data.admin_last_read_at || null) !== state.adminLastReadAt;
+      state.adminLastReadAt = data.admin_last_read_at || null;
+      const changed = force || next.length !== state.messages.length || seenMoved;
       state.messages = next; write(LS_MSGS, next);
       if (data.customer_name && state.session.name !== data.customer_name) {
         state.session.name = data.customer_name; write(LS_KEY, state.session); setTitle();
@@ -206,7 +228,10 @@
       const { data } = await client.rpc('support_unread', {
         p_thread_id: state.session.threadId, p_token: state.session.token
       });
-      if (data?.ok) setUnread(data.unread || 0);
+      if (data?.ok) {
+        setUnread(data.unread || 0);
+        state.adminLastReadAt = data.admin_last_read_at || null;
+      }
     } catch { /* the badge is not worth surfacing an error for */ }
   }
 

@@ -374,6 +374,12 @@ create table if not exists public.support_messages (
 );
 
 create index if not exists support_messages_thread_idx on public.support_messages(thread_id, created_at);
+-- Read receipts. Each side stamps when it last had the conversation open, so the
+-- other side can show a "Seen" marker under its own last message. Null means that
+-- side has never opened the thread, which reads as "not seen yet".
+alter table public.support_threads add column if not exists admin_last_read_at timestamptz;
+alter table public.support_threads add column if not exists customer_last_read_at timestamptz;
+
 create index if not exists support_threads_recent_idx on public.support_threads(last_message_at desc);
 
 -- Normalises the key both sides resolve a customer to.
@@ -470,11 +476,16 @@ begin
     into v_messages
     from public.support_messages m where m.thread_id = v_thread.id;
 
-  if v_thread.customer_unread > 0 then
-    update public.support_threads set customer_unread = 0 where id = v_thread.id;
-  end if;
+  -- Stamped on every fetch, not only when something was unread: having the panel
+  -- open is what "seen" means, and the admin's marker has to keep up with it.
+  update public.support_threads
+     set customer_unread = 0, customer_last_read_at = now()
+   where id = v_thread.id;
 
-  return jsonb_build_object('ok', true, 'customer_name', v_thread.customer_name, 'messages', v_messages);
+  -- v_thread was read before that update and only customer columns changed, so this
+  -- is still the admin's own last-read stamp.
+  return jsonb_build_object('ok', true, 'customer_name', v_thread.customer_name,
+    'messages', v_messages, 'admin_last_read_at', v_thread.admin_last_read_at);
 end;
 $$;
 
@@ -485,14 +496,16 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare v_count integer;
+declare v_row public.support_threads%rowtype;
 begin
-  select customer_unread into v_count from public.support_threads
+  select * into v_row from public.support_threads
     where id = p_thread_id and customer_token = p_token;
-  if v_count is null then
+  if not found then
     return jsonb_build_object('ok', false, 'unread', 0);
   end if;
-  return jsonb_build_object('ok', true, 'unread', v_count);
+  -- Carries the receipt too, so a closed panel still knows the admin has read up.
+  return jsonb_build_object('ok', true, 'unread', v_row.customer_unread,
+    'admin_last_read_at', v_row.admin_last_read_at);
 end;
 $$;
 
@@ -570,7 +583,7 @@ begin
   if not public.is_admin() then
     return jsonb_build_object('ok', false, 'error', 'Not authorised.');
   end if;
-  update public.support_threads set admin_unread = 0 where id = p_thread_id;
+  update public.support_threads set admin_unread = 0, admin_last_read_at = now() where id = p_thread_id;
   return jsonb_build_object('ok', true);
 end;
 $$;

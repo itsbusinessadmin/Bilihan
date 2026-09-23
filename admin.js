@@ -89,6 +89,7 @@ async function autoRefresh(){
        have started while it was in flight. */
     if(autoRefreshPaused())return;
     paintNavBadge();
+    if(A.section==='messages'){paintThreadList();paintSeen()}  /* receipts, without touching the reply box */
     if(AUTO_KEEP_MARKUP.has(A.section))return;
     const m=document.getElementById('adminMain');
     const paint={dashboard,products,categories,orders}[A.section];
@@ -400,10 +401,15 @@ async function openThread(id){
   MSG.openId=id;MSG.messages=[];
   paintThread();
   await loadThreadMessages(id);
+  /* Stamped on every open, not only when something was unread: the customer's
+     "Seen" marker depends on this timestamp, so it has to keep up even when the
+     badge was already clear. */
   const thread=(A.data.threads||[]).find(t=>t.id===id);
-  if(thread&&thread.admin_unread>0){
-    const {error}=await db.rpc('support_admin_mark_read',{p_thread_id:id});
-    if(!error){thread.admin_unread=0;paintThreadList();paintNavBadge()}
+  const {error}=await db.rpc('support_admin_mark_read',{p_thread_id:id});
+  if(!error&&thread){
+    thread.admin_unread=0;
+    thread.admin_last_read_at=new Date().toISOString();
+    paintThreadList();paintNavBadge();
   }
 }
 
@@ -435,6 +441,26 @@ function paintThreadList(){
   MSG.sync?.();
 }
 
+/* Messenger-style read receipt: "Seen" under our own last message, once the
+   customer's last-read stamp has caught up with it. Nothing is shown when the
+   customer replied last — their reply already says they read it.
+
+   Updated in place rather than by repainting the thread, because a repaint would
+   take the half-written reply out of the compose box. */
+function paintSeen(){
+  const el=document.getElementById('threadSeen');
+  if(!el)return;
+  const thread=(A.data.threads||[]).find(t=>t.id===MSG.openId);
+  const last=MSG.messages[MSG.messages.length-1];
+  const seenAt=thread&&thread.customer_last_read_at?new Date(thread.customer_last_read_at):null;
+  /* A message still on its way to the server has a local id and no server time, so
+     it cannot have been read yet. */
+  const sent=last&&!String(last.id).startsWith('local-')?new Date(last.created_at):null;
+  if(!last||last.sender!=='admin'||!seenAt||!sent||seenAt<sent){el.hidden=true;el.textContent='';return}
+  el.textContent=`Seen ${seenAt.toLocaleString([],{hour:'numeric',minute:'2-digit'})}`;
+  el.hidden=false;
+}
+
 function paintThread(){
   const host=document.getElementById('threadView');
   if(!host)return;
@@ -448,10 +474,11 @@ function paintThread(){
       }).join(''):'<p class="muted" style="padding:14px">No messages in this conversation yet.</p>');
   const atBottom=(()=>{const l=host.querySelector('.thread-log');return !l||l.scrollHeight-l.scrollTop-l.clientHeight<40})();
   host.innerHTML=`<div class="thread-head"><div><strong>${esc(thread.customer_name||'Customer')}</strong><span class="thread-row-sub">${esc(thread.phone||'No phone on file')}</span></div></div>
-    <div class="thread-log">${log}</div>
+    <div class="thread-log">${log}<div class="msg-seen" id="threadSeen" hidden></div></div>
     <form class="thread-compose" id="threadCompose"><label class="sr-only" for="threadInput">Reply</label>
       <textarea id="threadInput" rows="1" maxlength="2000" placeholder="Write a reply…"></textarea>
       <button class="primary-btn" type="submit">Send</button></form>`;
+  paintSeen();
   const logEl=host.querySelector('.thread-log');
   if(logEl&&atBottom)logEl.scrollTop=logEl.scrollHeight;
   const form=document.getElementById('threadCompose');

@@ -477,10 +477,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .thread-head{padding:var(--admin-space-md);border-bottom:1px solid var(--admin-line);background:var(--admin-soft)}
 .thread-log{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:var(--admin-space-md)}
 .admin-msg{max-width:76%;padding:9px 12px;border-radius:16px;font-size:var(--admin-text-secondary,.9rem);line-height:1.45}
-.admin-msg p{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+.admin-msg p{margin:0;overflow-wrap:anywhere;white-space:pre-wrap;color:inherit}
 .admin-msg time{display:block;margin-top:4px;font-size:.66rem;opacity:.75}
 .admin-msg-in{align-self:flex-start;border:1px solid var(--admin-line);border-bottom-left-radius:5px;background:var(--admin-card)}
 .admin-msg-out{align-self:flex-end;border-bottom-right-radius:5px;background:var(--admin-green);color:#fff}
+.msg-seen{align-self:flex-end;margin:-4px 2px 0;color:var(--admin-muted);font-size:.66rem;font-weight:600}
 .thread-compose{display:flex;align-items:flex-end;gap:8px;padding:var(--admin-space-sm);border-top:1px solid var(--admin-line);background:var(--admin-soft)}
 .thread-compose textarea{flex:1;min-width:0;height:44px;max-height:120px;padding:11px 13px;border:1px solid var(--admin-line);border-radius:12px;background:var(--admin-card);color:var(--admin-text);font:inherit;line-height:1.4;resize:none}
 .thread-compose .primary-btn{min-height:44px;padding-inline:18px}
