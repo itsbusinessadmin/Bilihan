@@ -34,6 +34,29 @@ const SHEET_NAME = 'Orders';
 /* Closing note on the order confirmation email. Edit the text here; set it to an
    empty string to leave it off entirely. The shop's name comes from Store Settings,
    not from this file. */
+/* Address to send confirmations from. Leave empty to send as the Google account
+   that owns this script.
+
+   Worth setting. The email links to the shop's own site, and a message sent from a
+   gmail.com address that links somewhere unrelated is the shape of a phishing
+   attempt, which is what pushes these into Spam. Sending from an address at the
+   same domain as the link removes that mismatch.
+
+   It must be an alias Gmail has already verified for this account (Gmail settings ->
+   Accounts -> "Send mail as"), otherwise Gmail refuses it and the send falls back to
+   the owner's address. */
+const SENDER_ALIAS = '';
+
+/* Logo shown at the foot of the confirmation email. Set to an empty string to sign
+   off with the shop's name in text instead.
+
+   Fetched here and attached to the message, rather than linked with an <img src>
+   pointing at the web. That matters: a linked image makes the recipient's mail
+   client call out to the shop's domain, which is the same sender-domain mismatch
+   that put these in Spam, and most clients block it until the reader clicks "show
+   images" anyway. An attached image travels inside the email and just appears. */
+const LOGO_URL = 'https://bilihan.shop/store-logo.png';
+
 const THANK_YOU_NOTE =
   'Every purchase helps fund employee events, engagement activities, and tokens of ' +
   'appreciation for our employees. By shopping with us, you\u2019re helping us create ' +
@@ -644,11 +667,7 @@ function sendOrderConfirmation(payload) {
     }).join('');
 
     var store = String(payload.store_name || 'Bilihan');
-    /* Deep link into the chat widget. Without a site address configured there is
-       nothing to link to, so the sentence falls back to naming the chat instead of
-       pointing at a broken URL. */
-    var site = String(payload.site_url || '').trim().replace(/\/+$/, '');
-    var chatUrl = site ? site + '/#chat' : '';
+    var logo = fetchLogoBlob();
     var subject = store + ' order ' + code + ' confirmed';
 
     var html =
@@ -658,39 +677,92 @@ function sendOrderConfirmation(payload) {
         '<div style="padding:16px 18px;border:1px solid #e9e4d8;border-radius:14px;background:#faf8f3">' +
           '<table style="border-collapse:collapse;width:100%;font-size:14px">' + tableRows + '</table>' +
         '</div>' +
-        '<p style="margin:20px 0 0;color:#676d65;font-size:13px;line-height:1.6">If you would like to cancel or edit your order, just message us ' +
-          (chatUrl
-            ? '<a href="' + escapeReceiptHtml(chatUrl) + '" style="color:#1f4d34;font-weight:600;text-decoration:underline">here</a>'
-            : 'on the chat at our store page') +
-          ' and we will sort it out.</p>' +
+        /* Deliberately not a link. A message sent from a gmail.com address that links
+           to the shop's own domain is the shape of a phishing attempt, which is what
+           was pushing these into Spam, so the customer is told where to click
+           instead. */
+        '<p style="margin:20px 0 0;color:#676d65;font-size:13px;line-height:1.6">If you would like to cancel or edit your order, just message us on our website using the chat button at the bottom corner of the page and we will sort it out.</p>' +
         (THANK_YOU_NOTE
           ? '<p style="margin:20px 0 0;padding-top:18px;border-top:1px solid #e9e4d8;color:#676d65;font-size:13px;line-height:1.6">' + escapeReceiptHtml(THANK_YOU_NOTE) + '</p>'
           : '') +
-        '<p style="margin:16px 0 0;color:#181c19;font-size:14px;font-weight:600">' + escapeReceiptHtml(store) + '</p>' +
+        (logo
+          /* alt carries the shop's name, so a client that blocks images still shows
+             who sent this rather than an empty box. */
+          ? '<p style="margin:18px 0 0"><img src="cid:storeLogo" width="200" alt="' + escapeReceiptHtml(store) + '" style="display:block;width:200px;max-width:100%;height:auto;border:0"></p>'
+          : '<p style="margin:16px 0 0;color:#181c19;font-size:14px;font-weight:600">' + escapeReceiptHtml(store) + '</p>') +
       '</div>';
 
     var text =
       'Thanks, ' + name + '!\n\n' +
       'We have your order and we are getting it ready.\n\n' +
       rows.map(function (r) { return r[0] + ': ' + r[1]; }).join('\n') +
-      '\n\nIf you would like to cancel or edit your order, just message us here:' +
-      (chatUrl ? '\n' + chatUrl : ' on the chat at our store page.') +
+      '\n\nIf you would like to cancel or edit your order, just message us on our website using the chat button at the bottom corner of the page.' +
       (THANK_YOU_NOTE ? '\n\n' + THANK_YOU_NOTE : '') +
       '\n\n' + store;
 
-    MailApp.sendEmail({
+    var message = {
       to: String(payload.email).trim(),
       subject: subject,
       body: text,
       htmlBody: html,
       name: store
-    });
+    };
+    if (logo) message.inlineImages = { storeLogo: logo };
+    /* A reply path that reaches a person. Without it replies land wherever this
+       script happens to live, and a missing one reads as bulk mail. */
+    var replyTo = String(payload.store_email || '').trim();
+    if (replyTo) message.replyTo = replyTo;
+
+    /* GmailApp is the one that can send as a verified alias; MailApp cannot. An
+       unverified alias throws, so fall back rather than losing the email. */
+    if (SENDER_ALIAS) {
+      message.from = SENDER_ALIAS;
+      try {
+        GmailApp.sendEmail(message.to, message.subject, message.body, message);
+      } catch (aliasErr) {
+        console.warn('Could not send as ' + SENDER_ALIAS + ', falling back to the owner address: ' + aliasErr.message);
+        delete message.from;
+        MailApp.sendEmail(message);
+      }
+    } else {
+      MailApp.sendEmail(message);
+    }
 
     console.log('Confirmation emailed for ' + code + ' (' + (remaining - 1) + ' sends left today)');
     return true;
   } catch (err) {
     console.error('Confirmation email failed for ' + (payload.order_code || '?') + ': ' + (err.stack || err.message));
     return false;
+  }
+}
+
+/* Cached for a day: the file only changes when the shop changes it, and there is no
+   sense fetching the same 20KB for every order. Returns null when it cannot be had,
+   and the email signs off in text instead of breaking. */
+function fetchLogoBlob() {
+  if (!LOGO_URL) return null;
+  try {
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get('order_logo_b64');
+    var bytes;
+    if (cached) {
+      bytes = Utilities.base64Decode(cached);
+    } else {
+      var res = UrlFetchApp.fetch(LOGO_URL, { muteHttpExceptions: true });
+      if (res.getResponseCode() !== 200) {
+        console.warn('Logo fetch returned ' + res.getResponseCode() + ' for ' + LOGO_URL);
+        return null;
+      }
+      bytes = res.getBlob().getBytes();
+      /* CacheService caps a value at 100KB, so an oversized logo is used but not
+         cached rather than throwing on the way in. */
+      var b64 = Utilities.base64Encode(bytes);
+      if (b64.length < 90000) cache.put('order_logo_b64', b64, 86400);
+    }
+    return Utilities.newBlob(bytes, 'image/png', 'store-logo.png').setName('storeLogo');
+  } catch (err) {
+    console.warn('Logo could not be loaded: ' + (err.message || err));
+    return null;
   }
 }
 
