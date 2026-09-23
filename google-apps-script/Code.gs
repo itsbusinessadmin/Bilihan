@@ -644,6 +644,11 @@ function sendOrderConfirmation(payload) {
     }).join('');
 
     var store = String(payload.store_name || 'Bilihan');
+    /* Deep link into the chat widget. Without a site address configured there is
+       nothing to link to, so the sentence falls back to naming the chat instead of
+       pointing at a broken URL. */
+    var site = String(payload.site_url || '').trim().replace(/\/+$/, '');
+    var chatUrl = site ? site + '/#chat' : '';
     var subject = store + ' order ' + code + ' — we got it';
 
     var html =
@@ -653,7 +658,11 @@ function sendOrderConfirmation(payload) {
         '<div style="padding:16px 18px;border:1px solid #e9e4d8;border-radius:14px;background:#faf8f3">' +
           '<table style="border-collapse:collapse;width:100%;font-size:14px">' + tableRows + '</table>' +
         '</div>' +
-        '<p style="margin:20px 0 0;color:#676d65;font-size:13px;line-height:1.6">Need to change or cancel something? Just reply to this email and we will sort it out.</p>' +
+        '<p style="margin:20px 0 0;color:#676d65;font-size:13px;line-height:1.6">If you would like to cancel or edit your order, just message us ' +
+          (chatUrl
+            ? '<a href="' + escapeReceiptHtml(chatUrl) + '" style="color:#1f4d34;font-weight:600;text-decoration:underline">here</a>'
+            : 'on the chat at our store page') +
+          ' and we will sort it out.</p>' +
         (THANK_YOU_NOTE
           ? '<p style="margin:20px 0 0;padding-top:18px;border-top:1px solid #e9e4d8;color:#676d65;font-size:13px;line-height:1.6">' + escapeReceiptHtml(THANK_YOU_NOTE) + '</p>'
           : '') +
@@ -664,7 +673,8 @@ function sendOrderConfirmation(payload) {
       'Thanks, ' + name + '!\n\n' +
       'We have your order and we are getting it ready.\n\n' +
       rows.map(function (r) { return r[0] + ': ' + r[1]; }).join('\n') +
-      '\n\nNeed to change or cancel something? Just reply to this email.' +
+      '\n\nIf you would like to cancel or edit your order, just message us here:' +
+      (chatUrl ? '\n' + chatUrl : ' on the chat at our store page.') +
       (THANK_YOU_NOTE ? '\n\n' + THANK_YOU_NOTE : '') +
       '\n\n' + store;
 
