@@ -287,6 +287,10 @@ cannot be coaxed into showing anything more. They match the admin dashboard on
 purpose: `order_items` keeps no original price of its own, so it comes from the
 product, matched by id and falling back to name for a product since deleted.
 
+The whole of `supabase-setup.sql` is run against a real PostgreSQL 16 before each
+change to it, twice over, to check both that the statements are in a workable order
+and that the file is safe to re-run.
+
 The token is a row in `seller_links`, not a column on `store_settings` — every
 visitor can read store_settings, which would hand the token to all of them. Nothing
 but the admin can read `seller_links`.

@@ -79,6 +79,13 @@ alter table public.store_settings drop constraint if exists store_settings_store
 alter table public.store_settings add constraint store_settings_storefront_skin_check
   check (storefront_skin in ('original','storefront'));
 
+-- Cost and markup. The admin has written these for a long time and the dashboard
+-- reads them, but this file never created them, so a database set up from scratch
+-- here had a products table the admin could not save to. Nullable, because the code
+-- treats a missing original_price as "same as price".
+alter table public.products add column if not exists original_price numeric(12,2);
+alter table public.products add column if not exists interest numeric(12,2) not null default 0;
+
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_code text not null unique,
@@ -355,6 +362,17 @@ drop policy if exists "admins manage products" on public.products;
 create policy "admins manage products" on public.products for all using (public.is_admin()) with check (public.is_admin());
 drop policy if exists "admins manage settings" on public.store_settings;
 create policy "admins manage settings" on public.store_settings for all using (public.is_admin()) with check (public.is_admin());
+-- Seller link: one shared secret that lets someone open the read-only sales page
+-- without an account. Deliberately NOT a column on store_settings, which anyone can
+-- read, since that would hand the token to every visitor. Nothing but the admin can
+-- read this table, and seller_sales() checks the token with definer rights.
+create table if not exists public.seller_links (
+  id integer primary key default 1 check (id = 1),
+  token uuid not null default gen_random_uuid(),
+  rotated_at timestamptz not null default now()
+);
+insert into public.seller_links(id) values (1) on conflict (id) do nothing;
+
 alter table public.seller_links enable row level security;
 drop policy if exists "admins manage seller link" on public.seller_links;
 create policy "admins manage seller link" on public.seller_links for all using (public.is_admin()) with check (public.is_admin());
@@ -433,16 +451,6 @@ alter table public.support_threads add column if not exists customer_last_read_a
 
 create index if not exists support_threads_recent_idx on public.support_threads(last_message_at desc);
 
--- Seller link: one shared secret that lets someone open the read-only sales page
--- without an account. Deliberately NOT a column on store_settings, which anyone can
--- read, since that would hand the token to every visitor. Nothing but the admin can
--- read this table, and seller_sales() checks the token with definer rights.
-create table if not exists public.seller_links (
-  id integer primary key default 1 check (id = 1),
-  token uuid not null default gen_random_uuid(),
-  rotated_at timestamptz not null default now()
-);
-insert into public.seller_links(id) values (1) on conflict (id) do nothing;
 
 -- Normalises the key both sides resolve a customer to.
 create or replace function public.support_key(p_phone text, p_name text)
