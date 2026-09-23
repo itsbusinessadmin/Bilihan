@@ -192,6 +192,11 @@ account can send roughly 100 a day, a Workspace account roughly 1,500.
 Leaving the field blank is fine — the order goes through, there is simply nothing
 to send to.
 
+The email closes with a short note about what the shop's takings go towards. Edit
+`THANK_YOU_NOTE` near the top of `google-apps-script/Code.gs` to change the wording,
+or set it to an empty string to leave it off — the divider above it goes too. The
+shop's name signs it off and comes from Store Settings, not from that file.
+
 The email goes out **once**, the first time Apps Script sees that order. The admin
 page re-posts an order whenever its status or payment changes, so keying off "was
 this a new row in the sheet" is what stops a customer being emailed again every

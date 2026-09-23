@@ -31,6 +31,15 @@
 const RECEIPT_FOLDER_ID = '1TOCB7zls8S0kTETjuqg6BmCEku7OO21e';
 const SHEET_NAME = 'Orders';
 
+/* Closing note on the order confirmation email. Edit the text here; set it to an
+   empty string to leave it off entirely. The shop's name comes from Store Settings,
+   not from this file. */
+const THANK_YOU_NOTE =
+  'Every purchase helps fund employee events, engagement activities, and tokens of ' +
+  'appreciation for our employees. By shopping with us, you\u2019re helping us create ' +
+  'more opportunities to celebrate, connect, and make CES a more enjoyable workplace ' +
+  'for everyone.';
+
 
 /* =========================================================
    POST ROUTER
@@ -645,14 +654,19 @@ function sendOrderConfirmation(payload) {
           '<table style="border-collapse:collapse;width:100%;font-size:14px">' + tableRows + '</table>' +
         '</div>' +
         '<p style="margin:20px 0 0;color:#676d65;font-size:13px;line-height:1.6">Need to change or cancel something? Just reply to this email and we will sort it out.</p>' +
-        '<p style="margin:14px 0 0;color:#96988f;font-size:12px">' + escapeReceiptHtml(store) + '</p>' +
+        (THANK_YOU_NOTE
+          ? '<p style="margin:20px 0 0;padding-top:18px;border-top:1px solid #e9e4d8;color:#676d65;font-size:13px;line-height:1.6">' + escapeReceiptHtml(THANK_YOU_NOTE) + '</p>'
+          : '') +
+        '<p style="margin:16px 0 0;color:#181c19;font-size:14px;font-weight:600">' + escapeReceiptHtml(store) + '</p>' +
       '</div>';
 
     var text =
       'Thanks, ' + name + '!\n\n' +
       'We have your order and we are getting it ready.\n\n' +
       rows.map(function (r) { return r[0] + ': ' + r[1]; }).join('\n') +
-      '\n\nNeed to change or cancel something? Just reply to this email.\n' + store;
+      '\n\nNeed to change or cancel something? Just reply to this email.' +
+      (THANK_YOU_NOTE ? '\n\n' + THANK_YOU_NOTE : '') +
+      '\n\n' + store;
 
     MailApp.sendEmail({
       to: String(payload.email).trim(),
