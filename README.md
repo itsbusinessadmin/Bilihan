@@ -203,6 +203,24 @@ skipped by posting straight to the function.
 With the email left optional, leaving it blank is fine — the order goes through,
 there is simply nothing to send to.
 
+### If confirmations land in Spam
+
+The email is sent from the Google account that owns the Apps Script, and it links to
+the shop's own site. A gmail.com sender linking to an unrelated domain is the shape
+of a phishing attempt, which is what mail providers filter on. Two things help:
+
+- **Reply-to.** Set a contact email in Store Settings and every confirmation carries
+  it, so replies reach a person and the message does not read as bulk mail.
+- **Send from the shop's domain.** Verify an address such as `orders@bilihan.shop`
+  in Gmail (Settings -> Accounts -> "Send mail as"), then put it in `SENDER_ALIAS`
+  near the top of `Code.gs`. The sender domain then matches the link domain, which
+  is the mismatch that causes most of this. An alias Gmail has not verified is
+  refused, so the send falls back to the owner's address and logs why rather than
+  losing the email.
+
+For a recipient already seeing them in Spam, marking one **Not spam** and adding the
+sender to Contacts retrains that inbox faster than any change here.
+
 The email's "message us here" link points at `<SITE_URL>/#chat`, which opens the
 support widget as the page loads and then clears the hash so a later refresh does
 not force it open again. The address comes from `SITE_URL` in `config.js`; with none

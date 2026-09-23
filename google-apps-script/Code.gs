@@ -34,6 +34,19 @@ const SHEET_NAME = 'Orders';
 /* Closing note on the order confirmation email. Edit the text here; set it to an
    empty string to leave it off entirely. The shop's name comes from Store Settings,
    not from this file. */
+/* Address to send confirmations from. Leave empty to send as the Google account
+   that owns this script.
+
+   Worth setting. The email links to the shop's own site, and a message sent from a
+   gmail.com address that links somewhere unrelated is the shape of a phishing
+   attempt, which is what pushes these into Spam. Sending from an address at the
+   same domain as the link removes that mismatch.
+
+   It must be an alias Gmail has already verified for this account (Gmail settings ->
+   Accounts -> "Send mail as"), otherwise Gmail refuses it and the send falls back to
+   the owner's address. */
+const SENDER_ALIAS = '';
+
 const THANK_YOU_NOTE =
   'Every purchase helps fund employee events, engagement activities, and tokens of ' +
   'appreciation for our employees. By shopping with us, you\u2019re helping us create ' +
@@ -678,13 +691,32 @@ function sendOrderConfirmation(payload) {
       (THANK_YOU_NOTE ? '\n\n' + THANK_YOU_NOTE : '') +
       '\n\n' + store;
 
-    MailApp.sendEmail({
+    var message = {
       to: String(payload.email).trim(),
       subject: subject,
       body: text,
       htmlBody: html,
       name: store
-    });
+    };
+    /* A reply path that reaches a person. Without it replies land wherever this
+       script happens to live, and a missing one reads as bulk mail. */
+    var replyTo = String(payload.store_email || '').trim();
+    if (replyTo) message.replyTo = replyTo;
+
+    /* GmailApp is the one that can send as a verified alias; MailApp cannot. An
+       unverified alias throws, so fall back rather than losing the email. */
+    if (SENDER_ALIAS) {
+      message.from = SENDER_ALIAS;
+      try {
+        GmailApp.sendEmail(message.to, message.subject, message.body, message);
+      } catch (aliasErr) {
+        console.warn('Could not send as ' + SENDER_ALIAS + ', falling back to the owner address: ' + aliasErr.message);
+        delete message.from;
+        MailApp.sendEmail(message);
+      }
+    } else {
+      MailApp.sendEmail(message);
+    }
 
     console.log('Confirmation emailed for ' + code + ' (' + (remaining - 1) + ' sends left today)');
     return true;
