@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <!-- A shared link, not a search result: keep it out of the index. -->
+  <meta name="robots" content="noindex, nofollow, noarchive" />
+
+  <script>
+    (function () {
+      var local = ['localhost', '127.0.0.1', ''];
+      if (location.protocol === 'http:' && local.indexOf(location.hostname) === -1) {
+        location.replace('https://' + location.host + location.pathname + location.search + location.hash);
+      }
+    })();
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
+
+  <script>
+    try {
+      var t = localStorage.getItem('bilihan_theme_v3');
+      document.documentElement.dataset.theme = t === 'dark' ? 'dark' : 'light';
+    } catch (e) { document.documentElement.dataset.theme = 'light'; }
+  </script>
+
+  <title>Sales</title>
+  <link rel="icon" href="favicon.ico" sizes="32x32" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <meta name="theme-color" content="#faf8f3" />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="seller-body">
+  <main class="seller-wrap">
+    <header class="seller-head">
+      <img src="store-logo.png" alt="" class="seller-logo" width="200" height="61" onerror="this.remove()" />
+      <div>
+        <h1 id="sellerTitle">Sales</h1>
+        <p class="muted seller-sub" id="sellerAsOf" role="status" aria-live="polite">Loading…</p>
+      </div>
+    </header>
+
+    <div id="sellerError" class="status-banner hidden" role="alert"></div>
+
+    <section id="sellerTotals" class="seller-totals hidden" aria-label="Totals">
+      <div class="seller-metric"><small>Items sold</small><strong id="sellerQty">0</strong></div>
+      <div class="seller-metric seller-metric-lead"><small>Overall total</small><strong id="sellerOverall">₱0.00</strong></div>
+    </section>
+
+    <div class="seller-table-wrap">
+      <table class="seller-table">
+        <thead>
+          <tr><th scope="col">Item</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Total</th></tr>
+        </thead>
+        <tbody id="sellerRows"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="config.js" defer></script>
+  <script src="supabase.js" defer></script>
+  <script src="seller.js" defer></script>
+</body>
+</html>

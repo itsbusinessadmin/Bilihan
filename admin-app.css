@@ -545,3 +545,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .field-toggle-row .check-row:last-child{margin-left:auto}
 /* A "Required" box that cannot apply reads as off, not merely unticked. */
 .check-row.is-disabled{opacity:.45;cursor:not-allowed}
+
+/* ---- Seller link (Dashboard) ---- */
+.seller-link-hint{margin:var(--admin-space-sm) 0 0;font-size:var(--admin-text-caption);line-height:1.5;overflow-wrap:anywhere}

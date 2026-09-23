@@ -712,3 +712,30 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .support-root{bottom:calc(var(--bottom-nav-h) + env(safe-area-inset-bottom,0px) + 12px)}
   .toast{bottom:calc(var(--bottom-nav-h) + env(safe-area-inset-bottom,0px) + 14px)}
 }
+
+/* ---- Seller page (shared read-only sales link) -----------------------------
+   Its own small layer rather than the storefront's: this page has no header,
+   no cart and no nav, just figures that have to be readable on a phone. */
+.seller-body{background:var(--bg)}
+.seller-wrap{margin-inline:auto;width:min(100%,720px);padding:clamp(20px,5vw,40px) clamp(14px,4vw,24px) 56px}
+.seller-head{display:flex;align-items:center;gap:var(--space-md);flex-wrap:wrap;margin-bottom:var(--space-lg)}
+.seller-logo{width:150px;height:auto;flex:0 0 auto}
+.seller-head h1{margin:0;font-size:1.5rem;letter-spacing:-.02em}
+.seller-sub{margin:2px 0 0;font-size:var(--text-caption);font-variant-numeric:tabular-nums}
+.seller-totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--space-sm);margin-bottom:var(--space-lg)}
+.seller-metric{padding:var(--space-md);border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
+.seller-metric small{display:block;color:var(--muted);font-size:var(--text-caption);font-weight:600}
+.seller-metric strong{display:block;margin-top:4px;font-size:1.35rem;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.seller-metric-lead{background:var(--accent-tint);border-color:var(--accent-2)}
+.seller-table-wrap{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden}
+.seller-table{width:100%;border-collapse:collapse;font-size:var(--text-secondary)}
+.seller-table th,.seller-table td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line)}
+.seller-table thead th{background:var(--card-soft);color:var(--muted);font-size:var(--text-caption);text-transform:uppercase;letter-spacing:.04em}
+.seller-table tbody tr:last-child td{border-bottom:0}
+.seller-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.seller-table td:first-child{font-weight:600;overflow-wrap:anywhere}
+.seller-empty{color:var(--muted);text-align:center;font-weight:500}
+@media (max-width:420px){
+  .seller-table th,.seller-table td{padding:10px 11px}
+  .seller-logo{width:120px}
+}
