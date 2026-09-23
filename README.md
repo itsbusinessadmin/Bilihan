@@ -203,6 +203,11 @@ skipped by posting straight to the function.
 With the email left optional, leaving it blank is fine — the order goes through,
 there is simply nothing to send to.
 
+The email's "message us here" link points at `<SITE_URL>/#chat`, which opens the
+support widget as the page loads and then clears the hash so a later refresh does
+not force it open again. The address comes from `SITE_URL` in `config.js`; with none
+set the sentence names the chat in words rather than linking to nowhere.
+
 The email closes with a short note about what the shop's takings go towards. Edit
 `THANK_YOU_NOTE` near the top of `google-apps-script/Code.gs` to change the wording,
 or set it to an empty string to leave it off — the divider above it goes too. The

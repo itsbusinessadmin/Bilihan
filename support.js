@@ -335,6 +335,15 @@
     if (state.session) pollUnread();
     schedule();
     window.BilihanSupport = { open: openPanel, close: closePanel };
+
+    /* #chat opens the widget on arrival. The order confirmation email points here,
+       so "message us here" lands the customer in the chat rather than on the shop
+       front wondering where to click. The hash is cleared afterwards so a later
+       refresh does not force the panel open again. */
+    if (location.hash.toLowerCase() === '#chat') {
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* older browsers keep the hash; harmless */ }
+      openPanel();
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
