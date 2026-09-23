@@ -681,7 +681,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .support-log{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:8px;padding:14px}
 .support-empty{margin:auto;color:var(--muted);font-size:var(--text-secondary);text-align:center}
 .support-msg{max-width:82%;padding:9px 12px;border-radius:16px;font-size:var(--text-secondary);line-height:var(--leading-ui)}
-.support-msg p{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+/* color:inherit matters. The bare p{color:var(--muted)} rule near the top of this
+   file targets the element directly, which beats the colour the bubble passes down,
+   so without this the text in every bubble renders muted grey on a dark fill. */
+.support-msg p{margin:0;overflow-wrap:anywhere;white-space:pre-wrap;color:inherit}
+.support-seen{align-self:flex-end;margin:-2px 2px 0;color:var(--muted);font-size:.66rem;font-weight:600}
 .support-msg time{display:block;margin-top:4px;font-size:.66rem;opacity:.75}
 .support-msg-me{align-self:flex-end;border-bottom-right-radius:5px;background:var(--accent-2);color:#fff}
 [data-theme="dark"] .support-msg-me{color:#0d100e}
