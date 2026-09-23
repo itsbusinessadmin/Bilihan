@@ -478,9 +478,14 @@ begin
 
   -- Stamped on every fetch, not only when something was unread: having the panel
   -- open is what "seen" means, and the admin's marker has to keep up with it.
+  -- The guard keeps a half-second poll from writing this row twice a second; the
+  -- receipt is still accurate to within two seconds, which no one can perceive.
   update public.support_threads
      set customer_unread = 0, customer_last_read_at = now()
-   where id = v_thread.id;
+   where id = v_thread.id
+     and (customer_unread > 0
+          or customer_last_read_at is null
+          or customer_last_read_at < now() - interval '2 seconds');
 
   -- v_thread was read before that update and only customer columns changed, so this
   -- is still the admin's own last-read stamp.
