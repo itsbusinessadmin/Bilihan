@@ -221,10 +221,15 @@ of a phishing attempt, which is what mail providers filter on. Two things help:
 For a recipient already seeing them in Spam, marking one **Not spam** and adding the
 sender to Contacts retrains that inbox faster than any change here.
 
-The email's "message us here" link points at `<SITE_URL>/#chat`, which opens the
-support widget as the page loads and then clears the hash so a later refresh does
-not force it open again. The address comes from `SITE_URL` in `config.js`; with none
-set the sentence names the chat in words rather than linking to nowhere.
+**The email carries no links at all**, on purpose. A message sent from a gmail.com
+address that links to the shop's own domain is the shape of a phishing attempt, and
+adding one was enough to push confirmations into Spam. The customer is told to use
+the chat button on the site instead.
+
+The site itself still answers `/#chat`, which opens the support widget on load and
+then clears the hash so a later refresh does not force it open again. Nothing sends
+that link today; it is there for anywhere a link is safe to use, such as a Messenger
+post.
 
 The email closes with a short note about what the shop's takings go towards. Edit
 `THANK_YOU_NOTE` near the top of `google-apps-script/Code.gs` to change the wording,
