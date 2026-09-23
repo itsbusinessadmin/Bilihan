@@ -47,6 +47,16 @@ const SHEET_NAME = 'Orders';
    the owner's address. */
 const SENDER_ALIAS = '';
 
+/* Logo shown at the foot of the confirmation email. Set to an empty string to sign
+   off with the shop's name in text instead.
+
+   Fetched here and attached to the message, rather than linked with an <img src>
+   pointing at the web. That matters: a linked image makes the recipient's mail
+   client call out to the shop's domain, which is the same sender-domain mismatch
+   that put these in Spam, and most clients block it until the reader clicks "show
+   images" anyway. An attached image travels inside the email and just appears. */
+const LOGO_URL = 'https://bilihan.shop/store-logo.png';
+
 const THANK_YOU_NOTE =
   'Every purchase helps fund employee events, engagement activities, and tokens of ' +
   'appreciation for our employees. By shopping with us, you\u2019re helping us create ' +
@@ -657,6 +667,7 @@ function sendOrderConfirmation(payload) {
     }).join('');
 
     var store = String(payload.store_name || 'Bilihan');
+    var logo = fetchLogoBlob();
     var subject = store + ' order ' + code + ' confirmed';
 
     var html =
@@ -674,7 +685,11 @@ function sendOrderConfirmation(payload) {
         (THANK_YOU_NOTE
           ? '<p style="margin:20px 0 0;padding-top:18px;border-top:1px solid #e9e4d8;color:#676d65;font-size:13px;line-height:1.6">' + escapeReceiptHtml(THANK_YOU_NOTE) + '</p>'
           : '') +
-        '<p style="margin:16px 0 0;color:#181c19;font-size:14px;font-weight:600">' + escapeReceiptHtml(store) + '</p>' +
+        (logo
+          /* alt carries the shop's name, so a client that blocks images still shows
+             who sent this rather than an empty box. */
+          ? '<p style="margin:18px 0 0"><img src="cid:storeLogo" width="200" alt="' + escapeReceiptHtml(store) + '" style="display:block;width:200px;max-width:100%;height:auto;border:0"></p>'
+          : '<p style="margin:16px 0 0;color:#181c19;font-size:14px;font-weight:600">' + escapeReceiptHtml(store) + '</p>') +
       '</div>';
 
     var text =
@@ -692,6 +707,7 @@ function sendOrderConfirmation(payload) {
       htmlBody: html,
       name: store
     };
+    if (logo) message.inlineImages = { storeLogo: logo };
     /* A reply path that reaches a person. Without it replies land wherever this
        script happens to live, and a missing one reads as bulk mail. */
     var replyTo = String(payload.store_email || '').trim();
@@ -717,6 +733,36 @@ function sendOrderConfirmation(payload) {
   } catch (err) {
     console.error('Confirmation email failed for ' + (payload.order_code || '?') + ': ' + (err.stack || err.message));
     return false;
+  }
+}
+
+/* Cached for a day: the file only changes when the shop changes it, and there is no
+   sense fetching the same 20KB for every order. Returns null when it cannot be had,
+   and the email signs off in text instead of breaking. */
+function fetchLogoBlob() {
+  if (!LOGO_URL) return null;
+  try {
+    var cache = CacheService.getScriptCache();
+    var cached = cache.get('order_logo_b64');
+    var bytes;
+    if (cached) {
+      bytes = Utilities.base64Decode(cached);
+    } else {
+      var res = UrlFetchApp.fetch(LOGO_URL, { muteHttpExceptions: true });
+      if (res.getResponseCode() !== 200) {
+        console.warn('Logo fetch returned ' + res.getResponseCode() + ' for ' + LOGO_URL);
+        return null;
+      }
+      bytes = res.getBlob().getBytes();
+      /* CacheService caps a value at 100KB, so an oversized logo is used but not
+         cached rather than throwing on the way in. */
+      var b64 = Utilities.base64Encode(bytes);
+      if (b64.length < 90000) cache.put('order_logo_b64', b64, 86400);
+    }
+    return Utilities.newBlob(bytes, 'image/png', 'store-logo.png').setName('storeLogo');
+  } catch (err) {
+    console.warn('Logo could not be loaded: ' + (err.message || err));
+    return null;
   }
 }
 

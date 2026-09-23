@@ -221,6 +221,16 @@ of a phishing attempt, which is what mail providers filter on. Two things help:
 For a recipient already seeing them in Spam, marking one **Not spam** and adding the
 sender to Contacts retrains that inbox faster than any change here.
 
+The email signs off with the shop logo, `store-logo.png`. Apps Script fetches it
+from the site and **attaches** it to the message rather than linking to it with an
+`<img src>`. A linked image makes the reader's mail client call out to the shop's
+domain, which is the same mismatch that caused the Spam problem, and most clients
+block it until the reader clicks "show images". An attached one travels inside the
+email and simply appears. It is cached for a day, and its `alt` text is the shop's
+name, so a client that blocks images still shows who sent it. Set `LOGO_URL` to an
+empty string in `Code.gs` to sign off in text instead; a logo that cannot be fetched
+does that on its own rather than breaking the email.
+
 **The email carries no links at all**, on purpose. A message sent from a gmail.com
 address that links to the shop's own domain is the shape of a phishing attempt, and
 adding one was enough to push confirmations into Spam. The customer is told to use
