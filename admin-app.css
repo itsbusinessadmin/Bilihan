@@ -62,9 +62,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .panel h3{margin-top:0;color:var(--admin-text);font-size:var(--admin-text-subheading);font-weight:600;letter-spacing:-.014em}
 .panel p{line-height:var(--admin-leading-body);max-width:70ch}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:var(--admin-space-md);margin-bottom:var(--admin-space-lg)}
-.metric{min-width:0;padding:var(--admin-space-lg);background:var(--admin-card);border:1px solid var(--admin-line);border-radius:var(--admin-radius);box-shadow:var(--admin-shadow);overflow:hidden}
+.metric{display:flex;flex-direction:column;min-width:0;padding:var(--admin-space-md) var(--admin-space-lg);background:var(--admin-card);border:1px solid var(--admin-line);border-radius:var(--admin-radius);box-shadow:var(--admin-shadow);overflow:hidden}
 .metric small{display:block;color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:700;letter-spacing:.01em}
-.metric h2{margin:9px 0 0;color:var(--admin-text);font-size:var(--admin-text-metric);font-weight:700;line-height:1.05;letter-spacing:-.03em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.metric h2{margin:6px 0 0;color:var(--admin-text);font-size:var(--admin-text-metric);font-weight:700;line-height:1.05;letter-spacing:-.03em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .admin-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr);gap:var(--admin-space-lg);align-items:start}
 
 /* ---------- Forms ---------- */
@@ -348,8 +348,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .metric-action:active{transform:scale(.99)}
 /* A peso total is far longer than the plain counts on the other cards, so let it
    scale down instead of breaking across two lines mid-number. */
+.metric-money{background:var(--admin-soft);border-color:var(--admin-line-strong)}
 .metric-money h2{font-size:clamp(1.05rem,1.55vw,var(--admin-text-metric))}
-.metric-hint{display:block;margin-top:8px;color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:600}
+.metric-hint{display:flex;align-items:center;gap:3px;margin-top:auto;padding-top:10px;color:var(--admin-green);font-size:var(--admin-text-caption);font-weight:700}
 .admin-modal-wide{width:min(920px,100%)}
 .sales-table td:nth-child(n+2),.sales-table th:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums}
 .sales-table tfoot td{border-top:2px solid var(--admin-line);background:var(--admin-soft)}
@@ -381,8 +382,19 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 @media(max-width:760px){.page-head{align-items:stretch;flex-direction:column}.page-head .danger-btn{width:100%}}
 /* Link from Admin out to the live storefront. Opens in a new tab so the admin
    page, and anything half-typed on it, stays put. */
-.view-store-btn{margin:var(--admin-space-md) 0 var(--admin-space-lg);text-decoration:none}
-.view-store-btn::after{content:"↗";margin-left:2px;font-weight:700}
+/* ---- Page actions: one row, one rhythm --------------------------------------
+   Previously three buttons in three shapes, and an arrow on all of them even
+   where nothing was being opened. */
+.page-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--admin-space-sm);margin:var(--admin-space-md) 0 var(--admin-space-sm)}
+.page-actions .primary-btn,.page-actions .secondary-btn,.page-actions .quiet-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  min-height:44px;padding:0 18px;border-radius:12px;
+  font-size:var(--admin-text-secondary);font-weight:700;text-decoration:none;white-space:nowrap
+}
+.page-actions .quiet-btn{border:1px solid var(--admin-line);background:transparent;color:var(--admin-muted)}
+.page-actions .quiet-btn:hover{border-color:var(--admin-line-strong);color:var(--admin-text);background:var(--admin-soft)}
+.ext{font-weight:700;opacity:.8}
+.page-actions-hint{max-width:62ch;margin:0 0 var(--admin-space-xl);font-size:var(--admin-text-caption);line-height:1.55;overflow-wrap:anywhere}
 
 /* ===================================================================
    Admin layout tidy-up: readable form widths, reachable navigation,
@@ -548,3 +560,21 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 
 /* ---- Seller link (Dashboard) ---- */
 .seller-link-hint{margin:var(--admin-space-sm) 0 0;font-size:var(--admin-text-caption);line-height:1.5;overflow-wrap:anywhere}
+
+/* ---- Sidebar brand ---- */
+.admin-brand strong{display:block;overflow-wrap:anywhere;line-height:1.25}
+.admin-brand small{display:block;margin-top:1px;color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+
+/* ---- Forms: tighter, more even, and a save button you do not scroll for ---- */
+.admin-form .form-section>h3{font-size:1.05rem;letter-spacing:-.01em}
+.admin-form .form-section{margin-top:var(--admin-space-2xl);padding-top:var(--admin-space-lg)}
+.admin-form .form-row{gap:var(--admin-space-md) var(--admin-space-lg)}
+.admin-form .form-row>label{margin:0}
+.admin-form>label,.admin-form .form-section>label{margin:0}
+.form-actions{display:flex;justify-content:flex-end;gap:var(--admin-space-sm);margin:var(--admin-space-xl) calc(-1 * var(--admin-space-lg)) calc(-1 * var(--admin-space-lg));padding:var(--admin-space-lg);border-top:1px solid var(--admin-line);background:var(--admin-soft);border-radius:0 0 var(--admin-radius) var(--admin-radius)}
+.form-actions .primary-btn{min-width:180px}
+@media(max-width:560px){
+  .form-actions{margin-inline:calc(-1 * var(--admin-space-md));padding-inline:var(--admin-space-md)}
+  .form-actions .primary-btn{width:100%;min-width:0}
+  .page-actions .primary-btn,.page-actions .secondary-btn,.page-actions .quiet-btn{flex:1 1 auto}
+}
