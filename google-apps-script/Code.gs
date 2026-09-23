@@ -649,12 +649,12 @@ function sendOrderConfirmation(payload) {
        pointing at a broken URL. */
     var site = String(payload.site_url || '').trim().replace(/\/+$/, '');
     var chatUrl = site ? site + '/#chat' : '';
-    var subject = store + ' order ' + code + ' — we got it';
+    var subject = store + ' order ' + code + ' confirmed';
 
     var html =
       '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#181c19">' +
         '<h1 style="margin:0 0 6px;font-size:22px">Thanks, ' + escapeReceiptHtml(name) + '!</h1>' +
-        '<p style="margin:0 0 20px;color:#676d65;line-height:1.6">We have your order and we are getting it ready. Keep this email — your order number is how we find it.</p>' +
+        '<p style="margin:0 0 20px;color:#676d65;line-height:1.6">We have your order and we are getting it ready. Keep this email. Your order number is how we find it.</p>' +
         '<div style="padding:16px 18px;border:1px solid #e9e4d8;border-radius:14px;background:#faf8f3">' +
           '<table style="border-collapse:collapse;width:100%;font-size:14px">' + tableRows + '</table>' +
         '</div>' +
