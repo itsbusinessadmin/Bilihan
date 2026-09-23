@@ -112,7 +112,7 @@ function startAutoRefresh(){
    of stale figures. */
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefresh()});
 
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="bilihan-logo.png"><div><strong>Bilihan</strong><small style="display:block">ADMIN</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
 /* ---- Sales reporting ----------------------------------------------------
    Resolve the original-price / interest split for one order line. An order item
    may carry its own original_price and interest recorded at order time; when it
@@ -164,7 +164,12 @@ function openAllSalesModal(){
   document.getElementById('closeAllSales').focus();
 }
 
-function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal=salesByProduct().reduce((sum,r)=>sum+r.overall,0);m.innerHTML=`<span class="eyebrow">Overview</span><h2>Dashboard</h2><a class="primary-btn view-store-btn" href="index.html" target="_blank" rel="noopener">View customer store</a><button type="button" class="secondary-btn view-store-btn" id="copySellerLink">Copy seller page link</button><button type="button" class="view-store-btn" id="rotateSellerLink" title="Stop the old link working and make a new one">New link</button><p class="muted seller-link-hint" id="sellerLinkHint">The seller page shows live sales only: item, quantity and totals. Anyone with the link can open it without signing in.</p><div class="cards"><div class="metric"><small>Total Products</small><h2>${ps.length}</h2></div><div class="metric"><small>Available</small><h2>${ps.filter(p=>p.is_available&&p.stock>0).length}</h2></div><div class="metric"><small>Sold Out</small><h2>${ps.filter(p=>!p.is_available||p.stock<=0).length}</h2></div><div class="metric"><small>Total Orders</small><h2>${os.length}</h2></div><button type="button" class="metric metric-action metric-money" id="openAllSales"><small>All Sales</small><h2>${money(salesTotal)}</h2><span class="metric-hint">View per-item breakdown</span></button></div>`;
+function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal=salesByProduct().reduce((sum,r)=>sum+r.overall,0);m.innerHTML=`<span class="eyebrow">Overview</span><h2>Dashboard</h2><div class="page-actions">
+      <a class="primary-btn" href="index.html" target="_blank" rel="noopener">View customer store<span class="ext" aria-hidden="true">↗</span></a>
+      <button type="button" class="secondary-btn" id="copySellerLink">Copy seller link</button>
+      <button type="button" class="quiet-btn" id="rotateSellerLink" title="Stop the old link working and make a new one">New link</button>
+    </div>
+    <p class="muted page-actions-hint" id="sellerLinkHint">The seller link shows live sales only: item, quantity and totals. Anyone holding it can open it without signing in.</p><div class="cards"><div class="metric"><small>Total Products</small><h2>${ps.length}</h2></div><div class="metric"><small>Available</small><h2>${ps.filter(p=>p.is_available&&p.stock>0).length}</h2></div><div class="metric"><small>Sold Out</small><h2>${ps.filter(p=>!p.is_available||p.stock<=0).length}</h2></div><div class="metric"><small>Total Orders</small><h2>${os.length}</h2></div><button type="button" class="metric metric-action metric-money" id="openAllSales"><small>All Sales</small><h2>${money(salesTotal)}</h2><span class="metric-hint">Per-item breakdown<span class="ext" aria-hidden="true">›</span></span></button></div>`;
   document.getElementById('openAllSales').onclick=openAllSalesModal;
   /* The seller link is a shared secret in a URL: anyone holding it sees sales. That
      is the point, so it comes with a way to revoke it. */
@@ -613,17 +618,6 @@ function settings(m){
         <label class="check-row"><input type="checkbox" name="show_preferred_date" ${s.show_preferred_date===true?'checked':''}> Show preferred date</label>
         <label class="check-row"><input type="checkbox" name="show_stock" ${s.show_stock===true?'checked':''}> Show available stock on the customer page</label>
 
-        <h4 class="form-subhead">Contact fields at checkout</h4>
-        <p class="muted form-hint">Untick <strong>Ask for</strong> to drop the field from checkout entirely. <strong>Required</strong> only applies while the field is being asked for.</p>
-        <div class="field-toggle-row">
-          <label class="check-row"><input type="checkbox" name="checkout_show_phone" data-field-toggle="phone" ${s.checkout_show_phone!==false?'checked':''}> Ask for mobile number</label>
-          <label class="check-row"><input type="checkbox" name="checkout_require_phone" data-field-require="phone" ${s.checkout_require_phone===true?'checked':''}> Required</label>
-        </div>
-        <div class="field-toggle-row">
-          <label class="check-row"><input type="checkbox" name="checkout_show_email" data-field-toggle="email" ${s.checkout_show_email!==false?'checked':''}> Ask for email <small class="muted">(order confirmations go here)</small></label>
-          <label class="check-row"><input type="checkbox" name="checkout_require_email" data-field-require="email" ${s.checkout_require_email===true?'checked':''}> Required</label>
-        </div>
-
         <div class="form-row">
           <label>Preferred date mode
             <select name="preferred_date_mode" id="preferredDateMode">
@@ -640,6 +634,19 @@ function settings(m){
       </section>
 
       <section class="form-section">
+        <h3>Contact fields at checkout</h3>
+        <p class="muted form-hint">Untick <strong>Ask for</strong> to drop a field from checkout. <strong>Required</strong> only applies while the field is being asked for.</p>
+        <div class="field-toggle-row">
+          <label class="check-row"><input type="checkbox" name="checkout_show_phone" data-field-toggle="phone" ${s.checkout_show_phone!==false?'checked':''}> Ask for mobile number</label>
+          <label class="check-row"><input type="checkbox" name="checkout_require_phone" data-field-require="phone" ${s.checkout_require_phone===true?'checked':''}> Required</label>
+        </div>
+        <div class="field-toggle-row">
+          <label class="check-row"><input type="checkbox" name="checkout_show_email" data-field-toggle="email" ${s.checkout_show_email!==false?'checked':''}> Ask for email <small class="muted">(order confirmations go here)</small></label>
+          <label class="check-row"><input type="checkbox" name="checkout_require_email" data-field-require="email" ${s.checkout_require_email===true?'checked':''}> Required</label>
+        </div>
+      </section>
+
+      <section class="form-section">
         <h3>Payment methods</h3>
 
         <label class="check-row"><input type="checkbox" name="show_qr_payment" ${s.show_qr_payment===true?'checked':''}> Show QR Payment</label>
@@ -651,7 +658,7 @@ function settings(m){
         </div>
       </section>
 
-      <button class="primary-btn">Save Settings</button>
+      <div class="form-actions"><button class="primary-btn">Save Settings</button></div>
 
     </form>
   `;
