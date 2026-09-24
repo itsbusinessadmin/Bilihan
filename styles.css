@@ -283,6 +283,9 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .modal-close{position:sticky;z-index:3;float:right;top:12px;border-radius:12px;background:var(--card)}
 .product-modal-grid{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:28px;align-items:start}
 .product-modal-image{width:100%;aspect-ratio:1/1;object-fit:cover;background:var(--card-soft);border-radius:var(--radius)}
+/* The stock line sits right above the quantity picker, so it needs its own room. */
+.product-modal-grid .stock{margin-bottom:var(--space-md)}
+.product-modal-grid .primary-btn[disabled]{width:100%}
 
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-md)}
 .field{min-width:0;display:flex;flex-direction:column;gap:7px;font-size:var(--text-secondary);font-weight:600}
