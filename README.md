@@ -277,10 +277,11 @@ far right; add a header for it if you keep one.
 ## Seller page
 
 **Dashboard → Copy seller page link** puts a link on the clipboard that shows live
-sales and nothing else: each item, the quantity sold, that item's total at the
-original price, and the overall total. No interest, and no customer, order or
-contact detail is reachable from it. Whoever holds the link opens it without an
-account.
+sales and nothing else: each item with the quantity sold, its total at the original
+price and its interest, then the totals for each and the overall. Overall means cost
+plus markup, the same figure the admin Orders tab calls Total Sell, so the columns
+add up to the totals above them. No customer, order or contact detail is reachable
+from it. Whoever holds the link opens it without an account.
 
 The figures come from `seller_sales()`, which returns totals only, so the page
 cannot be coaxed into showing anything more. They match the admin dashboard on
@@ -298,6 +299,17 @@ but the admin can read `seller_links`.
 **The link is a shared secret.** Anyone who has it can see sales, which is the
 point, so **New link** next to the copy button issues a fresh token and stops the
 old link working straight away. Use it when someone should no longer have access.
+
+## Orders header
+
+On the Orders tab the heading, Select, Delete All Orders, the five totals, the
+search box and the paid filters stay pinned while the list scrolls under them.
+
+Three things that pinning would otherwise have broken: the block carries an opaque
+background, since order rows would show through it; on a phone the five totals
+become one swipeable row, because stacked they would take most of the screen and
+leave nowhere for the orders; and on a window shorter than 620px it stops pinning
+altogether, where a fixed header would leave barely a row visible.
 
 ## Storefront theme
 
