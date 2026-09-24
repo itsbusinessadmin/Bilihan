@@ -27,8 +27,12 @@
     if (signature !== lastSignature) {
       lastSignature = signature;
       $('sellerRows').innerHTML = items.length
-        ? items.map(r => `<tr><td>${esc(r.name)}</td><td class="num">${Number(r.qty || 0)}</td><td class="num">${money(r.original_total)}</td><td class="num">${money(r.interest_total)}</td></tr>`).join('')
-        : '<tr><td colspan="4" class="seller-empty">No sales yet.</td></tr>';
+        /* Overall per row is the two beside it added up, so the column adds to the
+           Overall total above rather than having to be taken on trust. The data-label
+           on each figure is what the phone layout shows in place of the table head,
+           which is too wide to keep five columns on a small screen. */
+        ? items.map(r => `<tr><td>${esc(r.name)}</td><td class="num" data-label="Qty">${Number(r.qty || 0)}</td><td class="num" data-label="Seller price">${money(r.original_total)}</td><td class="num" data-label="Interest">${money(r.interest_total)}</td><td class="num seller-row-total" data-label="Overall">${money(Number(r.original_total || 0) + Number(r.interest_total || 0))}</td></tr>`).join('')
+        : '<tr><td colspan="5" class="seller-empty">No sales yet.</td></tr>';
       $('sellerQty').textContent = Number(data.total_qty || 0).toLocaleString('en-PH');
       $('sellerOriginal').textContent = money(data.original);
       $('sellerInterest').textContent = money(data.interest);

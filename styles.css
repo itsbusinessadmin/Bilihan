@@ -727,15 +727,30 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .seller-metric small{display:block;color:var(--muted);font-size:var(--text-caption);font-weight:600}
 .seller-metric strong{display:block;margin-top:4px;font-size:1.35rem;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .seller-metric-lead{background:var(--accent-tint);border-color:var(--accent-2)}
-.seller-table-wrap{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden}
+.seller-table-wrap{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
 .seller-table{width:100%;border-collapse:collapse;font-size:var(--text-secondary)}
 .seller-table th,.seller-table td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line)}
 .seller-table thead th{background:var(--card-soft);color:var(--muted);font-size:var(--text-caption);text-transform:uppercase;letter-spacing:.04em}
 .seller-table tbody tr:last-child td{border-bottom:0}
 .seller-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .seller-table td:first-child{font-weight:600;overflow-wrap:anywhere}
+/* The row's own total, so the eye lands on it the way it does on Overall above. */
+.seller-table .seller-row-total{font-weight:700;color:var(--text)}
+@media (max-width:560px){
+  /* Five columns of currency squeeze the item name to a few characters on a phone,
+     so each sale becomes a small card instead: the name on its own line, then the
+     four figures as labelled pairs. Nothing is hidden and nothing has to be swiped. */
+  .seller-table,.seller-table tbody,.seller-table tr,.seller-table td{display:block}
+  .seller-table thead{display:none}
+  .seller-table tbody tr{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-sm) var(--space-md);padding:var(--space-md);border-bottom:1px solid var(--line)}
+  .seller-table tbody tr:last-child{border-bottom:0}
+  .seller-table td{padding:0;border:0}
+  .seller-table td:first-child{grid-column:1/-1;overflow-wrap:break-word}
+  .seller-table td.num{text-align:left;white-space:normal;font-weight:600}
+  .seller-table td.num::before{content:attr(data-label);display:block;margin-bottom:2px;color:var(--muted);font-size:var(--text-caption);font-weight:600;letter-spacing:.02em}
+  .seller-table .seller-empty{grid-column:1/-1;text-align:left}
+}
 .seller-empty{color:var(--muted);text-align:center;font-weight:500}
 @media (max-width:420px){
-  .seller-table th,.seller-table td{padding:10px 11px}
   .seller-logo{width:120px}
 }
