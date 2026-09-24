@@ -164,13 +164,53 @@ function openAllSalesModal(){
   document.getElementById('closeAllSales').focus();
 }
 
-function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal=salesByProduct().reduce((sum,r)=>sum+r.overall,0);m.innerHTML=`<span class="eyebrow">Overview</span><h2>Dashboard</h2><div class="page-actions">
+function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal=salesByProduct().reduce((sum,r)=>sum+r.overall,0);const open=A.data.settings?.store_open!==false;const closedNote=A.data.settings?.closed_message||'';m.innerHTML=`<span class="eyebrow">Overview</span><h2>Dashboard</h2>
+    <div class="store-switch ${open?'is-open':'is-closed'}">
+      <div class="store-switch-copy">
+        <strong class="store-switch-state"><span class="store-switch-dot" aria-hidden="true"></span>${open?'Store is open':'Store is closed'}</strong>
+        <p>${open?'Customers can browse and place orders as normal.':'Customers see a closed notice instead of the shop, and no order can be placed.'}</p>
+      </div>
+      <label class="store-toggle" title="${open?'Close the store':'Open the store'}">
+        <input type="checkbox" id="storeOpenToggle" ${open?'checked':''}>
+        <span class="store-toggle-track" aria-hidden="true"><span class="store-toggle-thumb"></span></span>
+        <span class="sr-only">Store open</span>
+      </label>
+    </div>
+    ${open?'':`<form id="closedNoteForm" class="closed-note-form">
+      <label for="closedNoteInput">What customers are told</label>
+      <input id="closedNoteInput" name="closed_message" maxlength="160" value="${esc(closedNote)}" placeholder="Back on Monday at 8am." autocomplete="off">
+      <button type="submit" class="secondary-btn">Save note</button>
+      <p class="muted form-hint" id="closedNoteHint">Leave it blank to show the standard "we are closed, please check back soon" wording.</p>
+    </form>`}
+    <div class="page-actions">
       <a class="primary-btn" href="index.html" target="_blank" rel="noopener">View customer store<span class="ext" aria-hidden="true">↗</span></a>
       <button type="button" class="secondary-btn" id="copySellerLink">Copy seller link</button>
       <button type="button" class="quiet-btn" id="rotateSellerLink" title="Stop the old link working and make a new one">New link</button>
     </div>
     <p class="muted page-actions-hint" id="sellerLinkHint">The seller link shows live sales only: item, quantity and totals. Anyone holding it can open it without signing in.</p><div class="cards"><div class="metric"><small>Total Products</small><h2>${ps.length}</h2></div><div class="metric"><small>Available</small><h2>${ps.filter(p=>p.is_available&&p.stock>0).length}</h2></div><div class="metric"><small>Sold Out</small><h2>${ps.filter(p=>!p.is_available||p.stock<=0).length}</h2></div><div class="metric"><small>Total Orders</small><h2>${os.length}</h2></div><button type="button" class="metric metric-action metric-money" id="openAllSales"><small>All Sales</small><h2>${money(salesTotal)}</h2><span class="metric-hint">Per-item breakdown<span class="ext" aria-hidden="true">›</span></span></button></div>`;
   document.getElementById('openAllSales').onclick=openAllSalesModal;
+  /* Open or closed. Closing takes the shop away from every customer at once, so it
+     asks first; reopening does not, because nobody loses anything by it. */
+  const toggle=document.getElementById('storeOpenToggle');
+  toggle.onchange=async()=>{
+    const wantOpen=toggle.checked;
+    if(!wantOpen&&!confirm('Close the store?\n\nCustomers will see a closed notice instead of the shop and will not be able to order until you open it again. Orders already placed are not affected.')){toggle.checked=true;return}
+    toggle.disabled=true;
+    const {error}=await db.from('store_settings').update({store_open:wantOpen}).eq('id',1);
+    if(error){alert(error.message);toggle.checked=!wantOpen;toggle.disabled=false;return}
+    await loadAll();
+    dashboard(m);
+  };
+  const noteForm=document.getElementById('closedNoteForm');
+  if(noteForm)noteForm.onsubmit=async e=>{
+    e.preventDefault();
+    const hint=document.getElementById('closedNoteHint');
+    const value=String(new FormData(e.currentTarget).get('closed_message')||'').trim();
+    const {error}=await db.from('store_settings').update({closed_message:value||null}).eq('id',1);
+    if(error){hint.textContent=error.message;return}
+    await loadAll();
+    hint.textContent=value?'Saved. Customers see this on the closed page.':'Saved. Customers see the standard wording.';
+  };
   /* The seller link is a shared secret in a URL: anyone holding it sees sales. That
      is the point, so it comes with a way to revoke it. */
   const sellerUrl=()=>A.data.sellerToken?`${location.origin}${location.pathname.replace(/[^/]*$/,'')}seller.html?t=${encodeURIComponent(A.data.sellerToken)}`:'';

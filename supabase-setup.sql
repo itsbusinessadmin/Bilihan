@@ -64,6 +64,13 @@ alter table public.store_settings add column if not exists checkout_require_phon
 alter table public.store_settings add column if not exists checkout_show_email boolean not null default true;
 alter table public.store_settings add column if not exists checkout_require_email boolean not null default false;
 
+-- Open or closed. The owner flips this from the dashboard: closed puts a notice
+-- over the customer page instead of the shop, and place_order() below refuses an
+-- order outright, so a tab left open before closing time cannot still check out.
+-- Defaults to open, which is what every existing shop was before this existed.
+alter table public.store_settings add column if not exists store_open boolean not null default true;
+alter table public.store_settings add column if not exists closed_message text;
+
 -- Storefront identity and contact details surfaced in the customer footer.
 -- All optional: the storefront hides any that are not set.
 alter table public.store_settings add column if not exists logo_url text;
@@ -214,6 +221,15 @@ begin
   -- Read the shop's checkout rules here rather than trusting what the page sent:
   -- anything the browser enforces can be skipped by posting straight to this function.
   select * into v_cfg from public.store_settings where id = 1;
+
+  -- Closed means closed. The page hides itself too, but this is the check that
+  -- counts: a tab opened while the shop was still open would otherwise keep working.
+  if not coalesce(v_cfg.store_open,true) then
+    return jsonb_build_object('ok',false,'closed',true,
+      'error', coalesce(nullif(btrim(v_cfg.closed_message),''),
+                        'We are closed right now, so we cannot take this order. Please try again when we reopen.'));
+  end if;
+
   if coalesce(trim(p_customer_name),'') = '' then
     return jsonb_build_object('ok',false,'error','Name is required.');
   end if;

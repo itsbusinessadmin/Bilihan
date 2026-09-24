@@ -111,6 +111,30 @@ You can then manage:
 
 Changes save to Supabase and are visible to customers without editing the GitHub source.
 
+## Opening and closing the store
+
+The switch at the top of **Dashboard** decides whether the shop is trading. Open is
+the normal state and is what every existing shop starts as.
+
+Closed puts a full-page notice over the customer site: the store logo, a **Closed**
+badge, and a line the owner can write themselves in the box that appears under the
+switch when the store is closed (leave it blank for the standard "we are not taking
+orders at the moment" wording). The shop behind it is set `inert`, so it cannot be
+clicked, tabbed into or read out by a screen reader, and an open cart or dialog is
+closed as the notice goes up. Two things are deliberately left working: the cart is
+kept in the browser, so nobody loses what they picked, and the support chat floats
+above the notice so a customer can still ask when the shop reopens.
+
+Closing asks for confirmation, because it takes the shop away from everyone at once.
+Reopening does not.
+
+`place_order()` refuses an order while the store is closed, with the owner's own
+wording if they wrote one. That is the check that counts: the notice can only cover a
+page that is loaded, and a tab left open from before closing time would otherwise keep
+working. The customer page also re-reads the switch every minute and whenever the tab
+comes back to the front, so someone already browsing sees the notice without reloading,
+and reopening pulls a fresh menu because stock and prices have had time to move.
+
 ## Customer order behavior
 When a customer places an order, the `place_order` PostgreSQL function locks the product rows, rechecks stock and authoritative prices, inserts the order, inserts its line items, and deducts inventory in the same database transaction.
 

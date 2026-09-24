@@ -651,6 +651,25 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .field input[type=file]::file-selector-button:hover{background:var(--card-soft-2)}
 
 /* ===================================================================
+   Closed sign
+   Drawn over the shop when the owner closes the store. Sits under the support
+   chat (--z-toast) so a customer can still ask when we reopen, and above
+   everything else so nothing behind it can be clicked.
+   =================================================================== */
+.closed-curtain{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:max(20px,env(safe-area-inset-top)) 20px calc(96px + env(safe-area-inset-bottom));background:var(--bg);overflow-y:auto;animation:closedIn .25s var(--ease)}
+.closed-curtain[hidden]{display:none}
+@keyframes closedIn{from{opacity:0}to{opacity:1}}
+.closed-card{width:min(440px,100%);padding:var(--space-xl) var(--space-lg) var(--space-lg);border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card);box-shadow:var(--shadow-lg);text-align:center}
+.closed-card img{width:72px;height:72px;margin-inline:auto;object-fit:contain;border-radius:18px}
+.closed-pill{display:inline-flex;align-items:center;gap:7px;margin:var(--space-md) 0 var(--space-sm);padding:5px 13px;border:1px solid var(--line-strong);border-radius:var(--radius-pill);background:var(--card-soft);color:var(--muted);font-size:var(--text-caption);font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.closed-dot{width:8px;height:8px;border-radius:50%;background:var(--danger)}
+.closed-card h1{margin:0 0 var(--space-sm);font-size:1.5rem;letter-spacing:-.02em}
+#closedMessage{margin:0 0 var(--space-md);color:var(--text);font-size:var(--text-body)}
+.closed-note{margin:0;padding-top:var(--space-md);border-top:1px solid var(--line);color:var(--muted);font-size:var(--text-caption)}
+/* The page behind is inert, but a phone can still rubber-band it into view. */
+body.store-closed{overflow:hidden}
+
+/* ===================================================================
    Customer support chat
    =================================================================== */
 .support-root{position:fixed;z-index:var(--z-toast);right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none}

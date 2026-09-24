@@ -154,6 +154,19 @@
   <dialog id="checkoutDialog" class="modal wide-modal"></dialog>
   <dialog id="orderDialog" class="modal wide-modal"></dialog>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <!-- Shown over the whole shop when the owner closes the store from the admin
+       dashboard. It sits below the support chat on purpose, so a customer can still
+       ask a question while the shop is shut. -->
+  <div id="closedCurtain" class="closed-curtain" role="alert" aria-live="assertive" hidden>
+    <div class="closed-card">
+      <img src="bilihan-mark.webp" width="72" height="72" data-store-logo alt="" />
+      <span class="closed-pill"><span class="closed-dot" aria-hidden="true"></span>Closed</span>
+      <h1 id="closedHeading">We are closed right now</h1>
+      <p id="closedMessage">We are not taking orders at the moment. Please check back soon.</p>
+      <p class="closed-note">Your cart is saved, so whatever you picked will still be here when we reopen. You can message us any time with the chat button.</p>
+    </div>
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
   <script src="config.js" defer></script>
   <script src="supabase.js" defer></script>
