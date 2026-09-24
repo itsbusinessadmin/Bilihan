@@ -739,6 +739,56 @@ $$;
 
 grant execute on function public.seller_sales(uuid) to anon, authenticated;
 
+-- Who bought one item, for the "Who ordered" button on the seller page.
+-- Guarded by the same link token, and it still returns no contact detail: a
+-- customer name and a quantity is everything this function knows how to say.
+create or replace function public.seller_item_buyers(p_token uuid, p_name text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_rows jsonb;
+  v_qty bigint;
+begin
+  if p_token is null
+     or not exists (select 1 from public.seller_links where id = 1 and token = p_token) then
+    return jsonb_build_object('ok', false, 'error', 'This link is no longer valid. Ask the store for a new one.');
+  end if;
+
+  with lines as (
+    select
+      coalesce(nullif(btrim(o.customer_name), ''), 'Customer') as buyer,
+      i.qty,
+      o.created_at
+    from public.order_items i
+    join public.orders o on o.id = i.order_id and o.status <> 'Cancelled'
+    -- Matches how seller_sales groups the table it was clicked from, so the
+    -- quantities here add up to the qty shown on that row.
+    where coalesce(nullif(btrim(i.product_name), ''), '(unnamed product)')
+        = coalesce(nullif(btrim(p_name), ''), '(unnamed product)')
+  ), agg as (
+    -- One row per person, not per order. Grouped case-insensitively so someone
+    -- who typed their name in lower case one week is not counted twice, and the
+    -- spelling shown is the one they used most recently.
+    select (array_agg(buyer order by created_at desc))[1] as buyer,
+           sum(qty)::bigint as qty
+    from lines group by lower(buyer)
+  )
+  select coalesce(jsonb_agg(jsonb_build_object('name', buyer, 'qty', qty)
+                  order by qty desc, buyer), '[]'::jsonb),
+         coalesce(sum(qty), 0)
+  into v_rows, v_qty
+  from agg;
+
+  return jsonb_build_object('ok', true, 'name', p_name, 'buyers', v_rows,
+                            'total_qty', v_qty, 'as_of', now());
+end;
+$$;
+
+grant execute on function public.seller_item_buyers(uuid, text) to anon, authenticated;
+
 alter table public.support_threads enable row level security;
 alter table public.support_messages enable row level security;
 

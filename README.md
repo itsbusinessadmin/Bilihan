@@ -277,16 +277,27 @@ far right; add a header for it if you keep one.
 ## Seller page
 
 **Dashboard → Copy seller page link** puts a link on the clipboard that shows live
-sales and nothing else: each item with the quantity sold, its total at the original
-price and its interest, then the totals for each and the overall. Overall means cost
-plus markup, the same figure the admin Orders tab calls Total Sell, so the columns
-add up to the totals above them. No customer, order or contact detail is reachable
-from it. Whoever holds the link opens it without an account.
+sales: each item with the quantity sold, its seller price total, its interest and
+its overall, then the same four as totals across the top. Overall means cost plus
+markup, the same figure the admin Orders tab calls Total Sell, so every column adds
+up to the total above it. Whoever holds the link opens it without an account.
 
-The figures come from `seller_sales()`, which returns totals only, so the page
-cannot be coaxed into showing anything more. They match the admin dashboard on
-purpose: `order_items` keeps no original price of its own, so it comes from the
-product, matched by id and falling back to name for a product since deleted.
+**Who ordered** on each row opens the customers who bought that item and how many
+each took, two columns and nothing else. It comes from `seller_item_buyers()`,
+which is guarded by the same link token and returns a name and a quantity only —
+no phone, email, address, order number or date. People are grouped case-insensitively,
+so someone who typed their name in lower case one week is one row, not two, and the
+quantities add up to the qty on the row the button sits in. Cancelled orders are
+left out of both, which is why the two agree.
+
+The figures come from `seller_sales()`, which returns totals only. They match the
+admin dashboard on purpose: `order_items` keeps no original price of its own, so it
+comes from the product, matched by id and falling back to name for a product since
+deleted.
+
+On a phone the table becomes one small card per item — the name on its own line,
+then the four figures as labelled pairs — because five money columns squeeze the
+item name to a few characters and break it mid-word.
 
 The whole of `supabase-setup.sql` is run against a real PostgreSQL 16 before each
 change to it, twice over, to check both that the statements are in a workable order
