@@ -578,3 +578,43 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   .form-actions .primary-btn{width:100%;min-width:0}
   .page-actions .primary-btn,.page-actions .secondary-btn,.page-actions .quiet-btn{flex:1 1 auto}
 }
+
+/* ---- Orders: the heading, totals, search and filters stay put ---------------
+   The page scrolls on the body, so top:0 pins this to the top of the window.
+   It has to carry its own opaque background, otherwise order rows show through
+   as they pass underneath. */
+.orders-sticky{
+  position:sticky;top:0;z-index:4;
+  margin:calc(-1 * var(--admin-space-2xl)) calc(-1 * var(--admin-space-sm)) var(--admin-space-md);
+  padding:var(--admin-space-2xl) var(--admin-space-sm) var(--admin-space-sm);
+  background:var(--admin-bg)
+}
+.orders-sticky::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--admin-line)
+}
+.orders-sticky .page-head{margin-bottom:var(--admin-space-md)}
+.orders-sticky .cards{margin-bottom:var(--admin-space-md)}
+.orders-sticky .panel{margin-bottom:var(--admin-space-sm)}
+
+@media(max-width:900px){
+  /* Five cards stacked would eat the screen and leave no room for the orders, so
+     they become one swipeable row while pinned. */
+  .orders-sticky .orders-cards{
+    display:flex;gap:var(--admin-space-sm);overflow-x:auto;scrollbar-width:none;
+    margin-inline:calc(-1 * var(--admin-space-sm));padding-inline:var(--admin-space-sm);
+    scroll-snap-type:x proximity
+  }
+  .orders-sticky .orders-cards::-webkit-scrollbar{display:none}
+  .orders-sticky .orders-cards .metric{flex:0 0 46%;scroll-snap-align:start;padding:var(--admin-space-sm) var(--admin-space-md)}
+  .orders-sticky .orders-cards .metric h2{font-size:1.15rem}
+  .orders-sticky{margin-top:calc(-1 * var(--admin-space-xl));padding-top:var(--admin-space-xl)}
+}
+@media(max-width:560px){
+  .orders-sticky .orders-cards .metric{flex:0 0 58%}
+}
+/* Someone scrolling a long order list on a short window would be left with almost
+   no list, so below that height it simply scrolls with the page. */
+@media(max-height:620px){
+  .orders-sticky{position:static;margin-top:0;padding-top:0}
+  .orders-sticky::after{display:none}
+}

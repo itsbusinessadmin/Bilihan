@@ -23,13 +23,16 @@
     const items = data.items || [];
     /* Repaint only when something actually changed: this runs every few seconds and
        rebuilding the table each time would fight anyone reading it. */
-    const signature = JSON.stringify(items) + data.overall;
+    const signature = JSON.stringify(items) + data.overall + data.interest;
     if (signature !== lastSignature) {
       lastSignature = signature;
       $('sellerRows').innerHTML = items.length
-        ? items.map(r => `<tr><td>${esc(r.name)}</td><td class="num">${Number(r.qty || 0)}</td><td class="num">${money(r.original_total)}</td></tr>`).join('')
-        : '<tr><td colspan="3" class="seller-empty">No sales yet.</td></tr>';
+        ? items.map(r => `<tr><td>${esc(r.name)}</td><td class="num">${Number(r.qty || 0)}</td><td class="num">${money(r.original_total)}</td><td class="num">${money(r.interest_total)}</td></tr>`).join('')
+        : '<tr><td colspan="4" class="seller-empty">No sales yet.</td></tr>';
       $('sellerQty').textContent = Number(data.total_qty || 0).toLocaleString('en-PH');
+      $('sellerOriginal').textContent = money(data.original);
+      $('sellerInterest').textContent = money(data.interest);
+      /* Overall is cost plus markup, the same figure the admin calls Total Sell. */
       $('sellerOverall').textContent = money(data.overall);
       $('sellerTotals').classList.remove('hidden');
     }
