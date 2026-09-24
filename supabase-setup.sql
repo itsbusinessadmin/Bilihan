@@ -674,10 +674,9 @@ grant execute on function public.support_admin_mark_read(uuid) to authenticated;
 -- no contact detail ever leaves this function, so the link cannot be turned into a
 -- view of who bought what.
 --
--- The figures mirror what the admin dashboard shows, on purpose. order_items keeps
--- no original price of its own, so it comes from the product, matched by id and
--- falling back to name for a product that has since been deleted. Interest is not
--- returned at all.
+-- The figures mirror what the admin Orders tab shows, on purpose. order_items keeps
+-- neither original price nor interest of its own, so both come from the product,
+-- matched by id and falling back to name for a product that has since been deleted.
 create or replace function public.seller_sales(p_token uuid)
 returns jsonb
 language plpgsql
@@ -688,6 +687,7 @@ declare
   v_rows jsonb;
   v_qty bigint;
   v_total numeric;
+  v_interest numeric;
 begin
   if p_token is null
      or not exists (select 1 from public.seller_links where id = 1 and token = p_token) then
@@ -698,32 +698,42 @@ begin
     select
       coalesce(nullif(btrim(i.product_name), ''), '(unnamed product)') as name,
       i.qty,
-      coalesce(p.original_price, i.unit_price) as original
+      coalesce(p.original_price, i.unit_price) as original,
+      coalesce(p.interest, 0) as interest
     from public.order_items i
     join public.orders o on o.id = i.order_id and o.status <> 'Cancelled'
     -- lateral, not a plain join: two products sharing a name would otherwise
     -- duplicate the line and double-count the sale.
     left join lateral (
-      select pr.original_price
+      select pr.original_price, pr.interest
       from public.products pr
       where (i.product_id is not null and pr.id = i.product_id)
          or (i.product_id is null and lower(btrim(pr.name)) = lower(btrim(i.product_name)))
       limit 1
     ) p on true
   ), agg as (
-    select name, sum(qty)::bigint as qty, sum(original * qty) as original_total
+    select name,
+           sum(qty)::bigint as qty,
+           sum(original * qty) as original_total,
+           sum(interest * qty) as interest_total
     from lines group by name
   )
   select
-    coalesce(jsonb_agg(jsonb_build_object('name', name, 'qty', qty, 'original_total', original_total)
-             order by original_total desc, name), '[]'::jsonb),
+    coalesce(jsonb_agg(jsonb_build_object('name', name, 'qty', qty,
+                                          'original_total', original_total,
+                                          'interest_total', interest_total)
+             order by original_total + interest_total desc, name), '[]'::jsonb),
     coalesce(sum(qty), 0),
-    coalesce(sum(original_total), 0)
-  into v_rows, v_qty, v_total
+    coalesce(sum(original_total), 0),
+    coalesce(sum(interest_total), 0)
+  into v_rows, v_qty, v_total, v_interest
   from agg;
 
+  -- 'overall' is what the shop actually took: cost plus markup, the same figure the
+  -- admin calls Total Sell.
   return jsonb_build_object('ok', true, 'items', v_rows, 'total_qty', v_qty,
-                            'overall', v_total, 'as_of', now());
+                            'original', v_total, 'interest', v_interest,
+                            'overall', v_total + v_interest, 'as_of', now());
 end;
 $$;
 
