@@ -11,7 +11,7 @@ function realSetting(value){const v=String(value||'').trim();return v&&!PLACEHOL
 function telHref(phone){return 'tel:'+phone.replace(/[^\d+]/g,'')}
 function track(event){try{window.BilihanAnalytics?.track?.(event)}catch{/* analytics must never break checkout */}}
 const FALLBACK = {
-  settings:{business_name:'Bilihan',phone:'+63 900 000 0000',messenger_url:'https://m.me/',instagram_url:'https://instagram.com/',pickup_location:'Your pickup location here',qr_image_url:'bilihan-logo.png',hero_title:'Good food, made easy.',hero_tagline:'From everyday favorites to satisfying cravings, find something good at Bilihan.',about_text:'Bilihan is your easy online food stop for everyday favorites, cravings, meals, snacks, and more.',about_image_url:'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1400&q=80',hero_images:['https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=80']},
+  settings:{store_open:true,business_name:'Bilihan',phone:'+63 900 000 0000',messenger_url:'https://m.me/',instagram_url:'https://instagram.com/',pickup_location:'Your pickup location here',qr_image_url:'bilihan-logo.png',hero_title:'Good food, made easy.',hero_tagline:'From everyday favorites to satisfying cravings, find something good at Bilihan.',about_text:'Bilihan is your easy online food stop for everyday favorites, cravings, meals, snacks, and more.',about_image_url:'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1400&q=80',hero_images:['https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=80']},
   categories:[],products:[]
 };
 function safeJsonParse(value,fallback){try{const parsed=JSON.parse(value);return parsed??fallback}catch{return fallback}}
@@ -61,12 +61,64 @@ function applySkin(name){
   if(document.documentElement.dataset.skin!==skin){document.documentElement.dataset.skin=skin;syncThemeColor()}
   try{localStorage.setItem(LS.skin,skin)}catch(e){}
 }
-function renderAll(){renderSettings();renderCategories();renderViewSwitch();renderProducts();renderCart();renderLatestOrderButton();renderConnection()}
+function renderAll(){renderClosed();renderSettings();renderCategories();renderViewSwitch();renderProducts();renderCart();renderLatestOrderButton();renderConnection()}
 function renderConnection(){
   const b=$('connectionBanner');
   if(!window.BILIHAN_SUPABASE_CONFIGURED){b.textContent=window.BILIHAN_SUPABASE_LIB_MISSING?'We could not reach our ordering system. You are browsing a saved copy of the menu, and checkout is disabled until the connection returns.':'Store database is not connected yet. Browsing demo/cache only; checkout is disabled.';b.classList.remove('hidden');return}
   if(!state.online){b.textContent='Ordering is temporarily unavailable. You can still browse our cached menu while we reconnect. ';const btn=document.createElement('button');btn.className='secondary-btn';btn.textContent='Try Again';btn.onclick=bootstrap;b.replaceChildren(document.createTextNode(b.textContent),btn);b.classList.remove('hidden')} else b.classList.add('hidden')
 }
+/* Open or closed, decided by the owner's switch in the admin dashboard.
+   Closed draws a notice over the whole shop rather than emptying it: the products
+   are still there, they are simply not for sale this minute. The support chat is
+   deliberately left reachable above it, and place_order() refuses an order while
+   closed whatever this page happens to be showing. */
+function storeIsOpen(){return (state.data?.settings||FALLBACK.settings).store_open!==false}
+
+function renderClosed(){
+  const curtain=$('closedCurtain');
+  if(!curtain)return;
+  const s=state.data?.settings||FALLBACK.settings;
+  const open=storeIsOpen();
+  if(!open){
+    const note=String(s.closed_message||'').trim();
+    $('closedMessage').textContent=note||'We are not taking orders at the moment. Please check back soon.';
+    /* Nothing behind the notice should still be operable: an open cart or dialog
+       would otherwise sit on top of it and take an order the shop cannot fill. */
+    closeCart();
+    document.querySelectorAll('dialog[open]').forEach(d=>d.close());
+  }
+  curtain.hidden=open;
+  document.body.classList.toggle('store-closed',!open);
+  /* inert keeps the shop out of reach of the keyboard and screen readers while the
+     notice is up, which a visual overlay on its own does not do. */
+  document.querySelectorAll('.site-header,main,.footer,.bottom-nav').forEach(el=>{el.inert=!open});
+}
+
+/* The switch can be flipped while someone is already on the page, so the setting is
+   re-read now and then rather than only at load. Cheap: two columns, and only when
+   the tab is in front of the customer. */
+const STORE_STATE_MS=60000;
+async function refreshStoreState(){
+  if(document.hidden||!window.BILIHAN_SUPABASE_CONFIGURED||!window.db)return;
+  try{
+    const {data,error}=await db.from('store_settings').select('store_open,closed_message').eq('id',1).single();
+    if(error||!data||!state.data?.settings)return;
+    const s=state.data.settings;
+    if(s.store_open===data.store_open&&s.closed_message===data.closed_message)return;
+    const reopened=s.store_open===false&&data.store_open!==false;
+    s.store_open=data.store_open;s.closed_message=data.closed_message;
+    try{localStorage.setItem(LS.cache,JSON.stringify(state.data))}catch(e){}
+    /* Reopening pulls the menu again: prices and stock have had time to move while
+       the shop was shut. Closing only needs the notice. */
+    if(reopened)bootstrap();else renderClosed();
+  }catch(e){/* a blip leaves the page as it is; the next check retries */}
+}
+
+function watchStoreState(){
+  setInterval(refreshStoreState,STORE_STATE_MS);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshStoreState()});
+}
+
 function renderSettings(){
   const s=state.data.settings||FALLBACK.settings;
   applySkin(s.storefront_skin);
@@ -358,7 +410,11 @@ async function placeOrder(e){
     let preferredDate=d.preferredDate||availableFrom||new Date().toISOString().slice(0,10);if(showPreferredDate&&preferredDateMode==='calendar'&&availableFrom&&preferredDate<availableFrom)throw new Error('Please select a date on or after the available-from date.');
     const items=state.cart.map(i=>({product_id:i.productId,qty:i.qty}));
     const {data,error}=await db.rpc('place_order',{p_customer_name:String(d.name||'').trim(),p_phone:phone||null,p_email:email||null,p_fulfillment:fulfillment,p_address:address,p_preferred_date:preferredDate,p_payment_method:d.payment,p_note:String(d.note||'').trim()||null,p_items:items});
-    if(error)throw error;if(!data?.ok)throw new Error(data?.error||'Order could not be placed.');const order=data.order;
+    if(error)throw error;
+    /* The shop closed while this form was open. Raise the notice rather than only
+       showing the message inside a checkout the customer can no longer complete. */
+    if(data&&data.ok===false&&data.closed){refreshStoreState();throw new Error(data.error||'We are closed right now.')}
+    if(!data?.ok)throw new Error(data?.error||'Order could not be placed.');const order=data.order;
     /* The order is in the database now. Everything below is bookkeeping the
        customer has no reason to wait behind, so none of it blocks the receipt.
        The upload was awaited before, even though mode:'no-cors' makes its
@@ -393,3 +449,4 @@ function renderLatestOrderButton(){
 function syncThemeIcon(){const dark=document.documentElement.dataset.theme==='dark';document.documentElement.style.colorScheme=dark?'dark':'light';const icon=$('themeIcon');if(icon)icon.src=dark?'ios-icons/light-mode.png':'ios-icons/dark-mode.png';$('themeToggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('themeToggle').setAttribute('aria-pressed',String(dark));syncThemeColor()}document.documentElement.dataset.theme=localStorage.getItem(LS.theme)||'light';syncThemeIcon();$('themeToggle').onclick=()=>{const dark=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=dark?'light':'dark';localStorage.setItem(LS.theme,dark?'light':'dark');syncThemeIcon()};
 window.addEventListener('offline',()=>{state.online=false;renderConnection()});window.addEventListener('online',()=>bootstrap());
 bootstrap();
+watchStoreState();

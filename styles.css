@@ -651,6 +651,25 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .field input[type=file]::file-selector-button:hover{background:var(--card-soft-2)}
 
 /* ===================================================================
+   Closed sign
+   Drawn over the shop when the owner closes the store. Sits under the support
+   chat (--z-toast) so a customer can still ask when we reopen, and above
+   everything else so nothing behind it can be clicked.
+   =================================================================== */
+.closed-curtain{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:max(20px,env(safe-area-inset-top)) 20px calc(96px + env(safe-area-inset-bottom));background:var(--bg);overflow-y:auto;animation:closedIn .25s var(--ease)}
+.closed-curtain[hidden]{display:none}
+@keyframes closedIn{from{opacity:0}to{opacity:1}}
+.closed-card{width:min(440px,100%);padding:var(--space-xl) var(--space-lg) var(--space-lg);border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--card);box-shadow:var(--shadow-lg);text-align:center}
+.closed-card img{width:72px;height:72px;margin-inline:auto;object-fit:contain;border-radius:18px}
+.closed-pill{display:inline-flex;align-items:center;gap:7px;margin:var(--space-md) 0 var(--space-sm);padding:5px 13px;border:1px solid var(--line-strong);border-radius:var(--radius-pill);background:var(--card-soft);color:var(--muted);font-size:var(--text-caption);font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.closed-dot{width:8px;height:8px;border-radius:50%;background:var(--danger)}
+.closed-card h1{margin:0 0 var(--space-sm);font-size:1.5rem;letter-spacing:-.02em}
+#closedMessage{margin:0 0 var(--space-md);color:var(--text);font-size:var(--text-body)}
+.closed-note{margin:0;padding-top:var(--space-md);border-top:1px solid var(--line);color:var(--muted);font-size:var(--text-caption)}
+/* The page behind is inert, but a phone can still rubber-band it into view. */
+body.store-closed{overflow:hidden}
+
+/* ===================================================================
    Customer support chat
    =================================================================== */
 .support-root{position:fixed;z-index:var(--z-toast);right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none}
@@ -736,6 +755,20 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .seller-table td:first-child{font-weight:600;overflow-wrap:anywhere}
 /* The row's own total, so the eye lands on it the way it does on Overall above. */
 .seller-table .seller-row-total{font-weight:700;color:var(--text)}
+.seller-item-name{display:block}
+/* Quiet on the row, obvious once you look for it: the figures stay the headline. */
+.seller-who{display:inline-flex;align-items:center;min-height:0;margin-top:4px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--card-soft);color:var(--muted);font-size:var(--text-caption);font-weight:600;cursor:pointer}
+.seller-who:hover{border-color:var(--line-strong);background:var(--card);color:var(--text)}
+.seller-who:active{transform:scale(.96)}
+.buyers-title{margin:0 0 2px;font-size:1.25rem;letter-spacing:-.02em;padding-right:48px}
+.buyers-sub{margin:0 0 var(--space-md);font-size:var(--text-caption)}
+.buyers-table-wrap{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.buyers-table{width:100%;border-collapse:collapse;font-size:var(--text-secondary)}
+.buyers-table th,.buyers-table td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line)}
+.buyers-table thead th{background:var(--card-soft);color:var(--muted);font-size:var(--text-caption);text-transform:uppercase;letter-spacing:.04em}
+.buyers-table tbody tr:last-child td{border-bottom:0}
+.buyers-table td:first-child{font-weight:600;overflow-wrap:anywhere}
+.buyers-table .num{width:1%;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:700}
 @media (max-width:560px){
   /* Five columns of currency squeeze the item name to a few characters on a phone,
      so each sale becomes a small card instead: the name on its own line, then the

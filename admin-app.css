@@ -385,6 +385,34 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 /* ---- Page actions: one row, one rhythm --------------------------------------
    Previously three buttons in three shapes, and an arrow on all of them even
    where nothing was being opened. */
+/* ---- Open / closed switch (Dashboard) ----
+   Deliberately the loudest thing on the page: whether the shop is taking orders
+   is the one setting the owner must never be wrong about at a glance. */
+.store-switch{display:flex;align-items:center;gap:var(--admin-space-lg);margin:var(--admin-space-lg) 0 var(--admin-space-md);padding:var(--admin-space-lg);border:1px solid var(--admin-line);border-left:4px solid var(--admin-muted);border-radius:var(--admin-radius);background:var(--admin-card);box-shadow:var(--admin-shadow)}
+.store-switch.is-open{border-left-color:var(--admin-success)}
+.store-switch.is-closed{border-left-color:var(--admin-danger);background:color-mix(in srgb,var(--admin-danger) 6%,var(--admin-card))}
+.store-switch-copy{flex:1 1 auto;min-width:0}
+.store-switch-state{display:flex;align-items:center;gap:9px;font-size:var(--admin-text-subheading);letter-spacing:-.01em}
+.store-switch-dot{width:10px;height:10px;border-radius:50%;background:var(--admin-muted)}
+.store-switch.is-open .store-switch-dot{background:var(--admin-success)}
+.store-switch.is-closed .store-switch-dot{background:var(--admin-danger)}
+.store-switch-copy p{margin:4px 0 0;color:var(--admin-muted);font-size:var(--admin-text-secondary)}
+.store-toggle{flex:0 0 auto;display:inline-flex;align-items:center;cursor:pointer}
+.store-toggle input{position:absolute;opacity:0;width:0;height:0}
+.store-toggle-track{position:relative;display:block;width:62px;height:34px;border:1px solid var(--admin-line-strong);border-radius:999px;background:var(--admin-soft);transition:background .18s var(--admin-ease-out),border-color .18s var(--admin-ease-out)}
+.store-toggle-thumb{position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:var(--admin-card);box-shadow:var(--admin-shadow-lg);transition:transform .18s var(--admin-ease-out)}
+.store-toggle input:checked+.store-toggle-track{background:var(--admin-success);border-color:var(--admin-success)}
+.store-toggle input:checked+.store-toggle-track .store-toggle-thumb{transform:translateX(28px)}
+.store-toggle input:focus-visible+.store-toggle-track{outline:2px solid var(--admin-green);outline-offset:3px}
+.store-toggle input:disabled+.store-toggle-track{opacity:.6}
+.closed-note-form{display:flex;flex-wrap:wrap;align-items:center;gap:var(--admin-space-sm);margin:0 0 var(--admin-space-md);padding:var(--admin-space-lg);border:1px solid var(--admin-line);border-radius:var(--admin-radius);background:var(--admin-card)}
+.closed-note-form label{flex:0 0 100%;margin:0;font-weight:600;font-size:var(--admin-text-secondary)}
+.closed-note-form input{flex:1 1 240px;min-height:var(--admin-touch);margin:0}
+.closed-note-form .form-hint{flex:0 0 100%;margin:0}
+@media (max-width:560px){
+  .store-switch{flex-direction:column;align-items:flex-start;gap:var(--admin-space-md)}
+  .closed-note-form button{width:100%}
+}
 .page-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--admin-space-sm);margin:var(--admin-space-md) 0 var(--admin-space-sm)}
 .page-actions .primary-btn,.page-actions .secondary-btn,.page-actions .quiet-btn{
   display:inline-flex;align-items:center;justify-content:center;gap:6px;

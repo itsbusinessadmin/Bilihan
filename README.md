@@ -111,6 +111,30 @@ You can then manage:
 
 Changes save to Supabase and are visible to customers without editing the GitHub source.
 
+## Opening and closing the store
+
+The switch at the top of **Dashboard** decides whether the shop is trading. Open is
+the normal state and is what every existing shop starts as.
+
+Closed puts a full-page notice over the customer site: the store logo, a **Closed**
+badge, and a line the owner can write themselves in the box that appears under the
+switch when the store is closed (leave it blank for the standard "we are not taking
+orders at the moment" wording). The shop behind it is set `inert`, so it cannot be
+clicked, tabbed into or read out by a screen reader, and an open cart or dialog is
+closed as the notice goes up. Two things are deliberately left working: the cart is
+kept in the browser, so nobody loses what they picked, and the support chat floats
+above the notice so a customer can still ask when the shop reopens.
+
+Closing asks for confirmation, because it takes the shop away from everyone at once.
+Reopening does not.
+
+`place_order()` refuses an order while the store is closed, with the owner's own
+wording if they wrote one. That is the check that counts: the notice can only cover a
+page that is loaded, and a tab left open from before closing time would otherwise keep
+working. The customer page also re-reads the switch every minute and whenever the tab
+comes back to the front, so someone already browsing sees the notice without reloading,
+and reopening pulls a fresh menu because stock and prices have had time to move.
+
 ## Customer order behavior
 When a customer places an order, the `place_order` PostgreSQL function locks the product rows, rechecks stock and authoritative prices, inserts the order, inserts its line items, and deducts inventory in the same database transaction.
 
@@ -277,16 +301,27 @@ far right; add a header for it if you keep one.
 ## Seller page
 
 **Dashboard → Copy seller page link** puts a link on the clipboard that shows live
-sales and nothing else: each item with the quantity sold, its total at the original
-price and its interest, then the totals for each and the overall. Overall means cost
-plus markup, the same figure the admin Orders tab calls Total Sell, so the columns
-add up to the totals above them. No customer, order or contact detail is reachable
-from it. Whoever holds the link opens it without an account.
+sales: each item with the quantity sold, its seller price total, its interest and
+its overall, then the same four as totals across the top. Overall means cost plus
+markup, the same figure the admin Orders tab calls Total Sell, so every column adds
+up to the total above it. Whoever holds the link opens it without an account.
 
-The figures come from `seller_sales()`, which returns totals only, so the page
-cannot be coaxed into showing anything more. They match the admin dashboard on
-purpose: `order_items` keeps no original price of its own, so it comes from the
-product, matched by id and falling back to name for a product since deleted.
+**Who ordered** on each row opens the customers who bought that item and how many
+each took, two columns and nothing else. It comes from `seller_item_buyers()`,
+which is guarded by the same link token and returns a name and a quantity only —
+no phone, email, address, order number or date. People are grouped case-insensitively,
+so someone who typed their name in lower case one week is one row, not two, and the
+quantities add up to the qty on the row the button sits in. Cancelled orders are
+left out of both, which is why the two agree.
+
+The figures come from `seller_sales()`, which returns totals only. They match the
+admin dashboard on purpose: `order_items` keeps no original price of its own, so it
+comes from the product, matched by id and falling back to name for a product since
+deleted.
+
+On a phone the table becomes one small card per item — the name on its own line,
+then the four figures as labelled pairs — because five money columns squeeze the
+item name to a few characters and break it mid-word.
 
 The whole of `supabase-setup.sql` is run against a real PostgreSQL 16 before each
 change to it, twice over, to check both that the statements are in a workable order
