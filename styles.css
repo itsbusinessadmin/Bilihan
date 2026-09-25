@@ -289,6 +289,18 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .modal-body{padding:var(--space-xl)}
 .modal-close{position:sticky;z-index:3;float:right;top:12px;border-radius:12px;background:var(--card)}
 .product-modal-grid{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:28px;align-items:start}
+/* Order history list. The number is the heading of each row because that is what
+   a customer quotes back to us, and what tells one order from another. */
+.order-list-title{margin:0 0 var(--space-md)}
+.order-list{display:flex;flex-direction:column;gap:var(--space-sm)}
+.order-list-row{display:flex;align-items:center;gap:var(--space-md);width:100%;min-height:var(--touch);padding:var(--space-md);border:1px solid var(--line);border-radius:var(--radius);background:var(--card);text-align:left;cursor:pointer;transition:border-color var(--fast) var(--ease),background var(--fast) var(--ease),transform var(--fast) var(--ease-spring)}
+.order-list-row:hover{border-color:var(--line-strong);background:var(--card-soft)}
+.order-list-row:active{transform:scale(.99)}
+.order-list-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.order-list-main strong{font-family:var(--font-mono,inherit);font-size:var(--text-body);letter-spacing:.01em;overflow-wrap:anywhere}
+.order-list-main small{color:var(--muted);font-size:var(--text-caption)}
+.order-list-chip{flex:0 0 auto;padding:3px 9px;border-radius:var(--radius-pill);background:var(--card-soft);color:var(--danger);font-size:var(--text-caption);font-weight:700}
+.order-list-go{flex:0 0 auto;color:var(--muted);font-size:1.3rem;line-height:1}
 .product-modal-image{width:100%;aspect-ratio:1/1;object-fit:cover;background:var(--card-soft);border-radius:var(--radius)}
 /* The stock line sits right above the quantity picker, so it needs its own room. */
 .product-modal-grid .stock{margin-bottom:var(--space-md)}
@@ -326,6 +338,8 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .qr-payment-actions{display:flex;flex-direction:column;align-items:flex-start;gap:11px}
 .qr-payment-actions p{margin:0}
 .order-status{display:inline-flex;margin-bottom:4px;font-size:var(--text-secondary);font-weight:700;color:var(--accent-2)}
+/* A cancelled order in the success colour reads as a confirmation at a glance. */
+.order-status.is-cancelled{color:var(--danger)}
 [data-theme="dark"] .order-status{color:var(--accent-3)}
 .cancel-form{margin-top:var(--space-md);padding:var(--space-sm);border:1px solid color-mix(in srgb,var(--danger) 24%,var(--line));border-radius:var(--radius-sm);background:var(--danger-tint)}
 .cancel-form textarea{width:100%;min-height:88px;margin:8px 0 10px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);font-size:1rem;resize:vertical}

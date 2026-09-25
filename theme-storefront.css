@@ -483,6 +483,8 @@ html[data-skin="storefront"] .support-compose textarea { border: var(--border-w)
 
 /* Order number, monospace where the design calls for it */
 html[data-skin="storefront"] #orderDialog h2 { font-family: var(--font-mono); font-size: var(--text-subheading); }
+/* ...but the order list's own heading is a heading, not an order number. */
+html[data-skin="storefront"] #orderDialog h2.order-list-title { font-family: var(--font-display, inherit); font-size: var(--text-heading, 1.5rem); }
 
 /* ---- Phones: the mark on its own -------------------------------------------
    The plaque, the name, the tagline and the star are a lot of header for a phone.
