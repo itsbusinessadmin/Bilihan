@@ -1,5 +1,5 @@
 const GOOGLE_SHEETS_WEB_APP_URL = (window.BILIHAN_CONFIG||{}).GOOGLE_SHEETS_WEB_APP_URL || '';
-const LS = { cart:'bilihan_cart_v3', theme:'bilihan_theme_v3', skin:'bilihan_skin_v1', latestOrder:'bilihan_latest_order_v3', cache:'bilihan_cache_v3', pendingCancel:'bilihan_pending_cancel_v3', productView:'bilihan_product_view_v1', lastOrderAt:'bilihan_last_order_at_v1' };
+const LS = { cart:'bilihan_cart_v3', theme:'bilihan_theme_v3', skin:'bilihan_skin_v1', latestOrder:'bilihan_latest_order_v3', orders:'bilihan_orders_v1', cache:'bilihan_cache_v3', pendingCancel:'bilihan_pending_cancel_v3', productView:'bilihan_product_view_v1', lastOrderAt:'bilihan_last_order_at_v1' };
 const TITLE_SUFFIX='Order Food Online for Pickup or Delivery';
 /* Order cooldown and form dwell time: cheap client-side deterrents against bots and
    accidental double submissions. Server-side limits still belong in Supabase. */
@@ -447,29 +447,86 @@ async function placeOrder(e){
        response unreadable — the wait bought nothing but a slower checkout. */
     if(isQr&&receiptFile)uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>console.warn('Receipt upload failed:',err));
     syncOrderToGoogleSheet(order);
-    localStorage.setItem(LS.latestOrder,JSON.stringify(order));localStorage.setItem(LS.lastOrderAt,String(Date.now()));
+    rememberOrder(order);localStorage.setItem(LS.lastOrderAt,String(Date.now()));
     state.cart=[];saveCart();$('checkoutDialog').close();
     showOrder(order);toast(`Order #${order.order_code} placed ✓`);track('order_placed');
     /* Refresh stock in the background; the confirmation is already on screen. */
     bootstrap().catch(err=>console.warn('Post-order refresh failed:',err))
   }catch(err){console.error(err);checkoutError(err?.message||'Unable to place your order. Please check your connection and try again.')}finally{delete f.dataset.submitting;btn.disabled=false;btn.textContent='Place Order';if(progress)progress.textContent=''}
 }
-function showOrder(order){
+/* Order history. The site kept only the most recent order, so a customer with
+   several could see just the last one. They are kept newest first, capped so a
+   regular's browser storage does not grow without end.
+
+   Orders are not readable from the browser once placed (row level security keeps
+   them to the admin), so these stored copies are the only record the customer has.
+   That is why nothing here ever drops one on a parse error. */
+const ORDER_HISTORY_MAX=20;
+function readOrders(){
+  const list=safeJsonParse(localStorage.getItem(LS.orders),null);
+  if(Array.isArray(list)&&list.length)return list.filter(o=>o&&o.order_code);
+  /* First run after this change: carry over the single order the old key held, so
+     a customer mid-order does not lose the one receipt they had. */
+  const legacy=safeJsonParse(localStorage.getItem(LS.latestOrder),null);
+  return legacy?.order_code?[legacy]:[];
+}
+function writeOrders(list){
+  try{localStorage.setItem(LS.orders,JSON.stringify(list.slice(0,ORDER_HISTORY_MAX)))}catch(e){/* full or blocked: the session still works */}
+}
+function rememberOrder(order){
+  if(!order?.order_code)return;
+  const list=readOrders().filter(o=>o.order_code!==order.order_code);
+  list.unshift(order);
+  writeOrders(list);
+  /* The old key stays written: the pending-cancellation retry still reads it. */
+  try{localStorage.setItem(LS.latestOrder,JSON.stringify(order))}catch(e){}
+}
+function updateStoredOrder(code,patch){
+  const list=readOrders().map(o=>o.order_code===code?{...o,...patch}:o);
+  writeOrders(list);
+  const latest=safeJsonParse(localStorage.getItem(LS.latestOrder),null);
+  if(latest?.order_code===code){try{localStorage.setItem(LS.latestOrder,JSON.stringify({...latest,...patch}))}catch(e){}}
+}
+const orderWhen=o=>new Date(o.created_at).toLocaleString([], {day:'numeric',month:'short',year:'numeric',hour:'numeric',minute:'2-digit'});
+
+/* The list a customer lands on: order numbers and nothing else, because with a
+   few orders behind them the numbers are what tells one from another. Everything
+   about an order is one tap away. */
+function showOrderList(){
+  const orders=readOrders();
+  if(!orders.length)return;
+  if(orders.length===1)return showOrder(orders[0]);
+  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" id="ordersClose"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button>
+    <span class="eyebrow">Your orders</span><h2 class="order-list-title">My Orders</h2>
+    <div class="order-list">${orders.map(o=>`<button type="button" class="order-list-row" data-code="${esc(o.order_code)}">
+      <span class="order-list-main"><strong>#${esc(o.order_code)}</strong><small>${esc(orderWhen(o))}</small></span>
+      ${o.status==='Cancelled'?'<span class="order-list-chip">Cancelled</span>':''}
+      <span class="order-list-go" aria-hidden="true">&rsaquo;</span></button>`).join('')}</div></div>`;
+  $('ordersClose').onclick=()=>$('orderDialog').close();
+  $('orderDialog').querySelectorAll('.order-list-row').forEach(btn=>{
+    btn.onclick=()=>{const o=readOrders().find(x=>x.order_code===btn.dataset.code);if(o)showOrder(o,{fromList:true})};
+  });
+  if(!$('orderDialog').open)$('orderDialog').showModal();
+}
+
+function showOrder(order,opts){
   const cancelled=order.status==='Cancelled';
-  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}<div class="contact-actions" style="margin-top:16px"><button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
-  $('orderDialog').showModal();
+  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status${cancelled?' is-cancelled':''}">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}<div class="contact-actions" style="margin-top:16px">${opts&&opts.fromList?'<button class="secondary-btn" id="backToOrders">&lsaquo; All orders</button>':''}<button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
+  if(!$('orderDialog').open)$('orderDialog').showModal();
+  if($('backToOrders'))$('backToOrders').onclick=()=>showOrderList();
   $('copyOrderNo').onclick=async()=>{try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(order.order_code);else{const ta=document.createElement('textarea');ta.value=order.order_code;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}toast('Copied ✓')}catch{toast(`Order #${order.order_code}`)}};
   $('continueBtn').onclick=()=>$('orderDialog').close();
   /* Cancelling is no longer self-service: the customer talks to the store instead. */
   $('messageUsBtn').onclick=()=>{$('orderDialog').close();if(window.BilihanSupport?.open)window.BilihanSupport.open();else toast('Chat is loading. Please try again in a moment.')};
 }
-async function retryPendingCancel(){if(!window.BILIHAN_SUPABASE_CONFIGURED)return;const raw=localStorage.getItem(LS.pendingCancel);if(!raw)return;const p=safeJsonParse(raw,null);if(!p?.order?.order_code){localStorage.removeItem(LS.pendingCancel);return}try{const {data,error}=await db.rpc('cancel_order',{p_order_code:p.order.order_code,p_cancel_token:p.order.cancel_token,p_reason:p.reason,p_requested_at:p.requestedAt});if(error)throw error;if(data?.ok){localStorage.removeItem(LS.pendingCancel);const updated={...p.order,status:'Cancelled',cancellation_reason:p.reason};localStorage.setItem(LS.latestOrder,JSON.stringify(updated))}}catch(e){console.warn('Pending cancellation still waiting',e)}}
+async function retryPendingCancel(){if(!window.BILIHAN_SUPABASE_CONFIGURED)return;const raw=localStorage.getItem(LS.pendingCancel);if(!raw)return;const p=safeJsonParse(raw,null);if(!p?.order?.order_code){localStorage.removeItem(LS.pendingCancel);return}try{const {data,error}=await db.rpc('cancel_order',{p_order_code:p.order.order_code,p_cancel_token:p.order.cancel_token,p_reason:p.reason,p_requested_at:p.requestedAt});if(error)throw error;if(data?.ok){localStorage.removeItem(LS.pendingCancel);updateStoredOrder(p.order.order_code,{status:'Cancelled',cancellation_reason:p.reason})}}catch(e){console.warn('Pending cancellation still waiting',e)}}
 function renderLatestOrderButton(){
-  const o=safeJsonParse(localStorage.getItem(LS.latestOrder),null);
+  const orders=readOrders();
   [$('myOrderBtn'),$('myOrderBtnMobile')].forEach(btn=>{
     if(!btn)return;
-    btn.classList.toggle('hidden',!o);
-    btn.onclick=()=>{if(o)showOrder(safeJsonParse(localStorage.getItem(LS.latestOrder),o))};
+    btn.classList.toggle('hidden',!orders.length);
+    btn.textContent=orders.length>1?'My Orders':'My Order';
+    btn.onclick=()=>showOrderList();
   });
 }
 function syncThemeIcon(){const dark=document.documentElement.dataset.theme==='dark';document.documentElement.style.colorScheme=dark?'dark':'light';const icon=$('themeIcon');if(icon)icon.src=dark?'ios-icons/light-mode.png':'ios-icons/dark-mode.png';$('themeToggle').setAttribute('aria-label',dark?'Switch to light mode':'Switch to dark mode');$('themeToggle').setAttribute('aria-pressed',String(dark));syncThemeColor()}document.documentElement.dataset.theme=localStorage.getItem(LS.theme)||'light';syncThemeIcon();$('themeToggle').onclick=()=>{const dark=document.documentElement.dataset.theme==='dark';document.documentElement.dataset.theme=dark?'light':'dark';localStorage.setItem(LS.theme,dark?'light':'dark');syncThemeIcon()};
