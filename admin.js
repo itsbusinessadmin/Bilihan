@@ -49,11 +49,15 @@ async function init(){
 }
 function renderSetup(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-logo.png" style="width:90px;border-radius:50%"><span class="eyebrow">Bilihan v3</span><h2>Connect Supabase</h2><p>Edit <strong>config.js</strong> once and paste your Supabase Project URL and anon public key, then reload this page.</p><p class="muted">Never paste a service_role key into the website.</p></div></div>`}
 function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword(d);if(error)return renderLogin(error.message);A.session=data.session;const status=await adminStatus();if(status==='no'){await db.auth.signOut();A.session=null;return renderLogin('This account is not listed as a Bilihan admin.')}if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');try{await loadAll()}catch(err){console.error(err);return renderReconnect(err?.message)}renderShell()}}
-async function loadAll(){const [p,c,o,s,t,sl]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single(),db.from('support_threads').select('*').order('last_message_at',{ascending:false}),db.from('seller_links').select('token').eq('id',1).single()]);for(const r of [p,c,o,s])if(r.error)throw r.error;
+async function loadAll(){const [p,c,o,s,t,sl]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single(),db.from('support_threads').select('*,support_messages(count)').order('last_message_at',{ascending:false}),db.from('seller_links').select('token').eq('id',1).single()]);for(const r of [p,c,o,s])if(r.error)throw r.error;
   /* The support tables may not exist yet on a database that predates the chat, so
      a failure there must not stop the rest of Admin from loading. */
   if(t.error)console.warn('Bilihan admin: support threads unavailable',t.error);
-  A.data={products:p.data,categories:c.data,orders:o.data,settings:s.data,threads:t.error?[]:(t.data||[]),sellerToken:sl.error?'':(sl.data?.token||'')}}
+  /* message_count is flattened here so nothing downstream has to know the shape
+     PostgREST returns an embedded count in. */
+  A.data={products:p.data,categories:c.data,orders:o.data,settings:s.data,
+    threads:t.error?[]:(t.data||[]).map(th=>({...th,message_count:Number(th.support_messages?.[0]?.count||0)})),
+    sellerToken:sl.error?'':(sl.data?.token||'')}}
 /* Auto-refresh ---------------------------------------------------------------
    Orders and messages arrive while this page sits open, so the data refetches on a
    timer instead of waiting for someone to hit reload.
@@ -503,10 +507,19 @@ function threadRowHtml(t){
     <span class="thread-row-sub">${esc(t.phone||'No phone on file')} · ${esc(when)}</span></button></div>`;
 }
 
+/* A thread is created the moment a customer identifies themselves in the chat, so
+   someone who opened it, typed their name and then thought better of it leaves a
+   row with no conversation behind it. Those are hidden rather than deleted: the
+   customer may still come back and write, and the row appears the moment they do.
+   An admin-sent first message counts too, so starting a conversation shows it. */
+function threadsWithMessages(){
+  return (A.data.threads||[]).filter(t=>Number(t.message_count||0)>0);
+}
+
 function paintThreadList(){
   const list=document.getElementById('threadList');
   if(!list)return;
-  const threads=A.data.threads||[];
+  const threads=threadsWithMessages();
   list.innerHTML=threads.length?threads.map(threadRowHtml).join(''):'<p class="muted" style="padding:14px">No customer messages yet.</p>';
   list.querySelectorAll('[data-thread]').forEach(b=>b.onclick=()=>openThread(b.dataset.thread));
   MSG.sync?.();
@@ -580,9 +593,11 @@ function paintThread(){
 }
 
 async function refreshThreads(){
-  const {data,error}=await db.from('support_threads').select('*').order('last_message_at',{ascending:false});
+  /* The count comes along here too. Without it this poll would blank message_count
+     every few seconds and the empty threads would flicker back into the list. */
+  const {data,error}=await db.from('support_threads').select('*,support_messages(count)').order('last_message_at',{ascending:false});
   if(error)return;
-  A.data.threads=data||[];
+  A.data.threads=(data||[]).map(th=>({...th,message_count:Number(th.support_messages?.[0]?.count||0)}));
   paintThreadList();paintNavBadge();
   if(MSG.openId)await loadThreadMessages(MSG.openId,{silent:true});
 }
@@ -597,8 +612,12 @@ async function removeThreads(ids){
 
 async function deleteAllThreads(){
   const threads=A.data.threads||[];
+  /* Every thread goes, including the empty ones the list hides, but the count in
+     the warning is the number on screen: quoting a bigger figure than the owner
+     can see reads like the button is about to do something else. */
+  const visible=threadsWithMessages().length;
   if(!threads.length)return alert('There are no conversations to delete.');
-  if(!confirm(`Delete ALL ${threads.length} conversation${threads.length===1?'':'s'} and every message in them? This cannot be undone.`))return;
+  if(!confirm(`Delete ALL ${visible} conversation${visible===1?'':'s'} and every message in them? This cannot be undone.`))return;
   if(prompt('Type DELETE ALL MESSAGES to confirm:')!=='DELETE ALL MESSAGES')return alert('Delete All cancelled.');
   try{
     await removeThreads(threads.map(t=>t.id));
