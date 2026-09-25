@@ -225,6 +225,13 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .product-card-add.added{transform:scale(.88);opacity:.7}
 
 .skeleton{height:auto;aspect-ratio:1/1.42;border-radius:var(--radius);background:linear-gradient(100deg,var(--card-soft) 30%,var(--card) 50%,var(--card-soft) 70%);background-size:220% 100%;animation:shimmer 1.25s infinite}
+/* A picture that has not arrived yet shimmers in its own slot, rather than showing
+   the store logo as a stand-in. is-empty is the settled version of the same tile:
+   a product with no photo, or one whose photo failed, keeps the quiet block. */
+.is-loading{background:linear-gradient(100deg,var(--card-soft) 30%,var(--card) 50%,var(--card-soft) 70%);background-size:220% 100%;animation:shimmer 1.25s infinite;color:transparent}
+.is-empty{background:var(--card-soft);animation:none;color:transparent}
+.is-loaded{animation:none}
+@media (prefers-reduced-motion:reduce){.skeleton,.is-loading{animation:none}}
 @keyframes shimmer{to{background-position:-220% 0}}
 
 .product-grid.list-view{grid-template-columns:1fr;gap:10px}
@@ -261,7 +268,7 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .drawer-footer{border-top:1px solid var(--line);padding:16px max(16px,env(safe-area-inset-bottom));background:var(--bg-elevated)}
 
 .cart-item{display:grid;border-bottom:1px solid var(--line);grid-template-columns:72px minmax(0,1fr);gap:var(--space-sm);padding:var(--space-md) 0}
-.cart-item img{object-fit:cover;background:var(--card-soft);width:72px;height:72px;border-radius:16px}
+.cart-item img,.cart-item-image{display:block;object-fit:cover;background:var(--card-soft);width:72px;height:72px;border-radius:16px}
 .cart-item-main{min-width:0;display:flex;flex-direction:column;justify-content:center}
 .cart-item-main>strong{line-height:1.28;font-size:var(--text-body);font-weight:600;overflow-wrap:anywhere;text-wrap:pretty}
 .cart-item-main>span{color:var(--muted);font-size:var(--text-secondary);font-variant-numeric:tabular-nums}
@@ -357,7 +364,7 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .icon-remove-btn::before{width:19px;height:19px;-webkit-mask-image:url(ios-icons/trash.png);mask-image:url(ios-icons/trash.png)}
 
 .product-card-add{color:#fff}
-.product-card-add::before{width:18px;height:18px;-webkit-mask-image:url(ios-icons/add-to-cart.png);mask-image:url(ios-icons/add-to-cart.png)}
+.product-card-add::before{width:18px;height:18px;-webkit-mask-image:url(ios-icons/add-to-cart.svg);mask-image:url(ios-icons/add-to-cart.svg)}
 
 .desktop-nav .nav-icon{display:none!important}
 [data-theme="dark"] .brand-lockup img,[data-theme="dark"] .footer-brand img{background:#fff}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Handle, then the basket: top rail, sloping sides, bottom. -->
+  <path d="M1.6 5.1h1.95a1.05 1.05 0 0 1 1.03.85l.24 1.25"/>
+  <path d="M4.82 7.2h9.1l-1.09 5.45a1.65 1.65 0 0 1-1.62 1.32H7.53a1.65 1.65 0 0 1-1.62-1.32L4.82 7.2Z"/>
+  <!-- Wheels. -->
+  <circle cx="8.1" cy="19" r="1.8" fill="#000" stroke="none"/>
+  <circle cx="14" cy="19" r="1.8" fill="#000" stroke="none"/>
+  <!-- A plain plus, lifted clear of the basket rail so the two never read as one
+       line. The old icon ringed it, and at 18px that ring filled in as a dot. -->
+  <path d="M19 1.5v6.4M15.8 4.7h6.4"/>
+</svg>
