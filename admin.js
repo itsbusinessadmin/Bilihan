@@ -1088,7 +1088,9 @@ init().catch(e=>{console.error(e);app.innerHTML=`<div class="login-wrap"><div cl
 /* One editor, mounted into both the Add and the Edit product form. It owns a
    plain array; nothing reaches the database until the form is saved. */
 function mountVariantEditor(mount,groups){
-  const state={groups:(groups||[]).map(g=>({...g,options:(g.options||[]).map(o=>({...o}))}))};
+  /* Saved variants start folded away: a product with four of them is otherwise a
+     wall of controls when all the owner wanted was to glance at the list. */
+  const state={groups:(groups||[]).map(g=>({...g,options:(g.options||[]).map(o=>({...o}))})),open:new Set()};
   const uid=()=>crypto.randomUUID();
 
   function paint(){
@@ -1101,9 +1103,15 @@ function mountVariantEditor(mount,groups){
   }
 
   function variantGroupHtml(g,gi){
+    if(!state.open.has(g.id))return `<div class="variant-group is-closed" data-g="${gi}">
+      <button type="button" class="variant-summary" data-a="toggle" data-g="${gi}" aria-label="Edit ${esc(String(g.label||'').trim()||'this variant')}">
+        <span class="variant-summary-name">${esc(String(g.label||'').trim())||'<em>Untitled variant</em>'}</span>
+        <span class="variant-edit-icon" aria-hidden="true"></span>
+      </button></div>`;
     return `<div class="variant-group" data-g="${gi}">
       <div class="variant-group-head">
         <input class="variant-label" data-a="label" data-g="${gi}" value="${esc(g.label)}" placeholder="Name this choice, e.g. Size">
+        <button type="button" class="variant-done" data-a="toggle" data-g="${gi}">Done</button>
         <button type="button" class="variant-remove" data-a="delgroup" data-g="${gi}" title="Remove ${esc(g.label)}">Remove</button>
       </div>
       <div class="variant-rules">
@@ -1131,14 +1139,22 @@ function mountVariantEditor(mount,groups){
 
   function wire(){
     mount.querySelector('#variantAddGroup').onclick=()=>{
-      state.groups.push({id:uid(),variant_type:'custom',label:'',
+      const id=uid();
+      /* A brand new one opens: there is nothing to glance at yet. */
+      state.groups.push({id,variant_type:'custom',label:'',
         price_mode:'add',selection:'single',is_required:false,
         options:[{id:uid(),label:'',amount:0}]});
+      state.open.add(id);
       paint();
     };
     mount.querySelectorAll('[data-a]').forEach(el=>{
       const gi=Number(el.dataset.g),oi=Number(el.dataset.o),a=el.dataset.a;
-      if(a==='delgroup')el.onclick=()=>{state.groups.splice(gi,1);paint()};
+      if(a==='toggle')el.onclick=()=>{
+        const id=state.groups[gi].id;
+        if(state.open.has(id))state.open.delete(id);else state.open.add(id);
+        paint();
+      };
+      if(a==='delgroup')el.onclick=()=>{state.open.delete(state.groups[gi].id);state.groups.splice(gi,1);paint()};
       if(a==='addopt')el.onclick=()=>{state.groups[gi].options.push({id:uid(),label:'',amount:0});paint()};
       if(a==='delopt')el.onclick=()=>{state.groups[gi].options.splice(oi,1);paint()};
       if(a==='label')el.oninput=()=>{state.groups[gi].label=el.value};
