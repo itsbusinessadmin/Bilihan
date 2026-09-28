@@ -140,21 +140,25 @@ and reopening pulls a fresh menu because stock and prices have had time to move.
 A product can ask the customer questions before it goes in the cart: a size, a
 flavour, some toppings. **Products -> Edit -> Variants** builds them.
 
-The *type* comes from a fixed list rather than a text box, so two products never
-end up with "Toppings" and "toppings". Picking a type fills in sensible defaults
-and a starting set of options to edit. Twenty-two types ship, from Size and
-Flavor through Sugar level and Spice level to Packaging, plus **Other** for
-anything the list misses - that one is the only place a name is typed.
+Press **+ Add variant**, name it whatever this shop calls it, and fill in the
+options. There is no fixed list of types: a shop knows what its own products
+need better than a catalogue does.
 
 Each group has three switches:
 
 - **Pricing** - *Adds to the price* (a topping at +P15) or *Is the whole price*
-  (a flavour sold at its own P135). Flavor and Set/Bundle default to the whole
-  price; everything else adds.
-- **Choosing** - pick one, or pick any number. Toppings, add-ons, sauces and
-  side dishes default to any number.
-- **Must choose** - on for Size by default. A compulsory group keeps Add to Cart
-  shut until it is answered; everything else is optional and never blocks it.
+  (a flavour sold at its own P135). New variants start as add-ons.
+- **Choosing** - pick one, or pick any number.
+- **Must choose** - a compulsory group keeps Add to Cart shut until it is
+  answered; everything else never blocks it.
+
+Tapping a choice a second time clears it. A radio button cannot be unticked by
+itself, so that tap is handled by hand: someone who picked an optional flavour
+and then thought better of it has to be able to take it back.
+
+The storefront marks a compulsory group **Required** and says nothing at all
+about the others. "Optional" on every second heading is noise; the customer can
+already see that nothing is stopping them.
 
 Only **one** group per product may set the whole price. Two would contradict each
 other with no sensible answer for which wins, so the editor refuses the second
@@ -188,6 +192,17 @@ product's figures at all.
 The stock check also moved from per-line to per-order. One product can now appear
 on several lines (a Large and a Medium of the same drink), and each line could
 pass on its own while the order as a whole asked for more than there was.
+
+## "Paid Already" payment
+
+A third payment method, off by default, switched on in **Settings -> Payment
+methods**. It shows the same QR as QR Payment so the customer can pay, but
+instead of making them screenshot the receipt and upload it, it asks them to
+tick a box saying they have paid. Place Order stays shut until they do.
+
+It is a trade: a much shorter checkout in exchange for no proof of payment. That
+is why it ships off, and why the setting says so. `place_order()` refuses the
+method outright while the setting is off, so it cannot be reached by posting it.
 
 ## Customer order behavior
 When a customer places an order, the `place_order` PostgreSQL function locks the product rows, rechecks stock and authoritative prices, inserts the order, inserts its line items, and deducts inventory in the same database transaction.

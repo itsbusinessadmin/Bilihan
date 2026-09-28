@@ -723,6 +723,8 @@ function settings(m){
         <h3>Payment methods</h3>
 
         <label class="check-row"><input type="checkbox" name="show_qr_payment" ${s.show_qr_payment===true?'checked':''}> Show QR Payment</label>
+        <label class="check-row"><input type="checkbox" name="show_paid_already" ${s.show_paid_already===true?'checked':''}> Show "Paid Already"</label>
+        <p class="muted form-hint">Shows the QR and asks the customer to tick that they have paid, instead of making them upload a screenshot. Quicker for them, but you get no proof of payment.</p>
         <label class="check-row"><input type="checkbox" name="show_cash_payment" ${s.show_cash_payment===true?'checked':''}> Show Cash</label>
 
         <div class="form-row">
@@ -776,8 +778,11 @@ function settings(m){
     const showCash=
       fd.get('show_cash_payment')==='on';
 
-    if(!showQr&&!showCash){
-      alert('Please keep at least one payment method enabled: QR Payment or Cash.');
+    const showPaidAlready=
+      fd.get('show_paid_already')==='on';
+
+    if(!showQr&&!showCash&&!showPaidAlready){
+      alert('Please keep at least one payment method enabled.');
       return;
     }
 
@@ -846,6 +851,9 @@ function settings(m){
 
         show_cash_payment:
           showCash,
+
+        show_paid_already:
+          showPaidAlready,
 
         qr_image_url:
           qr
@@ -1074,31 +1082,8 @@ init().catch(e=>{console.error(e);app.innerHTML=`<div class="login-wrap"><div cl
      add       the amount is added to the product's price  (a topping)
      absolute  the amount IS the price                     (a flavour sold at its own price)
    ========================================================================= */
-const VARIANT_TYPES=[
-  {id:'size',label:'Size',selection:'single',price_mode:'add',required:true,options:['Small','Medium','Large']},
-  {id:'flavor',label:'Flavor',selection:'single',price_mode:'absolute',required:false,options:['Chocolate','Vanilla','Strawberry']},
-  {id:'toppings',label:'Toppings',selection:'multi',price_mode:'add',required:false,options:['Pearls','Nata de coco','Cheese']},
-  {id:'addons',label:'Add-ons',selection:'multi',price_mode:'add',required:false,options:['Extra rice','Extra sauce','Extra cheese']},
-  {id:'temperature',label:'Temperature',selection:'single',price_mode:'add',required:false,options:['Hot','Cold']},
-  {id:'sugar',label:'Sugar level',selection:'single',price_mode:'add',required:false,options:['0%','25%','50%','75%','100%']},
-  {id:'ice',label:'Ice level',selection:'single',price_mode:'add',required:false,options:['No ice','Less ice','Regular ice']},
-  {id:'milk',label:'Milk choice',selection:'single',price_mode:'add',required:false,options:['Fresh milk','Oat milk','Soy milk']},
-  {id:'spice',label:'Spice level',selection:'single',price_mode:'add',required:false,options:['Not spicy','Mild','Spicy','Extra spicy']},
-  {id:'doneness',label:'Cooking preference',selection:'single',price_mode:'add',required:false,options:['Rare','Medium','Well done']},
-  {id:'crust',label:'Crust',selection:'single',price_mode:'add',required:false,options:['Thin crust','Thick crust','Cheese-filled']},
-  {id:'sauce',label:'Sauce or dip',selection:'multi',price_mode:'add',required:false,options:['Ketchup','Gravy','Garlic mayo']},
-  {id:'side',label:'Side dish',selection:'multi',price_mode:'add',required:false,options:['Fries','Salad','Soup']},
-  {id:'rice',label:'Rice choice',selection:'single',price_mode:'add',required:false,options:['Plain rice','Garlic rice','No rice']},
-  {id:'drink',label:'Drink',selection:'single',price_mode:'add',required:false,options:['Iced tea','Soda','Bottled water']},
-  {id:'bread',label:'Bread',selection:'single',price_mode:'add',required:false,options:['White','Wheat','Brioche']},
-  {id:'cut',label:'Cut or slice',selection:'single',price_mode:'add',required:false,options:['Whole','Sliced','By the kilo']},
-  {id:'bundle',label:'Set or bundle',selection:'single',price_mode:'absolute',required:false,options:['Solo','Good for 2','Family size']},
-  {id:'packaging',label:'Packaging',selection:'single',price_mode:'add',required:false,options:['Regular','Gift wrapped']},
-  {id:'color',label:'Color',selection:'single',price_mode:'add',required:false,options:['Red','Blue','Green']},
-  {id:'scent',label:'Scent',selection:'single',price_mode:'add',required:false,options:['Lavender','Vanilla','Citrus']},
-  {id:'other',label:'Other',selection:'single',price_mode:'add',required:false,options:[]}
-];
-const variantType=id=>VARIANT_TYPES.find(t=>t.id===id)||VARIANT_TYPES[VARIANT_TYPES.length-1];
+/* Every variant is the shop's own. The name is typed, and the three switches
+   below it decide what the amounts mean and how the customer answers. */
 
 /* One editor, mounted into both the Add and the Edit product form. It owns a
    plain array; nothing reaches the database until the form is saved. */
@@ -1108,22 +1093,17 @@ function mountVariantEditor(mount,groups){
 
   function paint(){
     mount.innerHTML=`<div class="variant-head">
-        <div><strong>Variants</strong><small class="muted">Sizes, flavours, toppings and the rest. Leave it empty if this product has none.</small></div>
-        <div class="variant-add">
-          <select id="variantTypePick" aria-label="Variant type">${VARIANT_TYPES.map(t=>`<option value="${t.id}">${esc(t.label)}</option>`).join('')}</select>
-          <button type="button" class="modal-secondary-btn" id="variantAddGroup">Add</button>
-        </div>
+        <div><strong>Variants</strong><small class="muted">Sizes, flavours, toppings, anything this product needs the customer to choose. Leave it empty if it has none.</small></div>
+        <div class="variant-add"><button type="button" class="modal-secondary-btn" id="variantAddGroup">+ Add variant</button></div>
       </div>
       ${state.groups.length?state.groups.map((g,gi)=>variantGroupHtml(g,gi)).join(''):'<p class="muted variant-empty">No variants yet. Pick a type above and press Add.</p>'}`;
     wire();
   }
 
   function variantGroupHtml(g,gi){
-    const custom=g.variant_type==='other';
     return `<div class="variant-group" data-g="${gi}">
       <div class="variant-group-head">
-        ${custom?`<input class="variant-label" data-a="label" data-g="${gi}" value="${esc(g.label)}" placeholder="What is this choice called?">`
-                :`<strong>${esc(g.label)}</strong>`}
+        <input class="variant-label" data-a="label" data-g="${gi}" value="${esc(g.label)}" placeholder="Name this choice, e.g. Size">
         <button type="button" class="variant-remove" data-a="delgroup" data-g="${gi}" title="Remove ${esc(g.label)}">Remove</button>
       </div>
       <div class="variant-rules">
@@ -1151,14 +1131,9 @@ function mountVariantEditor(mount,groups){
 
   function wire(){
     mount.querySelector('#variantAddGroup').onclick=()=>{
-      const t=variantType(mount.querySelector('#variantTypePick').value);
-      /* Only one group may set the whole price, so a second one starts as an
-         add-on rather than saving into an error. */
-      const absTaken=state.groups.some(g=>g.price_mode==='absolute');
-      state.groups.push({id:uid(),variant_type:t.id,label:t.label,
-        price_mode:(t.price_mode==='absolute'&&absTaken)?'add':t.price_mode,
-        selection:t.selection,is_required:t.required,
-        options:t.options.map(label=>({id:uid(),label,amount:0}))});
+      state.groups.push({id:uid(),variant_type:'custom',label:'',
+        price_mode:'add',selection:'single',is_required:false,
+        options:[{id:uid(),label:'',amount:0}]});
       paint();
     };
     mount.querySelectorAll('[data-a]').forEach(el=>{
@@ -1183,10 +1158,12 @@ function mountVariantEditor(mount,groups){
 
   paint();
   /* Read back at save time, with the empty rows an admin left behind dropped. */
+  /* A variant with no name, or with nothing to pick from, is an abandoned row
+     rather than a variant, so it never reaches the database. */
   return ()=>state.groups
-    .map(g=>({...g,label:String(g.label||'').trim()||variantType(g.variant_type).label,
+    .map(g=>({...g,label:String(g.label||'').trim(),
       options:g.options.filter(o=>String(o.label||'').trim()).map(o=>({...o,label:o.label.trim()}))}))
-    .filter(g=>g.options.length);
+    .filter(g=>g.label&&g.options.length);
 }
 
 /* Replace a product's variants wholesale. Simpler than working out a diff, and
@@ -1197,7 +1174,7 @@ async function saveVariants(productId,groups){
   if(delErr)throw delErr;
   if(!groups.length)return;
   const {data:saved,error}=await db.from('product_variant_groups')
-    .insert(groups.map((g,i)=>({product_id:productId,variant_type:g.variant_type,label:g.label,
+    .insert(groups.map((g,i)=>({product_id:productId,variant_type:g.variant_type||'custom',label:g.label,
       price_mode:g.price_mode,selection:g.selection,is_required:!!g.is_required,sort_order:i+1})))
     .select('id');
   if(error)throw error;
