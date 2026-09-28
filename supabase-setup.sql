@@ -53,6 +53,11 @@ alter table public.store_settings add column if not exists preferred_date_mode t
 alter table public.store_settings add column if not exists order_available_from date;
 alter table public.store_settings add column if not exists show_stock boolean not null default true;
 alter table public.store_settings add column if not exists show_qr_payment boolean not null default true;
+-- "Paid Already": the QR still shows so the customer can pay, but instead of
+-- uploading a screenshot they simply tick to say they have. Off by default,
+-- because it trades proof of payment for a shorter checkout, and that is the
+-- shop's call rather than something to inherit.
+alter table public.store_settings add column if not exists show_paid_already boolean not null default false;
 alter table public.store_settings add column if not exists show_cash_payment boolean not null default true;
 
 -- Which contact fields checkout asks for, and whether they are compulsory. The
@@ -110,6 +115,13 @@ create table if not exists public.orders (
   cancelled_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+-- "Paid Already" joins the two methods this file shipped with. The constraint is
+-- dropped first so the file stays safe to re-run, and so a database created by an
+-- earlier version picks the new method up.
+alter table public.orders drop constraint if exists orders_payment_method_check;
+alter table public.orders add constraint orders_payment_method_check
+  check (payment_method in ('QR Payment','Cash on Delivery / Pickup','Paid Already'));
 
 -- If you already ran an earlier version of this file where phone was NOT NULL,
 -- this line makes it optional on an existing table. Safe to run even if the
@@ -325,7 +337,10 @@ begin
   if p_fulfillment not in ('Delivery','Pickup') then return jsonb_build_object('ok',false,'error','Invalid fulfillment method.'); end if;
   if p_fulfillment='Delivery' and coalesce(trim(p_address),'')='' then return jsonb_build_object('ok',false,'error','Delivery address is required.'); end if;
   if p_preferred_date < current_date then return jsonb_build_object('ok',false,'error','Preferred date cannot be in the past.'); end if;
-  if p_payment_method not in ('QR Payment','Cash on Delivery / Pickup') then return jsonb_build_object('ok',false,'error','Invalid payment method.'); end if;
+  if p_payment_method not in ('QR Payment','Cash on Delivery / Pickup','Paid Already') then return jsonb_build_object('ok',false,'error','Invalid payment method.'); end if;
+  if p_payment_method = 'Paid Already' and not coalesce(v_cfg.show_paid_already,false) then
+    return jsonb_build_object('ok',false,'error','That payment method is not available right now. Please choose another one.');
+  end if;
   if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items)=0 then return jsonb_build_object('ok',false,'error','Cart is empty.'); end if;
 
   v_code := 'BIL-' || upper(substr(replace(gen_random_uuid()::text,'-',''),1,6));

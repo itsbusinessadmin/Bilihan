@@ -292,19 +292,25 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
   }
   if(groups.length&&$('variantPicker')){
     $('variantPicker').innerHTML=groups.map(g=>`<fieldset class="variant-field">
-      <legend>${esc(g.label)}${g.is_required?' <span class="variant-required">Required</span>':' <span class="variant-optional">Optional</span>'}</legend>
+      <legend>${esc(g.label)}${g.is_required?' <span class="variant-required">Required</span>':''}</legend>
       <div class="variant-choices">${g.options.map(o=>`<label class="variant-choice">
         <input type="${g.selection==='multi'?'checkbox':'radio'}" name="vg-${esc(g.id)}" value="${esc(o.id)}" data-group="${esc(g.id)}">
         <span class="variant-choice-label">${esc(o.label)}</span>
         <span class="variant-choice-price">${g.price_mode==='absolute'?money(o.amount):(Number(o.amount)>0?'+'+money(o.amount):'')}</span>
       </label>`).join('')}</div></fieldset>`).join('');
     $('variantPicker').querySelectorAll('input').forEach(input=>{
-      input.onchange=()=>{
-        const gid=input.dataset.group;
-        const group=groups.find(x=>x.id===gid);
-        if(group.selection!=='multi')chosen=chosen.filter(cid=>!group.options.some(o=>o.id===cid));
-        else if(!input.checked)chosen=chosen.filter(cid=>cid!==input.value);
-        if(input.checked&&!chosen.includes(input.value))chosen.push(input.value);
+      /* click, not change: tapping an already-picked radio fires no change event,
+         and that tap is exactly how someone takes a choice back. */
+      input.onclick=()=>{
+        const group=groups.find(x=>x.id===input.dataset.group);
+        if(group.selection==='multi'){
+          chosen=input.checked?[...chosen.filter(c=>c!==input.value),input.value]
+                              :chosen.filter(c=>c!==input.value);
+        }else{
+          const wasChosen=chosen.includes(input.value);
+          chosen=chosen.filter(cid=>!group.options.some(o=>o.id===cid));
+          if(wasChosen)input.checked=false;else chosen.push(input.value);
+        }
         refreshVariants();
       };
     });
@@ -434,7 +440,10 @@ function openCheckout(){
   const availableFrom=s.order_available_from||'';
   const qrConfigured=isExplicitlyEnabled(s,'show_qr_payment')&&!!String(s.qr_image_url||'').trim();
   const cashEnabled=isExplicitlyEnabled(s,'show_cash_payment');
-  const paymentValues=[...(qrConfigured?[{value:'QR Payment',label:'QR Payment'}]:[]),...(cashEnabled?[{value:'Cash on Delivery / Pickup',label:'Cash'}]:[])];
+  /* "Paid Already" shows the same QR, so it needs one configured just as QR
+     Payment does. It asks for a tick instead of a screenshot. */
+  const paidAlreadyEnabled=isExplicitlyEnabled(s,'show_paid_already')&&!!String(s.qr_image_url||'').trim();
+  const paymentValues=[...(qrConfigured?[{value:'QR Payment',label:'QR Payment'}]:[]),...(paidAlreadyEnabled?[{value:'Paid Already',label:'Paid Already'}]:[]),...(cashEnabled?[{value:'Cash on Delivery / Pickup',label:'Cash'}]:[])];
   const paymentOptions=paymentValues.map(item=>`<option value="${item.value}">${item.label}</option>`).join('');
   if(!paymentValues.length){toast(isExplicitlyEnabled(s,'show_qr_payment')?'QR payment is not fully configured yet. Please contact the store.':'No payment method is available right now. Please contact the store.');return}
   const paymentField=paymentValues.length===1?`<div class="field"><span class="field-label">Payment</span><div class="choice-value">${esc(paymentValues[0].label)}</div><input type="hidden" name="payment" value="${esc(paymentValues[0].value)}"></div>`:`<label class="field"><span class="field-label">Payment *</span><select name="payment">${paymentOptions}</select></label>`;
@@ -447,13 +456,17 @@ function openCheckout(){
   $('checkoutDialog').showModal();
   const f=$('checkoutForm');
   f._receiptPrepared=null;f._receiptBase64=null;f._receiptPreparing=false;f.dataset.openedAt=String(Date.now());
-  const updatePlaceOrderButton=()=>{const qr=f.payment.value==='QR Payment';const hasReceipt=!qr||!!f._receiptPrepared;const confirmed=$('confirmOrder')?.checked;$('placeOrderBtn').disabled=!!f._receiptPreparing||!(hasReceipt&&confirmed)};
+  const updatePlaceOrderButton=()=>{const qr=f.payment.value==='QR Payment';const hasReceipt=!qr||!!f._receiptPrepared;const paidTicked=f.payment.value!=='Paid Already'||!!$('paidAlreadyTick')?.checked;const confirmed=$('confirmOrder')?.checked;$('placeOrderBtn').disabled=!!f._receiptPreparing||!(hasReceipt&&paidTicked&&confirmed)};
   const renderDynamic=()=>{
     checkoutError('');
     const pickup=f.fulfillment.value==='Pickup';
     $('addressField').classList.toggle('hidden',pickup);$('pickupInfo').classList.toggle('hidden',!pickup);f.address.required=!pickup;
     f._receiptPrepared=null;f._receiptBase64=null;f._receiptPreparing=false;
-    if(f.payment.value==='QR Payment'){
+    if(f.payment.value==='Paid Already'){
+      const qrUrl=String(s.qr_image_url||'').trim();
+      $('paymentInfo').innerHTML=`<div class="qr-payment-card"><div><img id="paymentQrImage" src="${esc(qrUrl)}" alt="Store payment QR code"></div><div class="qr-payment-actions"><p><strong>Pay by QR</strong><br><span class="muted">Scan the code and pay, then tick the box below. No screenshot needed.</span></p><a class="secondary-btn" href="${esc(qrUrl)}" download="Bilihan-QR-Code" target="_blank" rel="noopener">Save QR Code</a><label class="checkout-confirm paid-already-row"><input type="checkbox" id="paidAlreadyTick"><span>I have already paid this order.</span></label></div></div>`;
+      $('paidAlreadyTick').onchange=updatePlaceOrderButton;
+    }else if(f.payment.value==='QR Payment'){
       const qrUrl=String(s.qr_image_url||'').trim();
       if(!qrUrl){checkoutError('QR payment is no longer available. Please choose another payment method.');updatePlaceOrderButton();return}
       $('paymentInfo').innerHTML=`<div class="qr-payment-card"><div id="qrImageState"><img id="paymentQrImage" src="${esc(qrUrl)}" alt="Store payment QR code"></div><div class="qr-payment-actions"><p><strong>Pay by QR</strong><br><span class="muted">Scan or save the code, then upload your payment receipt.</span></p><a class="secondary-btn" href="${esc(qrUrl)}" download="Bilihan-QR-Code" target="_blank" rel="noopener">Save QR Code</a><label class="field"><strong>Payment receipt *</strong><input name="receipt" id="paymentReceipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label><p class="muted" id="receiptStatus" role="status" aria-live="polite">No receipt selected yet.</p></div></div>`;
@@ -479,7 +492,7 @@ async function placeOrder(e){
   const cooldownLeft=ORDER_COOLDOWN_MS-(Date.now()-lastOrderAt);
   if(lastOrderAt&&cooldownLeft>0){checkoutError(`You just placed an order. Please wait ${Math.ceil(cooldownLeft/1000)} seconds before placing another one.`);return}
   const allowedFulfillment=new Set(['Pickup',...(isExplicitlyEnabled(s,'show_delivery_address')?['Delivery']:[])]);
-  const allowedPayments=new Set([...(isExplicitlyEnabled(s,'show_qr_payment')&&!!String(s.qr_image_url||'').trim()?['QR Payment']:[]),...(isExplicitlyEnabled(s,'show_cash_payment')?['Cash on Delivery / Pickup']:[])]);
+  const allowedPayments=new Set([...(isExplicitlyEnabled(s,'show_qr_payment')&&!!String(s.qr_image_url||'').trim()?['QR Payment']:[]),...(isExplicitlyEnabled(s,'show_paid_already')&&!!String(s.qr_image_url||'').trim()?['Paid Already']:[]),...(isExplicitlyEnabled(s,'show_cash_payment')?['Cash on Delivery / Pickup']:[])]);
   if(!allowedFulfillment.has(d.fulfillment)){checkoutError('That fulfillment method is no longer available. Please choose another option.');return}
   if(!allowedPayments.has(d.payment)){checkoutError('That payment method is no longer available. Please choose another option.');return}
   clearFieldErrors(f);
