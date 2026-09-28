@@ -301,6 +301,26 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .order-list-main small{color:var(--muted);font-size:var(--text-caption)}
 .order-list-chip{flex:0 0 auto;padding:3px 9px;border-radius:var(--radius-pill);background:var(--card-soft);color:var(--danger);font-size:var(--text-caption);font-weight:700}
 .order-list-go{flex:0 0 auto;color:var(--muted);font-size:1.3rem;line-height:1}
+/* Variant picker in the product window. Radios and checkboxes are the real
+   controls, hidden behind the tile, so keyboard and screen readers get the
+   grouping and the required/optional wording for free. */
+#variantPicker{margin:var(--space-md) 0 var(--space-lg)}
+.variant-field{margin:0 0 var(--space-md);padding:0;border:0}
+.variant-field legend{padding:0;margin-bottom:var(--space-sm);font-size:var(--text-secondary);font-weight:700}
+.variant-required,.variant-optional{margin-left:6px;padding:2px 8px;border-radius:var(--radius-pill);font-size:var(--text-caption);font-weight:700;vertical-align:middle}
+.variant-required{background:var(--accent-tint);color:var(--accent-3)}
+.variant-optional{background:var(--card-soft);color:var(--muted)}
+.variant-choices{display:flex;flex-wrap:wrap;gap:var(--space-sm)}
+.variant-choice{display:inline-flex;align-items:center;gap:7px;min-height:var(--touch);padding:8px 14px;border:1px solid var(--line);border-radius:var(--radius-pill);background:var(--card);cursor:pointer;font-size:var(--text-secondary);transition:border-color var(--fast) var(--ease),background var(--fast) var(--ease)}
+.variant-choice input{position:absolute;opacity:0;width:0;height:0}
+.variant-choice:hover{border-color:var(--line-strong)}
+.variant-choice:has(input:checked){border-color:var(--accent-2);background:var(--accent-tint);font-weight:600}
+.variant-choice:has(input:focus-visible){outline:2px solid var(--accent-2);outline-offset:2px}
+.variant-choice-price{color:var(--muted);font-variant-numeric:tabular-nums}
+.variant-choice:has(input:checked) .variant-choice-price{color:var(--accent-3)}
+.variant-hint{margin:8px 0 0;font-size:var(--text-caption)}
+.cart-item-variants{color:var(--muted);font-size:var(--text-caption);overflow-wrap:anywhere}
+.summary-variants{display:block;color:var(--muted);font-size:var(--text-caption)}
 .product-modal-image{width:100%;aspect-ratio:1/1;object-fit:cover;background:var(--card-soft);border-radius:var(--radius)}
 /* The stock line sits right above the quantity picker, so it needs its own room. */
 .product-modal-grid .stock{margin-bottom:var(--space-md)}

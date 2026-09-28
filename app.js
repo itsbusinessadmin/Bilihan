@@ -31,13 +31,18 @@ async function bootstrap(){
   if(cached?.products?.length&&cached.settings){state.data=cached;renderAll()}
   else renderSkeletons();
   try{
-    const [{data:categories,error:ce},{data:products,error:pe},{data:settings,error:se}] = await Promise.all([
+    const [{data:categories,error:ce},{data:products,error:pe},{data:settings,error:se},{data:variantGroups,error:vge},{data:variantOptions,error:voe}] = await Promise.all([
       db.from('categories').select('*').order('sort_order'),
       db.from('products').select('*').order('sort_order'),
-      db.from('store_settings').select('*').eq('id',1).single()
+      db.from('store_settings').select('*').eq('id',1).single(),
+      db.from('product_variant_groups').select('*'),
+      db.from('product_variant_options').select('*')
     ]);
     if(ce||pe||se) throw ce||pe||se;
-    state.data={categories,products,settings};state.online=true;localStorage.setItem(LS.cache,JSON.stringify(state.data));
+    /* A shop whose database predates variants simply has none, and must still
+       open, so a failure here is an empty list rather than a broken menu. */
+    state.data={categories,products,settings,
+      variantGroups:vge?[]:(variantGroups||[]),variantOptions:voe?[]:(variantOptions||[])};state.online=true;localStorage.setItem(LS.cache,JSON.stringify(state.data));
   }catch(e){console.error(e);state.online=false;state.data=safeJsonParse(localStorage.getItem(LS.cache),null)||structuredClone(FALLBACK)}
   renderAll();retryPendingCancel();
 }
@@ -239,12 +244,84 @@ function renderProducts(){const showStock=state.data.settings?.show_stock!==fals
    re-bound two handlers per card on every render, which got slower with the
    catalogue and left the old closures behind each time. */
 function bindMenuGrid(){const grid=$('menuGrid');if(!grid||grid.dataset.bound)return;grid.dataset.bound='1';grid.addEventListener('click',e=>{const add=e.target.closest('.product-card-add');if(add){quickAddToCart(add.dataset.addId,e,add);return}const card=e.target.closest('.product-card');if(card)openProduct(card.dataset.id)})}
-function quickAddToCart(id,event,button){event?.stopPropagation();const p=state.data.products.find(x=>x.id===id);if(!p||!p.is_available||p.stock<=0)return;const ex=state.cart.find(x=>x.productId===id);const current=ex?.qty||0;if(current>=p.stock){toast('Maximum available stock reached');return}if(ex)ex.qty+=1;else state.cart.push({productId:id,qty:1,price:+p.price,name:p.name,image:p.image_url});saveCart();const btn=button||event?.currentTarget;if(btn?.classList){btn.classList.add('added');setTimeout(()=>btn.classList.remove('added'),350)}toast('Added to cart ✓')}
-function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=state.cart.find(x=>x.productId===id)?.qty||0;const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${p.stock<=5?`Only ${p.stock} left!`:`${p.stock} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button>`}</div></div></div>`;settleProductImages($('productDialog'));$('productDialog').showModal();let q=1;if($('qMinus')){$('qMinus').onclick=()=>{q=Math.max(1,q-1);$('qVal').textContent=q};$('qPlus').onclick=()=>{q=Math.min(max,q+1);$('qVal').textContent=q};$('addToCart').onclick=()=>{const ex=state.cart.find(x=>x.productId===id);if(ex)ex.qty+=q;else state.cart.push({productId:id,qty:q,price:+p.price,name:p.name,image:p.image_url});saveCart();$('productDialog').close();toast('Added to cart ✓')}}}
+function quickAddToCart(id,event,button){event?.stopPropagation();const p=state.data.products.find(x=>x.id===id);if(!p||!p.is_available||p.stock<=0)return;
+  /* A product with choices cannot be added from the card: the card has nowhere to
+     ask which size or flavour, and guessing one on the customer's behalf is worse
+     than opening the product. */
+  if(variantGroupsFor(id).length)return openProduct(id);
+  const ex=state.cart.find(x=>x.productId===id&&!(x.optionIds||[]).length);const current=ex?.qty||0;if(current>=p.stock){toast('Maximum available stock reached');return}if(ex)ex.qty+=1;else state.cart.push({productId:id,qty:1,price:+p.price,name:p.name,image:p.image_url});saveCart();const btn=button||event?.currentTarget;if(btn?.classList){btn.classList.add('added');setTimeout(()=>btn.classList.remove('added'),350)}toast('Added to cart ✓')}
+/* What a product asks the customer, in the order the shop arranged it. */
+function variantGroupsFor(productId){
+  return (state.data?.variantGroups||[]).filter(g=>g.product_id===productId)
+    .sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))
+    .map(g=>({...g,options:(state.data?.variantOptions||[])
+      .filter(o=>o.group_id===g.id&&o.is_available!==false)
+      .sort((a,b)=>(a.sort_order||0)-(b.sort_order||0))}))
+    .filter(g=>g.options.length);
+}
+/* Mirrors the sum place_order does. This one is only ever a preview: the price
+   charged is the one the database works out for itself when the order lands. */
+function priceWithVariants(product,groups,chosenIds){
+  let base=Number(product.price||0),add=0;
+  groups.forEach(g=>g.options.forEach(o=>{
+    if(!chosenIds.includes(o.id))return;
+    if(g.price_mode==='absolute')base=Number(o.amount||0);
+    else add+=Number(o.amount||0);
+  }));
+  return Math.max(0,base+add);
+}
+function missingRequired(groups,chosenIds){
+  return groups.filter(g=>g.is_required&&!g.options.some(o=>chosenIds.includes(o.id)));
+}
+/* Two of the same product with different choices are two different cart lines. */
+const cartKey=(productId,ids)=>productId+'|'+[...ids].sort().join(',');
+
+function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=state.cart.find(x=>x.productId===id)?.qty||0;const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${p.stock<=5?`Only ${p.stock} left!`:`${p.stock} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));$('productDialog').showModal();let q=1;
+  const groups=variantGroupsFor(id);
+  let chosen=[];
+  const priceEl=$('productDialog').querySelector('.product-modal-grid h3');
+  /* The button stays shut until every compulsory choice has an answer. Toppings
+     and the rest are optional, so they never hold it closed. */
+  function refreshVariants(){
+    const btn=$('addToCart');if(!btn)return;
+    const missing=missingRequired(groups,chosen);
+    btn.disabled=missing.length>0;
+    const hint=$('variantHint');
+    if(hint)hint.textContent=missing.length?`Choose a ${missing.map(g=>g.label.toLowerCase()).join(' and a ')} to continue.`:'';
+    if(priceEl)priceEl.textContent=money(priceWithVariants(p,groups,chosen));
+  }
+  if(groups.length&&$('variantPicker')){
+    $('variantPicker').innerHTML=groups.map(g=>`<fieldset class="variant-field">
+      <legend>${esc(g.label)}${g.is_required?' <span class="variant-required">Required</span>':' <span class="variant-optional">Optional</span>'}</legend>
+      <div class="variant-choices">${g.options.map(o=>`<label class="variant-choice">
+        <input type="${g.selection==='multi'?'checkbox':'radio'}" name="vg-${esc(g.id)}" value="${esc(o.id)}" data-group="${esc(g.id)}">
+        <span class="variant-choice-label">${esc(o.label)}</span>
+        <span class="variant-choice-price">${g.price_mode==='absolute'?money(o.amount):(Number(o.amount)>0?'+'+money(o.amount):'')}</span>
+      </label>`).join('')}</div></fieldset>`).join('');
+    $('variantPicker').querySelectorAll('input').forEach(input=>{
+      input.onchange=()=>{
+        const gid=input.dataset.group;
+        const group=groups.find(x=>x.id===gid);
+        if(group.selection!=='multi')chosen=chosen.filter(cid=>!group.options.some(o=>o.id===cid));
+        else if(!input.checked)chosen=chosen.filter(cid=>cid!==input.value);
+        if(input.checked&&!chosen.includes(input.value))chosen.push(input.value);
+        refreshVariants();
+      };
+    });
+  }
+  refreshVariants();
+  if($('qMinus')){$('qMinus').onclick=()=>{q=Math.max(1,q-1);$('qVal').textContent=q};$('qPlus').onclick=()=>{q=Math.min(max,q+1);$('qVal').textContent=q};$('addToCart').onclick=()=>{
+    if(missingRequired(groups,chosen).length)return;
+    const key=cartKey(id,chosen);
+    const unit=priceWithVariants(p,groups,chosen);
+    const labels=groups.flatMap(g=>g.options.filter(o=>chosen.includes(o.id)).map(o=>({group:g.label,label:o.label})));
+    const ex=state.cart.find(x=>cartKey(x.productId,x.optionIds||[])===key);
+    if(ex)ex.qty+=q;else state.cart.push({productId:id,qty:q,price:unit,name:p.name,image:p.image_url,optionIds:chosen,variantLabels:labels});
+    saveCart();$('productDialog').close();toast('Added to cart ✓')}}}
 function renderCart(){
   $('cartCount').textContent=state.cart.reduce((s,i)=>s+i.qty,0);
   if(!state.cart.length){$('cartItems').innerHTML='<div style="text-align:center;padding:60px 20px"><h3>Your cart is empty</h3><button class="secondary-btn" id="browseBtn">Browse Menu</button></div>';$('cartFooter').innerHTML='';setTimeout(()=>$('browseBtn')&&($('browseBtn').onclick=closeCart),0);return}
-  $('cartItems').innerHTML=state.cart.map((i,idx)=>`<div class="cart-item">${productImageHtml({image_url:i.image,name:i.name},'cart-item-image','width="72" height="72" loading="lazy"')}<div class="cart-item-main"><strong>${esc(i.name)}</strong><span>${money(i.price)}</span><div class="cart-controls"><button class="qty-btn" data-a="minus" data-i="${idx}" aria-label="Decrease ${esc(i.name)} quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><span class="qty-value">${i.qty}</span><button class="qty-btn" data-a="plus" data-i="${idx}" aria-label="Increase ${esc(i.name)} quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button><button class="remove-btn icon-remove-btn" data-a="remove" data-i="${idx}" aria-label="Remove ${esc(i.name)} from cart" title="Remove"><img class="ui-icon" src="ios-icons/trash.png" alt="" aria-hidden="true"></button></div></div></div>`).join('');
+  $('cartItems').innerHTML=state.cart.map((i,idx)=>`<div class="cart-item">${productImageHtml({image_url:i.image,name:i.name},'cart-item-image','width="72" height="72" loading="lazy"')}<div class="cart-item-main"><strong>${esc(i.name)}</strong>${(i.variantLabels||[]).length?`<span class="cart-item-variants">${i.variantLabels.map(v=>esc(v.label)).join(' · ')}</span>`:''}<span>${money(i.price)}</span><div class="cart-controls"><button class="qty-btn" data-a="minus" data-i="${idx}" aria-label="Decrease ${esc(i.name)} quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><span class="qty-value">${i.qty}</span><button class="qty-btn" data-a="plus" data-i="${idx}" aria-label="Increase ${esc(i.name)} quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button><button class="remove-btn icon-remove-btn" data-a="remove" data-i="${idx}" aria-label="Remove ${esc(i.name)} from cart" title="Remove"><img class="ui-icon" src="ios-icons/trash.png" alt="" aria-hidden="true"></button></div></div></div>`).join('');
   const total=state.cart.reduce((s,i)=>s+i.qty*i.price,0);$('cartFooter').innerHTML=`<div class="summary-row"><strong>Total</strong><strong>${money(total)}</strong></div><button id="checkoutBtn" class="primary-btn" style="width:100%">Checkout</button>`;
   settleProductImages($('cartItems'));
   $('cartItems').querySelectorAll('button').forEach(b=>b.onclick=()=>cartAction(b.dataset.a,+b.dataset.i));$('checkoutBtn').onclick=openCheckout;
@@ -434,7 +511,7 @@ async function placeOrder(e){
     if(fulfillment==='Delivery'&&!address){checkoutError('Delivery address is required.');f.address?.focus();return}
     const showPreferredDate=isExplicitlyEnabled(s,'show_preferred_date');const preferredDateMode=s.preferred_date_mode||'calendar';const availableFrom=s.order_available_from||'';
     let preferredDate=d.preferredDate||availableFrom||new Date().toISOString().slice(0,10);if(showPreferredDate&&preferredDateMode==='calendar'&&availableFrom&&preferredDate<availableFrom)throw new Error('Please select a date on or after the available-from date.');
-    const items=state.cart.map(i=>({product_id:i.productId,qty:i.qty}));
+    const items=state.cart.map(i=>({product_id:i.productId,qty:i.qty,option_ids:i.optionIds||[]}));
     const {data,error}=await db.rpc('place_order',{p_customer_name:String(d.name||'').trim(),p_phone:phone||null,p_email:email||null,p_fulfillment:fulfillment,p_address:address,p_preferred_date:preferredDate,p_payment_method:d.payment,p_note:String(d.note||'').trim()||null,p_items:items});
     if(error)throw error;
     /* The shop closed while this form was open. Raise the notice rather than only
@@ -511,7 +588,7 @@ function showOrderList(){
 
 function showOrder(order,opts){
   const cancelled=order.status==='Cancelled';
-  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status${cancelled?' is-cancelled':''}">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}<div class="contact-actions" style="margin-top:16px">${opts&&opts.fromList?'<button class="secondary-btn" id="backToOrders">&lsaquo; All orders</button>':''}<button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
+  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status${cancelled?' is-cancelled':''}">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}${(i.variants||[]).length?`<small class="summary-variants">${i.variants.map(v=>esc(v.label)).join(' · ')}</small>`:''}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}<div class="contact-actions" style="margin-top:16px">${opts&&opts.fromList?'<button class="secondary-btn" id="backToOrders">&lsaquo; All orders</button>':''}<button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
   if(!$('orderDialog').open)$('orderDialog').showModal();
   if($('backToOrders'))$('backToOrders').onclick=()=>showOrderList();
   $('copyOrderNo').onclick=async()=>{try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(order.order_code);else{const ta=document.createElement('textarea');ta.value=order.order_code;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}toast('Copied ✓')}catch{toast(`Order #${order.order_code}`)}};
