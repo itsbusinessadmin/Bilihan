@@ -417,8 +417,10 @@ html[data-skin="storefront"] .order-status {
   text-transform: uppercase;
 }
 
-/* Checkout form fields, selects, summary */
-html[data-skin="storefront"] .field input,
+/* Checkout form fields, selects, summary.
+   Text boxes only: a tick box is 19px square, and a pill radius with a hard
+   shadow on one draws a stray black corner rather than a control. */
+html[data-skin="storefront"] .field input:not([type=checkbox]):not([type=radio]),
 html[data-skin="storefront"] .field textarea,
 html[data-skin="storefront"] .field select,
 html[data-skin="storefront"] .choice-value {
