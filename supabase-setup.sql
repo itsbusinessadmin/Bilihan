@@ -948,7 +948,14 @@ begin
     select
       coalesce(nullif(btrim(o.customer_name), ''), 'Customer') as buyer,
       i.qty,
-      o.created_at
+      o.created_at,
+      -- The choices as one readable line, kept in the order they were recorded:
+      -- variant group order first, then option order within each group, which is
+      -- the order the customer met them in on the page.
+      coalesce((
+        select string_agg(v.value->>'label', ', ' order by v.ord)
+        from jsonb_array_elements(coalesce(i.variants, '[]'::jsonb)) with ordinality as v(value, ord)
+      ), '') as variants
     from public.order_items i
     join public.orders o on o.id = i.order_id and o.status <> 'Cancelled'
     -- Matches how seller_sales groups the table it was clicked from, so the
@@ -956,15 +963,18 @@ begin
     where coalesce(nullif(btrim(i.product_name), ''), '(unnamed product)')
         = coalesce(nullif(btrim(p_name), ''), '(unnamed product)')
   ), agg as (
-    -- One row per person, not per order. Grouped case-insensitively so someone
-    -- who typed their name in lower case one week is not counted twice, and the
+    -- One row per person AND per set of choices. Somebody who ordered a Large
+    -- and a Regular wants to see both, not a single row of two that says nothing
+    -- about which. Names are still grouped case-insensitively so one person who
+    -- typed theirs differently between orders is not split in half, and the
     -- spelling shown is the one they used most recently.
     select (array_agg(buyer order by created_at desc))[1] as buyer,
+           variants,
            sum(qty)::bigint as qty
-    from lines group by lower(buyer)
+    from lines group by lower(buyer), variants
   )
-  select coalesce(jsonb_agg(jsonb_build_object('name', buyer, 'qty', qty)
-                  order by qty desc, buyer), '[]'::jsonb),
+  select coalesce(jsonb_agg(jsonb_build_object('name', buyer, 'variants', variants, 'qty', qty)
+                  order by qty desc, buyer, variants), '[]'::jsonb),
          coalesce(sum(qty), 0)
   into v_rows, v_qty
   from agg;
