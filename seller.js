@@ -65,11 +65,17 @@
     const signature = data.name + JSON.stringify(buyers);
     if (signature === openSignature) return;
     openSignature = signature;
+    /* The choices column only earns its place when something was actually chosen.
+       An item with no variants would otherwise get a column of dashes. */
+    const anyVariants = buyers.some(b => String(b.variants || '').trim());
+    /* One person who ordered the same thing twice with different choices is two
+       rows, so the count is of rows rather than of people. */
+    const people = new Set(buyers.map(b => String(b.name || '').toLowerCase())).size;
     const body = buyers.length
-      ? `<p class="muted buyers-sub">${Number(data.total_qty || 0).toLocaleString('en-PH')} sold to ${buyers.length} ${buyers.length === 1 ? 'customer' : 'customers'}</p>
+      ? `<p class="muted buyers-sub">${Number(data.total_qty || 0).toLocaleString('en-PH')} sold to ${people} ${people === 1 ? 'customer' : 'customers'}</p>
          <div class="buyers-table-wrap"><table class="buyers-table">
-           <thead><tr><th scope="col">Customer</th><th scope="col" class="num">Quantity</th></tr></thead>
-           <tbody>${buyers.map(b => `<tr><td>${esc(b.name)}</td><td class="num">${Number(b.qty || 0).toLocaleString('en-PH')}</td></tr>`).join('')}</tbody>
+           <thead><tr><th scope="col">Customer</th>${anyVariants ? '<th scope="col">Variants</th>' : ''}<th scope="col" class="num">Quantity</th></tr></thead>
+           <tbody>${buyers.map(b => `<tr><td>${esc(b.name)}</td>${anyVariants ? `<td class="buyers-variants">${esc(b.variants) || '<span class="buyers-none">&mdash;</span>'}</td>` : ''}<td class="num">${Number(b.qty || 0).toLocaleString('en-PH')}</td></tr>`).join('')}</tbody>
          </table></div>`
       : '<p class="muted buyers-sub">Nobody has ordered this yet.</p>';
     $('buyersDialog').innerHTML = buyersMarkup(data.name || '', body);

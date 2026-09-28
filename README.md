@@ -375,12 +375,17 @@ its overall, then the same four as totals across the top. Overall means cost plu
 markup, the same figure the admin Orders tab calls Total Sell, so every column adds
 up to the total above it. Whoever holds the link opens it without an account.
 
-**Who ordered** on each row opens the customers who bought that item and how many
-each took, two columns and nothing else. It comes from `seller_item_buyers()`,
+**Who ordered** on each row opens the customers who bought that item, what they
+chose, and how many they took. It comes from `seller_item_buyers()`,
 which is guarded by the same link token and returns a name and a quantity only —
 no phone, email, address, order number or date. People are grouped case-insensitively,
-so someone who typed their name in lower case one week is one row, not two, and the
-quantities add up to the qty on the row the button sits in. Cancelled orders are
+so someone who typed their name in lower case one week is not split in half, and the
+quantities add up to the qty on the row the button sits in.
+
+A row is one person and one set of choices, not just one person: somebody who
+ordered a Large and a Regular wants to see both, rather than a single row of two
+that says nothing about which. The Variants column only appears when something
+was actually chosen, so an item with no variants is still two plain columns. Cancelled orders are
 left out of both, which is why the two agree.
 
 The figures come from `seller_sales()`, which returns totals only. They match the
