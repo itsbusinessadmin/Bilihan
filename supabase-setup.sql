@@ -129,6 +129,58 @@ create table if not exists public.order_items (
   qty integer not null check (qty > 0)
 );
 
+-- What the customer picked on each line, and the price split as it stood when the
+-- order was placed. Recorded here rather than read back off the product later:
+-- a product whose price or variants change afterwards would otherwise rewrite the
+-- history of every sale it was ever part of.
+alter table public.order_items add column if not exists variants jsonb not null default '[]'::jsonb;
+alter table public.order_items add column if not exists unit_original_price numeric(12,2);
+alter table public.order_items add column if not exists unit_interest numeric(12,2);
+
+-- ===================================================================
+-- Product variants
+--
+-- A group is one question the customer answers ("Size", "Toppings"); an option
+-- is one answer. The admin picks the group's type from a fixed list rather than
+-- typing it, so two products never end up with "Toppings" and "toppings".
+--
+-- price_mode says what the option's amount means:
+--   'add'      the amount is added to the product's price (a topping, an extra)
+--   'absolute' the amount IS the price (a flavour sold at its own price)
+-- ===================================================================
+create table if not exists public.product_variant_groups (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references public.products(id) on delete cascade,
+  variant_type text not null,
+  label text not null,
+  price_mode text not null default 'add',
+  selection text not null default 'single',
+  is_required boolean not null default false,
+  sort_order integer not null default 0
+);
+alter table public.product_variant_groups drop constraint if exists product_variant_groups_price_mode_check;
+alter table public.product_variant_groups add constraint product_variant_groups_price_mode_check
+  check (price_mode in ('add','absolute'));
+alter table public.product_variant_groups drop constraint if exists product_variant_groups_selection_check;
+alter table public.product_variant_groups add constraint product_variant_groups_selection_check
+  check (selection in ('single','multi'));
+
+-- At most one group per product may set the whole price. Two of them would
+-- contradict each other and there is no sensible answer for which one wins.
+create unique index if not exists product_variant_one_absolute_group
+  on public.product_variant_groups(product_id) where price_mode = 'absolute';
+
+create table if not exists public.product_variant_options (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.product_variant_groups(id) on delete cascade,
+  label text not null,
+  amount numeric(12,2) not null default 0,
+  is_available boolean not null default true,
+  sort_order integer not null default 0
+);
+create index if not exists product_variant_groups_product_idx on public.product_variant_groups(product_id, sort_order);
+create index if not exists product_variant_options_group_idx on public.product_variant_options(group_id, sort_order);
+
 insert into public.store_settings (id, hero_images, about_image_url)
 values (
   1,
@@ -214,6 +266,17 @@ declare
   v_product public.products%rowtype;
   v_qty integer;
   v_items_out jsonb := '[]'::jsonb;
+  v_option_ids uuid[];
+  v_group record;
+  v_picked integer;
+  v_group_rows jsonb;
+  v_chosen jsonb;
+  v_unit numeric(12,2);
+  v_addon numeric(12,2);
+  v_absolute numeric(12,2);
+  v_known integer;
+  v_unit_original numeric(12,2);
+  v_needed integer;
   v_phone text;
   v_email text;
   v_cfg public.store_settings%rowtype;
@@ -285,13 +348,88 @@ begin
     for update;
 
     if not found then return jsonb_build_object('ok',false,'error','A product in your cart no longer exists.'); end if;
-    if not v_product.is_available or v_product.stock < v_qty then
+    -- Variants mean one product can appear on several lines (a Large and a Medium
+    -- of the same drink). Each line could pass on its own while the order as a
+    -- whole asks for more than there is, so the check is against the total.
+    select coalesce(sum((el->>'qty')::integer),0) into v_needed
+      from jsonb_array_elements(p_items) el
+     where (el->>'product_id') = v_product.id::text;
+    if not v_product.is_available or v_product.stock < v_needed then
       return jsonb_build_object('ok',false,'error',v_product.name || ' no longer has enough stock.');
     end if;
-    v_total := v_total + (v_product.price * v_qty);
+
+    -- The browser sends only which options were ticked. Everything about what
+    -- they cost, whether they were allowed, and whether the compulsory ones were
+    -- answered is decided here, because a price posted by a browser is a wish.
+    begin
+      select coalesce(array_agg((value #>> '{}')::uuid), '{}')
+        into v_option_ids
+        from jsonb_array_elements(coalesce(v_item->'option_ids','[]'::jsonb));
+    exception when others then
+      return jsonb_build_object('ok',false,'error','We could not read your choices for ' || v_product.name || '. Please pick them again.');
+    end;
+
+    -- Every id sent has to be an option of THIS product. Anything else is a stale
+    -- cart or a hand-made request, and either way the order should not go through.
+    select count(*) into v_known
+    from public.product_variant_options o
+    join public.product_variant_groups g on g.id = o.group_id
+    where o.id = any(v_option_ids) and g.product_id = v_product.id;
+    if v_known <> coalesce(array_length(v_option_ids,1),0) then
+      return jsonb_build_object('ok',false,'error','Some of your choices for ' || v_product.name || ' are no longer available. Please open it and pick again.');
+    end if;
+    if exists (select 1 from public.product_variant_options o
+               where o.id = any(v_option_ids) and not o.is_available) then
+      return jsonb_build_object('ok',false,'error','One of your choices for ' || v_product.name || ' has sold out. Please pick again.');
+    end if;
+
+    v_addon := 0; v_absolute := null; v_chosen := '[]'::jsonb;
+    for v_group in
+      select * from public.product_variant_groups where product_id = v_product.id order by sort_order, label
+    loop
+      select count(*) into v_picked
+      from public.product_variant_options o
+      where o.group_id = v_group.id and o.id = any(v_option_ids);
+
+      if v_group.is_required and v_picked = 0 then
+        return jsonb_build_object('ok',false,'error','Please choose a ' || lower(v_group.label) || ' for ' || v_product.name || '.');
+      end if;
+      if v_group.selection = 'single' and v_picked > 1 then
+        return jsonb_build_object('ok',false,'error','Please choose only one ' || lower(v_group.label) || ' for ' || v_product.name || '.');
+      end if;
+
+      select coalesce(sum(case when v_group.price_mode = 'add' then o.amount else 0 end),0),
+             max(case when v_group.price_mode = 'absolute' then o.amount else null end),
+             coalesce(jsonb_agg(jsonb_build_object('group',v_group.label,'label',o.label,
+                                                   'amount',o.amount,'price_mode',v_group.price_mode)
+                      order by o.sort_order, o.label), '[]'::jsonb)
+        into v_picked, v_absolute, v_group_rows
+        from public.product_variant_options o
+       where o.group_id = v_group.id and o.id = any(v_option_ids);
+      -- v_picked is reused here as the group's add-on subtotal.
+      v_addon := v_addon + coalesce(v_picked,0);
+      if v_absolute is not null then v_unit := v_absolute; end if;
+      v_chosen := v_chosen || v_group_rows;
+    end loop;
+
+    -- An 'absolute' option replaces the product's price; add-ons stack on top of
+    -- whichever of the two is in play.
+    v_unit := coalesce(v_unit, v_product.price) + v_addon;
+    if v_unit < 0 then v_unit := 0; end if;
+    v_unit := round(v_unit, 2);
+
+    -- The cost-and-markup split is frozen onto the line so the seller page keeps
+    -- reporting what was actually charged, whatever happens to the product later.
+    -- Variant uplift counts as markup; a variant that sells BELOW cost simply has
+    -- no markup rather than a negative one.
+    v_unit_original := least(coalesce(v_product.original_price, v_product.price), v_unit);
+
+    v_total := v_total + (v_unit * v_qty);
     v_items_out := v_items_out || jsonb_build_array(jsonb_build_object(
-      'product_id',v_product.id,'product_name',v_product.name,'unit_price',v_product.price,'qty',v_qty
+      'product_id',v_product.id,'product_name',v_product.name,'unit_price',v_unit,'qty',v_qty,
+      'variants',v_chosen,'unit_original_price',v_unit_original,'unit_interest',v_unit - v_unit_original
     ));
+    v_unit := null; v_absolute := null;
   end loop;
 
   insert into public.orders(id,order_code,cancel_token,customer_name,phone,email,fulfillment,address,preferred_date,payment_method,note,total,status)
@@ -299,8 +437,9 @@ begin
 
   for v_item in select * from jsonb_array_elements(v_items_out)
   loop
-    insert into public.order_items(order_id,product_id,product_name,unit_price,qty)
-    values(v_order_id,(v_item->>'product_id')::uuid,v_item->>'product_name',(v_item->>'unit_price')::numeric,(v_item->>'qty')::integer);
+    insert into public.order_items(order_id,product_id,product_name,unit_price,qty,variants,unit_original_price,unit_interest)
+    values(v_order_id,(v_item->>'product_id')::uuid,v_item->>'product_name',(v_item->>'unit_price')::numeric,(v_item->>'qty')::integer,
+           coalesce(v_item->'variants','[]'::jsonb),(v_item->>'unit_original_price')::numeric,(v_item->>'unit_interest')::numeric);
     update public.products
       set stock = stock - (v_item->>'qty')::integer,
           is_available = case when stock - (v_item->>'qty')::integer > 0 then is_available else false end
@@ -393,6 +532,20 @@ alter table public.seller_links enable row level security;
 drop policy if exists "admins manage seller link" on public.seller_links;
 create policy "admins manage seller link" on public.seller_links for all using (public.is_admin()) with check (public.is_admin());
 -- No public select policy on purpose: the token is what the link is worth.
+
+-- Variants are read by the storefront and written only by the admin. They sit
+-- here rather than beside their tables because is_admin() is defined further up
+-- the file, and a policy cannot name a function that does not exist yet.
+alter table public.product_variant_groups enable row level security;
+alter table public.product_variant_options enable row level security;
+drop policy if exists "public read variant groups" on public.product_variant_groups;
+create policy "public read variant groups" on public.product_variant_groups for select using (true);
+drop policy if exists "admins manage variant groups" on public.product_variant_groups;
+create policy "admins manage variant groups" on public.product_variant_groups for all using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "public read variant options" on public.product_variant_options;
+create policy "public read variant options" on public.product_variant_options for select using (true);
+drop policy if exists "admins manage variant options" on public.product_variant_options;
+create policy "admins manage variant options" on public.product_variant_options for all using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "admins manage orders" on public.orders;
 create policy "admins manage orders" on public.orders for all using (public.is_admin()) with check (public.is_admin());
@@ -714,8 +867,11 @@ begin
     select
       coalesce(nullif(btrim(i.product_name), ''), '(unnamed product)') as name,
       i.qty,
-      coalesce(p.original_price, i.unit_price) as original,
-      coalesce(p.interest, 0) as interest
+      -- The split recorded on the line wins. Only orders placed before that column
+      -- existed fall back to the product's current figures, which is why a price
+      -- change used to quietly re-value every past sale.
+      coalesce(i.unit_original_price, p.original_price, i.unit_price) as original,
+      coalesce(i.unit_interest, p.interest, 0) as interest
     from public.order_items i
     join public.orders o on o.id = i.order_id and o.status <> 'Cancelled'
     -- lateral, not a plain join: two products sharing a name would otherwise

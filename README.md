@@ -135,6 +135,60 @@ working. The customer page also re-reads the switch every minute and whenever th
 comes back to the front, so someone already browsing sees the notice without reloading,
 and reopening pulls a fresh menu because stock and prices have had time to move.
 
+## Product variants
+
+A product can ask the customer questions before it goes in the cart: a size, a
+flavour, some toppings. **Products -> Edit -> Variants** builds them.
+
+The *type* comes from a fixed list rather than a text box, so two products never
+end up with "Toppings" and "toppings". Picking a type fills in sensible defaults
+and a starting set of options to edit. Twenty-two types ship, from Size and
+Flavor through Sugar level and Spice level to Packaging, plus **Other** for
+anything the list misses - that one is the only place a name is typed.
+
+Each group has three switches:
+
+- **Pricing** - *Adds to the price* (a topping at +P15) or *Is the whole price*
+  (a flavour sold at its own P135). Flavor and Set/Bundle default to the whole
+  price; everything else adds.
+- **Choosing** - pick one, or pick any number. Toppings, add-ons, sauces and
+  side dishes default to any number.
+- **Must choose** - on for Size by default. A compulsory group keeps Add to Cart
+  shut until it is answered; everything else is optional and never blocks it.
+
+Only **one** group per product may set the whole price. Two would contradict each
+other with no sensible answer for which wins, so the editor refuses the second
+and a unique index in the database refuses it again.
+
+The price is `(whole-price option, or the product's price) + every add-on picked`.
+The product window works this out live as the customer taps, but that figure is
+only a preview: `place_order()` recomputes it from the database and ignores what
+the browser thought. The browser sends option ids and nothing else - no prices -
+and the function rejects an option belonging to another product, one that has
+sold out, a compulsory group left unanswered, and two answers to a pick-one
+group.
+
+The card's **+** button opens the product instead of adding it when that product
+has variants. There is nowhere on a card to ask which size, and guessing one for
+the customer is worse than opening the product.
+
+Saving a product replaces its variants outright rather than working out a diff.
+A customer holding a stale option id in their cart gets "please open it and pick
+again" rather than a wrong price, which is the behaviour that matters.
+
+### What this changed elsewhere
+
+`order_items` now records `variants`, `unit_original_price` and `unit_interest`
+per line, frozen at the moment of the order. The seller page reads that split in
+preference to the product's current figures. Before this, changing a product's
+price quietly re-valued every past sale it had ever been part of; variants would
+have made that worse, because a flavour sold at its own price was not in the
+product's figures at all.
+
+The stock check also moved from per-line to per-order. One product can now appear
+on several lines (a Large and a Medium of the same drink), and each line could
+pass on its own while the order as a whole asked for more than there was.
+
 ## Customer order behavior
 When a customer places an order, the `place_order` PostgreSQL function locks the product rows, rechecks stock and authoritative prices, inserts the order, inserts its line items, and deducts inventory in the same database transaction.
 
