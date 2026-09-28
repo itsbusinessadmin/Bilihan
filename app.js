@@ -443,7 +443,7 @@ function openCheckout(){
   /* "Paid Already" shows the same QR, so it needs one configured just as QR
      Payment does. It asks for a tick instead of a screenshot. */
   const paidAlreadyEnabled=isExplicitlyEnabled(s,'show_paid_already')&&!!String(s.qr_image_url||'').trim();
-  const paymentValues=[...(qrConfigured?[{value:'QR Payment',label:'QR Payment'}]:[]),...(paidAlreadyEnabled?[{value:'Paid Already',label:'Paid Already'}]:[]),...(cashEnabled?[{value:'Cash on Delivery / Pickup',label:'Cash'}]:[])];
+  const paymentValues=[...(qrConfigured?[{value:'QR Payment',label:'QR Payment'}]:[]),...(paidAlreadyEnabled?[{value:'Paid Already',label:'No need to upload'}]:[]),...(cashEnabled?[{value:'Cash on Delivery / Pickup',label:'Cash'}]:[])];
   const paymentOptions=paymentValues.map(item=>`<option value="${item.value}">${item.label}</option>`).join('');
   if(!paymentValues.length){toast(isExplicitlyEnabled(s,'show_qr_payment')?'QR payment is not fully configured yet. Please contact the store.':'No payment method is available right now. Please contact the store.');return}
   const paymentField=paymentValues.length===1?`<div class="field"><span class="field-label">Payment</span><div class="choice-value">${esc(paymentValues[0].label)}</div><input type="hidden" name="payment" value="${esc(paymentValues[0].value)}"></div>`:`<label class="field"><span class="field-label">Payment *</span><select name="payment">${paymentOptions}</select></label>`;
