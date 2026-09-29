@@ -292,7 +292,7 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
   }
   if(groups.length&&$('variantPicker')){
     $('variantPicker').innerHTML=groups.map(g=>`<fieldset class="variant-field">
-      <legend>${esc(g.label)}${g.is_required?' <span class="variant-required">Required</span>':''}</legend>
+      <legend>${esc(g.label)}${g.is_required?' <span class="variant-required">Required</span>':' <span class="variant-optional">Optional</span>'}</legend>
       <div class="variant-choices">${g.options.map(o=>`<label class="variant-choice">
         <input type="${g.selection==='multi'?'checkbox':'radio'}" name="vg-${esc(g.id)}" value="${esc(o.id)}" data-group="${esc(g.id)}">
         <span class="variant-choice-label">${esc(o.label)}</span>
