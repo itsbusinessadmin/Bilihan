@@ -156,9 +156,9 @@ Tapping a choice a second time clears it. A radio button cannot be unticked by
 itself, so that tap is handled by hand: someone who picked an optional flavour
 and then thought better of it has to be able to take it back.
 
-The storefront marks a compulsory group **Required** and says nothing at all
-about the others. "Optional" on every second heading is noise; the customer can
-already see that nothing is stopping them.
+The storefront marks a compulsory group **Required** and the rest **Optional**,
+so a customer can tell at a glance which answers they have to give before the
+button opens.
 
 Only **one** group per product may set the whole price. Two would contradict each
 other with no sensible answer for which wins, so the editor refuses the second
