@@ -29,6 +29,11 @@ create table if not exists public.products (
   updated_at timestamptz not null default now()
 );
 
+-- Who supplies the product. Free text because the store's sellers are colleagues,
+-- not accounts: there is nothing to join to, and a name typed once is enough to
+-- group a seller's items together on the dashboard and the seller page.
+alter table public.products add column if not exists seller_name text not null default '';
+
 create table if not exists public.store_settings (
   id integer primary key default 1 check (id = 1),
   business_name text not null default 'Bilihan',
@@ -156,6 +161,10 @@ create table if not exists public.order_items (
 alter table public.order_items add column if not exists variants jsonb not null default '[]'::jsonb;
 alter table public.order_items add column if not exists unit_original_price numeric(12,2);
 alter table public.order_items add column if not exists unit_interest numeric(12,2);
+-- The seller as it stood at order time, for the same reason: reassigning a product
+-- to somebody else should not move last month's sales along with it. Null means the
+-- line predates this column, and the product's current seller is used instead.
+alter table public.order_items add column if not exists seller_name text;
 
 -- ===================================================================
 -- Product variants
@@ -456,7 +465,8 @@ begin
     v_total := v_total + (v_unit * v_qty);
     v_items_out := v_items_out || jsonb_build_array(jsonb_build_object(
       'product_id',v_product.id,'product_name',v_product.name,'unit_price',v_unit,'qty',v_qty,
-      'variants',v_chosen,'unit_original_price',v_unit_original,'unit_interest',v_unit_interest
+      'variants',v_chosen,'unit_original_price',v_unit_original,'unit_interest',v_unit_interest,
+      'seller_name',coalesce(v_product.seller_name,'')
     ));
     v_unit := null; v_absolute := null;
   end loop;
@@ -466,9 +476,10 @@ begin
 
   for v_item in select * from jsonb_array_elements(v_items_out)
   loop
-    insert into public.order_items(order_id,product_id,product_name,unit_price,qty,variants,unit_original_price,unit_interest)
+    insert into public.order_items(order_id,product_id,product_name,unit_price,qty,variants,unit_original_price,unit_interest,seller_name)
     values(v_order_id,(v_item->>'product_id')::uuid,v_item->>'product_name',(v_item->>'unit_price')::numeric,(v_item->>'qty')::integer,
-           coalesce(v_item->'variants','[]'::jsonb),(v_item->>'unit_original_price')::numeric,(v_item->>'unit_interest')::numeric);
+           coalesce(v_item->'variants','[]'::jsonb),(v_item->>'unit_original_price')::numeric,(v_item->>'unit_interest')::numeric,
+           nullif(v_item->>'seller_name',''));
     update public.products
       set stock = stock - (v_item->>'qty')::integer,
           is_available = case when stock - (v_item->>'qty')::integer > 0 then is_available else false end
@@ -890,13 +901,13 @@ grant execute on function public.support_send(uuid,uuid,text) to anon, authentic
 grant execute on function public.support_admin_reply(uuid,text) to authenticated;
 grant execute on function public.support_admin_mark_read(uuid) to authenticated;
 
--- Read-only sales for the seller page. Returns totals only: no customer, no order,
--- no contact detail ever leaves this function, so the link cannot be turned into a
--- view of who bought what.
+-- Read-only sales for the seller page, grouped by seller and then by item, with the
+-- buyers of each item nested underneath so opening a seller's folder needs no second
+-- round trip.
 --
--- The figures mirror what the admin Orders tab shows, on purpose. order_items keeps
--- neither original price nor interest of its own, so both come from the product,
--- matched by id and falling back to name for a product that has since been deleted.
+-- A customer's first name and what they chose is as far as this goes: no phone, no
+-- email, no address, no order code, nothing that would let the link be turned into a
+-- customer list. The figures mirror what the admin Orders tab shows, on purpose.
 create or replace function public.seller_sales(p_token uuid)
 returns jsonb
 language plpgsql
@@ -905,6 +916,7 @@ set search_path = public
 as $$
 declare
   v_rows jsonb;
+  v_sellers jsonb;
   v_qty bigint;
   v_total numeric;
   v_interest numeric;
@@ -916,74 +928,18 @@ begin
 
   with lines as (
     select
+      -- The seller recorded on the line wins, so moving a product to somebody else
+      -- today does not rewrite who sold it last week. A line with nobody named at
+      -- all is gathered under one heading rather than dropped.
+      coalesce(nullif(btrim(coalesce(i.seller_name, p.seller_name)), ''), 'Unassigned') as seller,
       coalesce(nullif(btrim(i.product_name), ''), '(unnamed product)') as name,
       i.qty,
       -- The split recorded on the line wins. Only orders placed before that column
       -- existed fall back to the product's current figures, which is why a price
       -- change used to quietly re-value every past sale.
       coalesce(i.unit_original_price, p.original_price, i.unit_price) as original,
-      coalesce(i.unit_interest, p.interest, 0) as interest
-    from public.order_items i
-    join public.orders o on o.id = i.order_id and o.status <> 'Cancelled'
-    -- lateral, not a plain join: two products sharing a name would otherwise
-    -- duplicate the line and double-count the sale.
-    left join lateral (
-      select pr.original_price, pr.interest
-      from public.products pr
-      where (i.product_id is not null and pr.id = i.product_id)
-         or (i.product_id is null and lower(btrim(pr.name)) = lower(btrim(i.product_name)))
-      limit 1
-    ) p on true
-  ), agg as (
-    select name,
-           sum(qty)::bigint as qty,
-           sum(original * qty) as original_total,
-           sum(interest * qty) as interest_total
-    from lines group by name
-  )
-  select
-    coalesce(jsonb_agg(jsonb_build_object('name', name, 'qty', qty,
-                                          'original_total', original_total,
-                                          'interest_total', interest_total)
-             order by original_total + interest_total desc, name), '[]'::jsonb),
-    coalesce(sum(qty), 0),
-    coalesce(sum(original_total), 0),
-    coalesce(sum(interest_total), 0)
-  into v_rows, v_qty, v_total, v_interest
-  from agg;
-
-  -- 'overall' is what the shop actually took: cost plus markup, the same figure the
-  -- admin calls Total Sell.
-  return jsonb_build_object('ok', true, 'items', v_rows, 'total_qty', v_qty,
-                            'original', v_total, 'interest', v_interest,
-                            'overall', v_total + v_interest, 'as_of', now());
-end;
-$$;
-
-grant execute on function public.seller_sales(uuid) to anon, authenticated;
-
--- Who bought one item, for the "Who ordered" button on the seller page.
--- Guarded by the same link token, and it still returns no contact detail: a
--- customer name and a quantity is everything this function knows how to say.
-create or replace function public.seller_item_buyers(p_token uuid, p_name text)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_rows jsonb;
-  v_qty bigint;
-begin
-  if p_token is null
-     or not exists (select 1 from public.seller_links where id = 1 and token = p_token) then
-    return jsonb_build_object('ok', false, 'error', 'This link is no longer valid. Ask the store for a new one.');
-  end if;
-
-  with lines as (
-    select
+      coalesce(i.unit_interest, p.interest, 0) as interest,
       coalesce(nullif(btrim(o.customer_name), ''), 'Customer') as buyer,
-      i.qty,
       o.created_at,
       coalesce(nullif(btrim(o.payment_status), ''), 'Pending') as payment_status,
       -- The choices as one readable line, kept in the order they were recorded:
@@ -991,40 +947,93 @@ begin
       -- the order the customer met them in on the page.
       coalesce((
         select string_agg(v.value->>'label', ', ' order by v.ord)
-        from jsonb_array_elements(coalesce(i.variants, '[]'::jsonb)) with ordinality as v(value, ord)
+        from jsonb_array_elements(coalesce(i.variants, '[]'::jsonb)) with ordinality v(value, ord)
       ), '') as variants
     from public.order_items i
     join public.orders o on o.id = i.order_id and o.status <> 'Cancelled'
-    -- Matches how seller_sales groups the table it was clicked from, so the
-    -- quantities here add up to the qty shown on that row.
-    where coalesce(nullif(btrim(i.product_name), ''), '(unnamed product)')
-        = coalesce(nullif(btrim(p_name), ''), '(unnamed product)')
-  ), agg as (
-    -- One row per person, per set of choices, AND per payment state. Somebody
-    -- who ordered a Large and a Regular wants to see both, not a single row of
-    -- two that says nothing about which; the same goes for one order paid and
-    -- another still pending, which a single row would average into a lie. Names are still grouped case-insensitively so one person who
-    -- typed theirs differently between orders is not split in half, and the
-    -- spelling shown is the one they used most recently.
-    select (array_agg(buyer order by created_at desc))[1] as buyer,
-           variants,
-           payment_status,
-           sum(qty)::bigint as qty
-    from lines group by lower(buyer), variants, payment_status
+    -- lateral, not a plain join: two products sharing a name would otherwise
+    -- duplicate the line and double-count the sale.
+    left join lateral (
+      select pr.original_price, pr.interest, pr.seller_name
+      from public.products pr
+      where (i.product_id is not null and pr.id = i.product_id)
+         or (i.product_id is null and lower(btrim(pr.name)) = lower(btrim(i.product_name)))
+      limit 1
+    ) p on true
+  ), buyer_rows as (
+    -- One row per person, per set of choices, AND per payment state. Somebody who
+    -- ordered a Large and a Regular wants to see both, not a single row of two that
+    -- says nothing about which; the same goes for one order paid and another still
+    -- pending, which a single row would average into a lie. Names are grouped
+    -- case-insensitively so one person who typed theirs differently between orders
+    -- is not split in half, and the spelling shown is the one they used most recently.
+    select seller, name,
+           (array_agg(buyer order by created_at desc))[1] as buyer,
+           variants, payment_status, sum(qty)::bigint as qty
+      from lines
+     group by seller, name, lower(buyer), variants, payment_status
+  ), item_buyers as (
+    select seller, name,
+           jsonb_agg(jsonb_build_object('name', buyer, 'variants', variants,
+                                        'payment_status', payment_status, 'qty', qty)
+                     order by qty desc, buyer, variants) as buyers
+      from buyer_rows group by seller, name
+  ), item_rows as (
+    select seller, name,
+           sum(qty)::bigint as qty,
+           sum(original * qty) as original_total,
+           sum(interest * qty) as interest_total
+      from lines group by seller, name
+  ), seller_rows as (
+    select r.seller,
+           sum(r.qty)::bigint as qty,
+           sum(r.original_total) as original_total,
+           sum(r.interest_total) as interest_total,
+           jsonb_agg(jsonb_build_object('name', r.name, 'qty', r.qty,
+                       'original_total', r.original_total,
+                       'interest_total', r.interest_total,
+                       'overall', r.original_total + r.interest_total,
+                       'buyers', coalesce(b.buyers, '[]'::jsonb))
+                     order by r.original_total + r.interest_total desc, r.name) as items
+      from item_rows r
+      left join item_buyers b on b.seller = r.seller and b.name = r.name
+     group by r.seller
+  ), flat as (
+    -- Kept alongside the per-seller shape so a browser still running the older
+    -- seller page has something to draw.
+    select name,
+           sum(qty)::bigint as qty,
+           sum(original_total) as original_total,
+           sum(interest_total) as interest_total
+      from item_rows group by name
   )
-  select coalesce(jsonb_agg(jsonb_build_object('name', buyer, 'variants', variants,
-                                               'payment_status', payment_status, 'qty', qty)
-                  order by qty desc, buyer, variants), '[]'::jsonb),
-         coalesce(sum(qty), 0)
-  into v_rows, v_qty
-  from agg;
+  select
+    (select coalesce(jsonb_agg(jsonb_build_object('name', name, 'qty', qty,
+              'original_total', original_total, 'interest_total', interest_total)
+            order by original_total + interest_total desc, name), '[]'::jsonb) from flat),
+    (select coalesce(jsonb_agg(jsonb_build_object('name', seller, 'qty', qty,
+              'original_total', original_total, 'interest_total', interest_total,
+              'overall', original_total + interest_total, 'items', items)
+            order by original_total + interest_total desc, seller), '[]'::jsonb) from seller_rows),
+    (select coalesce(sum(qty), 0)::bigint from flat),
+    (select coalesce(sum(original_total), 0) from flat),
+    (select coalesce(sum(interest_total), 0) from flat)
+  into v_rows, v_sellers, v_qty, v_total, v_interest;
 
-  return jsonb_build_object('ok', true, 'name', p_name, 'buyers', v_rows,
-                            'total_qty', v_qty, 'as_of', now());
+  -- 'overall' is what the shop actually took: cost plus markup, the same figure the
+  -- admin calls Total Sell.
+  return jsonb_build_object('ok', true, 'items', v_rows, 'sellers', v_sellers,
+                            'total_qty', v_qty,
+                            'original', v_total, 'interest', v_interest,
+                            'overall', v_total + v_interest, 'as_of', now());
 end;
 $$;
 
-grant execute on function public.seller_item_buyers(uuid, text) to anon, authenticated;
+grant execute on function public.seller_sales(uuid) to anon, authenticated;
+
+-- The seller page used to fetch one item's buyers at a time. seller_sales now returns
+-- them nested under each item, so this second round trip has nothing left to do.
+drop function if exists public.seller_item_buyers(uuid, text);
 
 alter table public.support_threads enable row level security;
 alter table public.support_messages enable row level security;

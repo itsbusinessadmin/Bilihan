@@ -351,6 +351,58 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .metric-money{background:var(--admin-soft);border-color:var(--admin-line-strong)}
 .metric-money h2{font-size:clamp(1.05rem,1.55vw,var(--admin-text-metric))}
 .metric-hint{display:flex;align-items:center;gap:3px;margin-top:auto;padding-top:10px;color:var(--admin-green);font-size:var(--admin-text-caption);font-weight:700}
+
+/* The two folders you can open from the dashboard. The colour is mixed from the theme
+   accents rather than written as a hex, so a pale tint in the light skin becomes a
+   deep one in the dark skin instead of a glaring block. */
+.metric-folder{position:relative;border-width:1px;border-style:solid}
+.metric-folder small{color:color-mix(in srgb,var(--admin-text) 72%,transparent)}
+.metric-folder-yellow{background:color-mix(in srgb,var(--admin-gold) 14%,var(--admin-card));border-color:color-mix(in srgb,var(--admin-gold) 45%,var(--admin-line))}
+.metric-folder-yellow:hover{border-color:var(--admin-gold);background:color-mix(in srgb,var(--admin-gold) 20%,var(--admin-card))}
+.metric-folder-yellow .metric-hint{color:color-mix(in srgb,var(--admin-gold) 70%,var(--admin-text))}
+.metric-folder-green{background:color-mix(in srgb,var(--admin-green) 13%,var(--admin-card));border-color:color-mix(in srgb,var(--admin-green) 42%,var(--admin-line))}
+.metric-folder-green:hover{border-color:var(--admin-green);background:color-mix(in srgb,var(--admin-green) 19%,var(--admin-card))}
+.metric-folder-green .metric-hint{color:var(--admin-green-dark)}
+
+/* Sellers folder: one openable row per seller, their own items in a nested table.
+   The name is a button, but it has to read as the row's heading rather than as one of
+   the pill-shaped actions .table button dresses every other button in, so these
+   selectors are deliberately one step more specific than that rule. */
+.sellers-table .seller-row>td{vertical-align:top}
+.sellers-table .seller-toggle{display:flex;align-items:center;gap:8px;width:100%;min-height:0;padding:0;color:inherit;background:none;border:0;border-radius:0;box-shadow:none;font:inherit;font-size:inherit;text-align:left;cursor:pointer}
+.sellers-table .seller-toggle:hover{background:none;border:0;color:var(--admin-green-dark)}
+.seller-caret{display:inline-block;width:12px;flex:0 0 auto;color:var(--admin-muted);font-size:1.1rem;line-height:1;transition:transform .16s var(--admin-ease-out)}
+.sellers-table .seller-toggle[aria-expanded="true"] .seller-caret{transform:rotate(90deg)}
+.seller-row-sub{display:block;margin-top:2px;padding-left:20px;color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:400}
+.sellers-table .seller-items-row>td{padding:0;background:var(--admin-soft);border-bottom:1px solid var(--admin-line)}
+.seller-subtable{width:100%;margin:0;background:transparent;border-left:3px solid color-mix(in srgb,var(--admin-gold) 55%,transparent)}
+.seller-subtable thead th{background:transparent;color:var(--admin-muted);font-size:var(--admin-text-caption)}
+.seller-subtable td,.seller-subtable th{padding:7px 10px;border-bottom:0}
+.seller-subtable tbody tr:last-child td{padding-bottom:12px}
+@media (prefers-reduced-motion:reduce){.seller-caret{transition:none}}
+.sellers-table tfoot td{font-weight:700}
+@media (max-width:640px){
+  /* Five money columns do not fit a phone, and a table that scrolls sideways hides
+     the overall right when it is what somebody opened this for. Each seller becomes
+     a small card instead: the name on its own line, then the four figures as
+     labelled pairs. Nothing is hidden and nothing has to be swiped. */
+  .sellers-table,.sellers-table tbody,.sellers-table tfoot,.sellers-table tr,.sellers-table td,
+  .seller-subtable,.seller-subtable tbody,.seller-subtable tr,.seller-subtable td{display:block}
+  /* .table carries a min-width so its columns stay legible; stacked there are none. */
+  .sellers-table,.seller-subtable{min-width:0}
+  .sellers-table thead,.seller-subtable thead{display:none}
+  .sellers-table .seller-row,.sellers-table tfoot tr,.seller-subtable tbody tr{display:grid;grid-template-columns:1fr 1fr;gap:6px var(--admin-space-md);padding:var(--admin-space-md)}
+  .sellers-table td{padding:0;border:0}
+  .sellers-table .seller-cell{grid-column:1/-1}
+  .sellers-table td[data-label]::before{content:attr(data-label);display:block;margin-bottom:1px;color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:700}
+  .sellers-table .seller-row{border-bottom:1px solid var(--admin-line)}
+  .sellers-table tfoot tr{border-top:2px solid var(--admin-line);background:var(--admin-soft)}
+  .sellers-table tfoot td{background:none;border-top:0}
+  .seller-subtable tbody tr{padding:var(--admin-space-sm) var(--admin-space-md)}
+  .seller-subtable tbody tr+tr{border-top:1px solid var(--admin-line)}
+  .seller-subtable tbody tr:last-child td{padding-bottom:0}
+  .seller-row-sub{padding-left:20px}
+}
 .admin-modal-wide{width:min(920px,100%)}
 .sales-table td:nth-child(n+2),.sales-table th:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums}
 .sales-table tfoot td{border-top:2px solid var(--admin-line);background:var(--admin-soft)}

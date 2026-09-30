@@ -803,19 +803,41 @@ body.store-closed{overflow:hidden}
 .seller-table td:first-child{font-weight:600;overflow-wrap:anywhere}
 /* The row's own total, so the eye lands on it the way it does on Overall above. */
 .seller-table .seller-row-total{font-weight:700;color:var(--text)}
-.seller-item-name{display:block}
-/* Quiet on the row, obvious once you look for it: the figures stay the headline. */
-.seller-who{display:inline-flex;align-items:center;min-height:0;margin-top:4px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--card-soft);color:var(--muted);font-size:var(--text-caption);font-weight:600;cursor:pointer}
-.seller-who:hover{border-color:var(--line-strong);background:var(--card);color:var(--text)}
-.seller-who:active{transform:scale(.96)}
-.buyers-title{margin:0 0 2px;font-size:1.25rem;letter-spacing:-.02em;padding-right:48px}
-.buyers-sub{margin:0 0 var(--space-md);font-size:var(--text-caption)}
+/* The seller's own totals row, closing their table off. */
+.seller-table tfoot td{background:var(--card-soft);border-top:1px solid var(--line-strong);border-bottom:0;font-weight:700}
+
+/* ---------- Seller folders ----------
+   One folder per seller. Shut, it is a single line with their overall on the right;
+   open, it is every item of theirs and who bought each one. Everything a folder needs
+   arrives with the page, so opening one is instant and costs no extra request. */
+.seller-folders{display:grid;gap:var(--space-md)}
+.seller-folder{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden}
+.seller-folder.is-open{border-color:var(--line-strong);box-shadow:var(--shadow-xs)}
+.seller-folder-heading{margin:0;font-size:inherit;font-weight:inherit}
+.seller-folder-head{display:flex;align-items:center;gap:var(--space-sm);width:100%;padding:var(--space-md) var(--space-md);border:0;background:none;color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.seller-folder-head:hover{background:var(--card-soft)}
+.seller-folder-caret{flex:0 0 auto;width:14px;color:var(--muted);font-size:1.15rem;line-height:1;transition:transform .16s var(--ease-out,ease)}
+.seller-folder-head[aria-expanded="true"] .seller-folder-caret{transform:rotate(90deg)}
+.seller-folder-name{flex:1 1 auto;min-width:0;font-size:1.05rem;font-weight:700;letter-spacing:-.01em;overflow-wrap:anywhere}
+.seller-folder-figs{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+.seller-folder-qty{color:var(--muted);font-size:var(--text-caption);white-space:nowrap}
+.seller-folder-overall{font-size:1.05rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap}
+.seller-folder-body{display:grid;gap:var(--space-lg);padding:0 var(--space-md) var(--space-md);border-top:1px solid var(--line)}
+.seller-folder-body>.seller-table-wrap{margin-top:var(--space-md)}
+.seller-item-heading{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 var(--space-sm);color:var(--muted);font-size:var(--text-caption);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.seller-item-heading span{color:var(--text);text-transform:none;letter-spacing:0;overflow-wrap:anywhere}
+.seller-item-empty{margin:0;color:var(--muted);font-size:var(--text-caption)}
+/* Shown only while the database has not been updated to record who sells what. */
+.seller-notice{margin:0 0 var(--space-md);padding:var(--space-md);border:1px solid var(--line);border-radius:var(--radius);background:var(--card-soft);color:var(--muted);font-size:var(--text-caption)}
+.seller-notice code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.seller-empty-block{padding:var(--space-lg);border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
+@media (prefers-reduced-motion:reduce){.seller-folder-caret{transition:none}}
 .buyers-table-wrap{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .buyers-table{width:100%;border-collapse:collapse;font-size:var(--text-secondary)}
 .buyers-table th,.buyers-table td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line)}
 .buyers-table thead th{background:var(--card-soft);color:var(--muted);font-size:var(--text-caption);text-transform:uppercase;letter-spacing:.04em}
 .buyers-table tbody tr:last-child td{border-bottom:0}
-.buyers-table td:first-child{font-weight:600;overflow-wrap:anywhere}
+.buyers-table .buyers-name{font-weight:600;overflow-wrap:anywhere}
 .buyers-table .num{width:1%;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:700}
 .buyers-table .buyers-variants{color:var(--muted);font-size:var(--text-caption);overflow-wrap:anywhere}
 /* The three payment states, matching the colours the admin uses in Orders. */
@@ -824,19 +846,31 @@ body.store-closed{overflow:hidden}
 .pay-pending{background:#fef9c3;border-color:#fde047;color:#854d0e}
 .pay-unpaid{background:#fee2e2;border-color:#fca5a5;color:#991b1b}
 .buyers-none{opacity:.55}
-@media (max-width:480px){
-  .buyers-table th,.buyers-table td{padding:9px 8px}
-  .buyers-table th:first-child,.buyers-table td:first-child{padding-left:12px}
-  .buyers-table th:last-child,.buyers-table td:last-child{padding-right:12px}
+@media (max-width:560px){
+  /* Four columns do not fit a phone, and a table that scrolls sideways hides the
+     quantity right when the seller is looking for it. Each buyer becomes a small
+     card instead: who they are, what they chose, then payment and quantity side by
+     side. Nothing is hidden and nothing has to be swiped. */
+  .buyers-table,.buyers-table tbody,.buyers-table tr,.buyers-table td{display:block}
+  .buyers-table thead{display:none}
+  .buyers-table tbody tr{display:grid;grid-template-columns:1fr auto;gap:4px var(--space-sm);align-items:center;padding:var(--space-sm) var(--space-md);border-bottom:1px solid var(--line)}
+  .buyers-table tbody tr:last-child{border-bottom:0}
+  .buyers-table td{padding:0;border:0}
+  .buyers-table .buyers-name,.buyers-table .buyers-variants{grid-column:1/-1}
+  .buyers-table .buyers-pay{grid-column:1}
+  .buyers-table .num{width:auto;grid-column:2;text-align:right}
+  .buyers-table .num::before{content:"Qty ";color:var(--muted);font-weight:600}
 }
 @media (max-width:560px){
   /* Five columns of currency squeeze the item name to a few characters on a phone,
      so each sale becomes a small card instead: the name on its own line, then the
      four figures as labelled pairs. Nothing is hidden and nothing has to be swiped. */
-  .seller-table,.seller-table tbody,.seller-table tr,.seller-table td{display:block}
+  .seller-table,.seller-table tbody,.seller-table tfoot,.seller-table tr,.seller-table td{display:block}
   .seller-table thead{display:none}
-  .seller-table tbody tr{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-sm) var(--space-md);padding:var(--space-md);border-bottom:1px solid var(--line)}
+  .seller-table tbody tr,.seller-table tfoot tr{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-sm) var(--space-md);padding:var(--space-md);border-bottom:1px solid var(--line)}
   .seller-table tbody tr:last-child{border-bottom:0}
+  .seller-table tfoot tr{border-bottom:0;border-top:1px solid var(--line-strong);background:var(--card-soft)}
+  .seller-table tfoot td{background:none;border-top:0}
   .seller-table td{padding:0;border:0}
   .seller-table td:first-child{grid-column:1/-1;overflow-wrap:break-word}
   .seller-table td.num{text-align:left;white-space:normal;font-weight:600}
@@ -844,6 +878,13 @@ body.store-closed{overflow:hidden}
   .seller-table .seller-empty{grid-column:1/-1;text-align:left}
 }
 .seller-empty{color:var(--muted);text-align:center;font-weight:500}
+@media (max-width:480px){
+  .seller-folder-head{padding:var(--space-sm) var(--space-md)}
+  .seller-folder-name{font-size:1rem}
+  .seller-folder-overall{font-size:1rem}
+  .seller-folder-body{gap:var(--space-md);padding:0 var(--space-sm) var(--space-sm)}
+  .seller-folder-body>.seller-table-wrap{margin-top:var(--space-sm)}
+}
 @media (max-width:420px){
   .seller-logo{width:120px}
 }
