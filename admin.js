@@ -1,5 +1,5 @@
 const GOOGLE_SHEETS_WEB_APP_URL = (window.BILIHAN_CONFIG||{}).GOOGLE_SHEETS_WEB_APP_URL || '';
-const A={section:'dashboard',session:null,orderFilter:'all',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const A={section:'dashboard',session:null,orderFilter:'all',orderSearch:'',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 function configured(){return !!window.BILIHAN_SUPABASE_CONFIGURED}
 /* The Supabase client stores the session in this browser (persistSession), so a
    device that has signed in once stays signed in until Log Out is used.
@@ -71,7 +71,7 @@ async function loadAll(){const [p,c,o,s,t,sl,vg,vo]=await Promise.all([db.from('
    order, their place in a long list. Instead the data is refetched and the current
    section repainted, and even the repaint is skipped whenever it would take
    something away from the person using the page. */
-const AUTO={ms:3000,timer:null,busy:false,fails:0};
+const AUTO={ms:3000,timer:null,busy:false,fails:0,skip:0,print:''};
 /* Sections that own their markup: forms would lose unsaved edits to a repaint, the
    messages view runs its own poll and holds a reply box, and Security holds
    measurements it took itself. Their data still refreshes underneath. */
@@ -84,21 +84,58 @@ function autoRefreshPaused(){
   if(bulk.section)return true;                                 /* mid bulk-select: a repaint drops the ticks */
   const el=document.activeElement;
   if(el&&el.closest&&el.closest('form'))return true;           /* someone is typing */
+  /* Not every box sits in a form — the order search does not — and a repaint under a
+     typing finger takes the caret with it even when the text itself is restored. */
+  if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName||''))return true;
   return false;
+}
+
+/* What the page is currently drawing. Rebuilding a whole section every three seconds
+   threw away the browser's layout work, dropped any text the reader had selected and
+   reset the section's own state, all to redraw figures that had not moved. Nothing is
+   left out of this on purpose: a projection of "the fields that matter" would quietly
+   stop the page updating the day somebody added a field and forgot to list it here. */
+const dataPrint=()=>{try{return JSON.stringify(A.data)}catch{return String(Date.now())}};
+
+/* What the database says its data is at, so a poll that has nothing to report costs
+   32 characters instead of every order with every line on it. */
+const VER={at:null,unavailable:false};
+async function dataVersion(){
+  if(VER.unavailable)return null;
+  try{
+    const {data,error}=await db.rpc('admin_data_version');
+    /* A database that predates this function, or a reply that is not a digest, means
+       fall back to fetching every time -- which is exactly what this page did before. */
+    if(error||typeof data!=='string'){VER.unavailable=true;return null}
+    return data;
+  }catch{VER.unavailable=true;return null}
 }
 
 async function autoRefresh(){
   if(AUTO.busy||!A.session||autoRefreshPaused())return;
+  /* An outage should not be hammered at the same rate as a healthy connection:
+     3s, 6s, 12s, 24s, up to a minute, and straight back to 3s on the first success. */
+  if(AUTO.skip>0){AUTO.skip--;return}
   AUTO.busy=true;
   try{
+    /* Read the version before the fetch, not after: if something changes while the
+       fetch is in flight, the next poll sees a difference and picks it up. Storing
+       the later value would lose that change until something else moved. */
+    const version=await dataVersion();
+    if(version&&version===VER.at){AUTO.fails=0;AUTO.skip=0;return}
     await loadAll();
-    AUTO.fails=0;
+    VER.at=version;
+    AUTO.fails=0;AUTO.skip=0;
     /* loadAll() is a round trip, so re-check: a modal may have opened or typing may
        have started while it was in flight. */
     if(autoRefreshPaused())return;
     paintNavBadge();
     if(A.section==='messages'){paintThreadList();paintSeen()}  /* receipts, without touching the reply box */
     if(AUTO_KEEP_MARKUP.has(A.section))return;
+    /* Nothing moved, so there is nothing to redraw. */
+    const print=dataPrint();
+    if(print===AUTO.print)return;
+    AUTO.print=print;
     const m=document.getElementById('adminMain');
     const paint={dashboard,products,categories,orders}[A.section];
     if(!m||!paint)return;
@@ -109,6 +146,7 @@ async function autoRefresh(){
     /* A blip must not drop the owner onto the reconnect screen — the next tick
        retries. Logged once per outage rather than every three seconds. */
     if(++AUTO.fails===1)console.warn('Bilihan admin: auto-refresh failed, will retry',err);
+    AUTO.skip=Math.min(2**AUTO.fails,20)-1;
   }finally{AUTO.busy=false}
 }
 
@@ -120,7 +158,7 @@ function startAutoRefresh(){
    of stale figures. */
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefresh()});
 
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,categories,orders,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
 /* ---- Sales reporting ----------------------------------------------------
    Resolve the original-price / interest split for one order line. An order item
    may carry its own original_price and interest recorded at order time; when it
@@ -614,9 +652,11 @@ function openOrderDetails(id){
 }
 
 function orders(m){
-  const totals=A.data.orders.reduce((acc,o)=>{const st=o.payment_status||'Pending';acc.sell+=+o.total;if(st==='Paid')acc.paid+=+o.total;else acc.unpaid+=+o.total;(o.order_items||[]).forEach(i=>{const q=Number(i.qty||0);const {original,interest}=lineItemPrices(i);acc.original+=original*q;acc.interest+=interest*q});return acc},{sell:0,paid:0,unpaid:0,original:0,interest:0});
+  /* soldOrders(), not every order: a cancelled order is not a sale, and counting it
+     here made this page disagree with the dashboard about how much the shop had taken. */
+  const totals=soldOrders().reduce((acc,o)=>{const st=o.payment_status||'Pending';acc.sell+=+o.total;if(st==='Paid')acc.paid+=+o.total;else acc.unpaid+=+o.total;(o.order_items||[]).forEach(i=>{const q=Number(i.qty||0);const {original,interest}=lineItemPrices(i);acc.original+=original*q;acc.interest+=interest*q});return acc},{sell:0,paid:0,unpaid:0,original:0,interest:0});
   m.innerHTML=`<div class="orders-sticky"><div class="page-head"><div><span class="eyebrow">Customer orders</span><h2>Orders</h2></div><div class="row-actions"><button type="button" id="bulkToggle">Select</button><button type="button" class="danger-btn" id="deleteAllOrders">Delete All Orders</button></div></div><div class="cards orders-cards"><div class="metric metric-money"><small>Total Sell</small><h2>${money(totals.sell)}</h2></div><div class="metric metric-money" style="border-color:#86efac"><small>Total Paid</small><h2 style="color:#166534">${money(totals.paid)}</h2></div><div class="metric metric-money" style="border-color:#fca5a5"><small>Total Unpaid</small><h2 style="color:#991b1b">${money(totals.unpaid)}</h2></div><div class="metric metric-money"><small>Total Interest</small><h2>${money(totals.interest)}</h2></div><div class="metric metric-money"><small>Total Original Price</small><h2>${money(totals.original)}</h2></div></div>
-  <div class="panel"><input id="orderSearch" placeholder="Search name, phone, order number" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
+  <div class="panel"><input id="orderSearch" placeholder="Search name, phone, order number" value="${esc(A.orderSearch||'')}" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
   <div id="payFilters" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">${['all','Paid','Pending','Not Paid'].map(f=>{const active=A.orderFilter===f;const c=f==='all'?null:PAY_COLORS[f];const bg=active?(c?c.bg:'var(--text)'):'transparent';const text=active?(c?c.text:'var(--bg)'):'var(--text)';const border=c?c.border:'var(--line)';return `<button data-f="${f}" style="padding:6px 14px;border-radius:999px;border:1px solid ${border};background:${bg};color:${text};font-weight:600;cursor:pointer">${f==='all'?'All':f}</button>`}).join('')}</div>
   </div></div>
   ${bulkBarHtml()}
@@ -625,7 +665,7 @@ function orders(m){
   const draw=()=>{
     const t=document.getElementById('orderSearch').value.toLowerCase();
     const rows=A.data.orders.filter(o=>{
-      const matchesSearch=`${o.order_code} ${o.customer_name} ${o.phone||''}`.toLowerCase().includes(t);
+      const matchesSearch=`${o.order_code||''} ${o.customer_name||''} ${o.phone||''}`.toLowerCase().includes(t);
       const matchesFilter=A.orderFilter==='all'||((o.payment_status||'Pending')===A.orderFilter);
       return matchesSearch&&matchesFilter;
     });
@@ -640,7 +680,9 @@ function orders(m){
     if(error)throw error;
     for(const code of codes)await deleteOrderFromGoogleSheet(code);
   });
-  document.getElementById('orderSearch').oninput=()=>{draw();syncBulk()};
+  /* Held in state rather than only in the box: this page is redrawn whenever the
+     orders change underneath, and the search term has to survive that. */
+  document.getElementById('orderSearch').oninput=e=>{A.orderSearch=e.target.value;draw();syncBulk()};
   draw();syncBulk();
 }
 async function syncAdminOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL||!order)return;/* Same shape the storefront writes. Without the choices, marking an order Paid
@@ -834,7 +876,11 @@ function messages(m){
   stopMessagePolling();
   /* 4s rather than 12s: this is what carries the customer's read receipt while the
      admin has focus in the reply box, which pauses the page-wide refresh. */
-  MSG.timer=setInterval(()=>{if(!document.hidden&&A.section==='messages')refreshThreads()},4000);
+  MSG.timer=setInterval(()=>{
+    /* Only while the page-wide refresh has stood down, which is the case this exists
+       for. Running it regardless fetched every thread twice over. */
+    if(!document.hidden&&A.section==='messages'&&autoRefreshPaused())refreshThreads();
+  },4000);
 }
 
 function settings(m){
@@ -1368,19 +1414,20 @@ function mountVariantEditor(mount,groups){
 /* Replace a product's variants wholesale. Simpler than working out a diff, and
    the options are only ever read through place_order, which rejects an id it
    does not recognise with a "please pick again" rather than a wrong price. */
+/* One call, one transaction. This used to be a delete and two inserts from here: a
+   blip between them left the product with no choices at all, and the options were
+   attached by trusting the insert to hand back ids in the order they were sent,
+   which nothing promises. If set_product_variants fails now, the product keeps the
+   choices it already had. */
 async function saveVariants(productId,groups){
-  const {error:delErr}=await db.from('product_variant_groups').delete().eq('product_id',productId);
-  if(delErr)throw delErr;
-  if(!groups.length)return;
-  const {data:saved,error}=await db.from('product_variant_groups')
-    .insert(groups.map((g,i)=>({product_id:productId,variant_type:g.variant_type||'custom',label:g.label,
-      price_mode:g.price_mode,selection:g.selection,is_required:!!g.is_required,sort_order:i+1})))
-    .select('id');
+  const {data,error}=await db.rpc('set_product_variants',{
+    p_product_id:productId,
+    p_groups:groups.map(g=>({variant_type:g.variant_type||'custom',label:g.label,
+      price_mode:g.price_mode,selection:g.selection,is_required:!!g.is_required,
+      options:(g.options||[]).map(o=>({label:o.label,amount:Number(o.amount||0)}))}))
+  });
   if(error)throw error;
-  const rows=[];
-  saved.forEach((row,i)=>groups[i].options.forEach((o,oi)=>
-    rows.push({group_id:row.id,label:o.label,amount:Number(o.amount||0),sort_order:oi+1})));
-  if(rows.length){const {error:optErr}=await db.from('product_variant_options').insert(rows);if(optErr)throw optErr}
+  if(!data?.ok)throw new Error(data?.error||'We could not save the choices for this product.');
 }
 
 function variantsForProduct(productId){

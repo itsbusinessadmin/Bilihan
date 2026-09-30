@@ -23,6 +23,16 @@
      leaving stale figures on screen or closing it under the reader. */
   let openSeller = null;
   let openSignature = '';
+  let openItems = null;
+  /* Who bought what is fetched per seller, only while their window is open. Nesting
+     it in the list's own poll made that reply three hundred times larger than the
+     list needed, every few seconds, nearly all of it never looked at. The cheap poll
+     then says when this is worth asking for again: if a seller's totals have not
+     moved, neither has anything inside their window. */
+  let openPrint = '';
+  let buyersBusy = false;
+  /* The sellers the list is currently drawing, so a window can be opened from one. */
+  let lastSellers = null;
 
   function fail(message) {
     $('sellerError').textContent = message;
@@ -114,36 +124,71 @@
     if (close) close.onclick = () => $('sellerDialog').close();
   }
 
-  function paintDialog(seller) {
+  function paintDialog(seller, items) {
     /* Same guard as the list: rebuilding this every few seconds would drop the focus
        ring and any selected text while nothing had actually changed. */
-    const signature = JSON.stringify(seller);
+    const signature = JSON.stringify(seller) + JSON.stringify(items);
     if (signature === openSignature) return;
     openSignature = signature;
-    const items = seller.items || [];
-    const body = items.length
-      ? `<p class="seller-dialog-sub">${num(seller.qty)} paid &middot; ${money(overallOf(seller))} overall${owedOf(seller) ? ` &middot; <span class="seller-dialog-owed">${money(owedOf(seller))} unpaid</span>` : ''}</p>
-         ${moneyTable(items, { label: 'All items', qty: seller.qty, original_total: seller.original_total, interest_total: seller.interest_total, overall: seller.overall })}
-         ${items.map(it => `<div class="seller-item-buyers"><h3 class="seller-item-heading">Who ordered <span>${esc(it.name)}</span></h3>${buyersTable(it.buyers || [])}${owedNote(it)}</div>`).join('')}`
-      : '<p class="seller-item-empty">Nothing sold yet.</p>';
+    const head = `<p class="seller-dialog-sub">${num(seller.qty)} paid &middot; ${money(overallOf(seller))} overall${owedOf(seller) ? ` &middot; <span class="seller-dialog-owed">${money(owedOf(seller))} unpaid</span>` : ''}</p>`;
+    let body;
+    if (!(seller.items || []).length) body = '<p class="seller-item-empty">Nothing sold yet.</p>';
+    else if (!items) {
+      /* The totals are already here, so show them rather than an empty window while
+         the buyers are still on their way. */
+      body = head
+        + moneyTable(seller.items, { label: 'All items', qty: seller.qty, original_total: seller.original_total, interest_total: seller.interest_total, overall: seller.overall })
+        + '<p class="seller-item-empty">Loading who ordered&hellip;</p>';
+    } else {
+      body = head
+        + moneyTable(items, { label: 'All items', qty: seller.qty, original_total: seller.original_total, interest_total: seller.interest_total, overall: seller.overall })
+        + items.map(it => `<div class="seller-item-buyers"><h3 class="seller-item-heading">Who ordered <span>${esc(it.name)}</span></h3>${buyersTable(it.buyers || [])}${owedNote(it)}</div>`).join('');
+    }
     $('sellerDialog').innerHTML = dialogMarkup(seller.name, body);
     wireDialogClose();
   }
+
+  async function loadBuyers(name) {
+    if (buyersBusy) return;
+    buyersBusy = true;
+    try {
+      const { data, error } = await window.db.rpc('seller_buyers', { p_token: token, p_seller: name });
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data.error || 'This link is no longer valid.');
+      /* Only paint if this is still the window on screen: a slow reply for one seller
+         must not overwrite the one the reader has already moved on to. */
+      if (openSeller !== name) return;
+      openItems = data.items || [];
+      const seller = (lastSellers || []).find(s => s.name === name);
+      if (seller) paintDialog(seller, openItems);
+    } catch (err) {
+      console.warn('Buyers lookup failed', err);
+      if (openSeller === name && !openItems) {
+        $('sellerDialog').innerHTML = dialogMarkup(name, `<p class="seller-item-empty">${esc(err.message || 'We could not load who ordered just now.')}</p>`);
+        wireDialogClose();
+      }
+    } finally { buyersBusy = false }
+  }
+
+  /* A seller's own figures, as the cheap poll last reported them. When this is
+     unchanged, nothing inside their window can have moved either. */
+  const sellerPrint = s => JSON.stringify(s);
 
   function openSellerWindow(name) {
     const seller = (lastSellers || []).find(s => s.name === name);
     if (!seller) return;
     openSeller = name;
     openSignature = '';
+    openItems = null;
+    openPrint = sellerPrint(seller);
     const dlg = $('sellerDialog');
-    paintDialog(seller);
+    paintDialog(seller, null);
     if (!dlg.open) dlg.showModal();
     $('sellerDialogClose')?.focus();
+    loadBuyers(name);
   }
 
   /* ---------- painting ---------- */
-
-  let lastSellers = null;
 
   function paintSellers(sellers) {
     $('sellerBody').innerHTML = sellers.length
@@ -191,7 +236,13 @@
          the list has already moved past. */
       if (openSeller) {
         const still = (sellers || []).find(s => s.name === openSeller);
-        if (still) paintDialog(still); else $('sellerDialog').close();
+        if (!still) $('sellerDialog').close();
+        else {
+          const print = sellerPrint(still);
+          /* Only worth asking who ordered again if this seller's own figures moved. */
+          if (print !== openPrint) { openPrint = print; openItems = null; loadBuyers(openSeller) }
+          paintDialog(still, openItems);
+        }
       }
     }
     const when = new Date(data.as_of || Date.now());
@@ -223,7 +274,7 @@
       const card = e.target.closest('.seller-card');
       if (card) openSellerWindow(card.dataset.seller || '');
     });
-    $('sellerDialog').addEventListener('close', () => { openSeller = null; openSignature = ''; });
+    $('sellerDialog').addEventListener('close', () => { openSeller = null; openSignature = ''; openItems = null; openPrint = ''; });
     load();
     setInterval(load, POLL_MS);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
