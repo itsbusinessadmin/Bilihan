@@ -905,6 +905,11 @@ grant execute on function public.support_admin_mark_read(uuid) to authenticated;
 -- buyers of each item nested underneath so opening a seller's folder needs no second
 -- round trip.
 --
+-- Only orders marked Paid are counted. Anything still Pending or Not Paid is money
+-- the shop has not taken, so it stays out of every total and is reported separately
+-- as what is still owed. The buyer is still listed either way: the seller needs to
+-- see who has not settled up, they just must not be paid for it twice.
+--
 -- A customer's first name and what they chose is as far as this goes: no phone, no
 -- email, no address, no order code, nothing that would let the link be turned into a
 -- customer list. The figures mirror what the admin Orders tab shows, on purpose.
@@ -920,6 +925,8 @@ declare
   v_qty bigint;
   v_total numeric;
   v_interest numeric;
+  v_unpaid_qty bigint;
+  v_unpaid numeric;
 begin
   if p_token is null
      or not exists (select 1 from public.seller_links where id = 1 and token = p_token) then
@@ -942,6 +949,8 @@ begin
       coalesce(nullif(btrim(o.customer_name), ''), 'Customer') as buyer,
       o.created_at,
       coalesce(nullif(btrim(o.payment_status), ''), 'Pending') as payment_status,
+      -- Only settled money counts. Anything else is a record, not a sale.
+      coalesce(nullif(btrim(o.payment_status), ''), 'Pending') = 'Paid' as is_paid,
       -- The choices as one readable line, kept in the order they were recorded:
       -- variant group order first, then option order within each group, which is
       -- the order the customer met them in on the page.
@@ -969,30 +978,38 @@ begin
     -- is not split in half, and the spelling shown is the one they used most recently.
     select seller, name,
            (array_agg(buyer order by created_at desc))[1] as buyer,
-           variants, payment_status, sum(qty)::bigint as qty
+           variants, payment_status, is_paid,
+           sum(qty)::bigint as qty,
+           sum((original + interest) * qty) as amount
       from lines
-     group by seller, name, lower(buyer), variants, payment_status
+     group by seller, name, lower(buyer), variants, payment_status, is_paid
   ), item_buyers as (
     select seller, name,
            jsonb_agg(jsonb_build_object('name', buyer, 'variants', variants,
-                                        'payment_status', payment_status, 'qty', qty)
-                     order by qty desc, buyer, variants) as buyers
+                                        'payment_status', payment_status,
+                                        'is_paid', is_paid, 'qty', qty, 'amount', amount)
+                     order by is_paid, qty desc, buyer, variants) as buyers
       from buyer_rows group by seller, name
   ), item_rows as (
     select seller, name,
-           sum(qty)::bigint as qty,
-           sum(original * qty) as original_total,
-           sum(interest * qty) as interest_total
+           coalesce(sum(qty) filter (where is_paid), 0)::bigint as qty,
+           coalesce(sum(original * qty) filter (where is_paid), 0) as original_total,
+           coalesce(sum(interest * qty) filter (where is_paid), 0) as interest_total,
+           coalesce(sum(qty) filter (where not is_paid), 0)::bigint as unpaid_qty,
+           coalesce(sum((original + interest) * qty) filter (where not is_paid), 0) as unpaid_total
       from lines group by seller, name
   ), seller_rows as (
     select r.seller,
            sum(r.qty)::bigint as qty,
            sum(r.original_total) as original_total,
            sum(r.interest_total) as interest_total,
+           sum(r.unpaid_qty)::bigint as unpaid_qty,
+           sum(r.unpaid_total) as unpaid_total,
            jsonb_agg(jsonb_build_object('name', r.name, 'qty', r.qty,
                        'original_total', r.original_total,
                        'interest_total', r.interest_total,
                        'overall', r.original_total + r.interest_total,
+                       'unpaid_qty', r.unpaid_qty, 'unpaid_total', r.unpaid_total,
                        'buyers', coalesce(b.buyers, '[]'::jsonb))
                      order by r.original_total + r.interest_total desc, r.name) as items
       from item_rows r
@@ -1004,28 +1021,36 @@ begin
     select name,
            sum(qty)::bigint as qty,
            sum(original_total) as original_total,
-           sum(interest_total) as interest_total
+           sum(interest_total) as interest_total,
+           sum(unpaid_qty)::bigint as unpaid_qty,
+           sum(unpaid_total) as unpaid_total
       from item_rows group by name
   )
   select
     (select coalesce(jsonb_agg(jsonb_build_object('name', name, 'qty', qty,
-              'original_total', original_total, 'interest_total', interest_total)
+              'original_total', original_total, 'interest_total', interest_total,
+              'unpaid_qty', unpaid_qty, 'unpaid_total', unpaid_total)
             order by original_total + interest_total desc, name), '[]'::jsonb) from flat),
     (select coalesce(jsonb_agg(jsonb_build_object('name', seller, 'qty', qty,
               'original_total', original_total, 'interest_total', interest_total,
-              'overall', original_total + interest_total, 'items', items)
+              'overall', original_total + interest_total,
+              'unpaid_qty', unpaid_qty, 'unpaid_total', unpaid_total, 'items', items)
             order by original_total + interest_total desc, seller), '[]'::jsonb) from seller_rows),
     (select coalesce(sum(qty), 0)::bigint from flat),
     (select coalesce(sum(original_total), 0) from flat),
-    (select coalesce(sum(interest_total), 0) from flat)
-  into v_rows, v_sellers, v_qty, v_total, v_interest;
+    (select coalesce(sum(interest_total), 0) from flat),
+    (select coalesce(sum(unpaid_qty), 0)::bigint from flat),
+    (select coalesce(sum(unpaid_total), 0) from flat)
+  into v_rows, v_sellers, v_qty, v_total, v_interest, v_unpaid_qty, v_unpaid;
 
-  -- 'overall' is what the shop actually took: cost plus markup, the same figure the
-  -- admin calls Total Sell.
+  -- 'overall' is what the shop actually took: cost plus markup on settled orders,
+  -- the same figure the admin calls Total Sell. 'unpaid' is what is still owed.
   return jsonb_build_object('ok', true, 'items', v_rows, 'sellers', v_sellers,
                             'total_qty', v_qty,
                             'original', v_total, 'interest', v_interest,
-                            'overall', v_total + v_interest, 'as_of', now());
+                            'overall', v_total + v_interest,
+                            'unpaid_qty', v_unpaid_qty, 'unpaid', v_unpaid,
+                            'as_of', now());
 end;
 $$;
 

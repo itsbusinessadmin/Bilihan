@@ -3,7 +3,12 @@
    Everything here comes from seller_sales(), which the link token authorises. A
    customer's name and what they chose is as far as that function goes: no phone,
    no email, no address, no order code, so this page cannot be turned into a
-   customer list however hard somebody pokes at it. */
+   customer list however hard somebody pokes at it.
+
+   Only orders marked Paid count towards any total. Pending and Not Paid orders are
+   still listed, because the seller needs to see who has not settled up, but the
+   money is reported separately as still owed rather than folded into a figure the
+   shop has not actually taken. */
 (() => {
   const POLL_MS = 3000;          /* matches the admin dashboard, so the two agree */
   const $ = id => document.getElementById(id);
@@ -14,10 +19,10 @@
   const token = new URLSearchParams(location.search).get('t') || '';
   let lastSignature = '';
   let busy = false;
-  /* Which folders the reader has opened. Kept out here because the list is rebuilt
-     whenever the figures move, and the open ones have to survive that. */
-  const openSellers = new Set();
-  let everPainted = false;
+  /* The seller whose window is open, so a refresh redraws it in place instead of
+     leaving stale figures on screen or closing it under the reader. */
+  let openSeller = null;
+  let openSignature = '';
 
   function fail(message) {
     $('sellerError').textContent = message;
@@ -36,15 +41,32 @@
     return `<span class="pay-chip pay-${PAY_STATES[status]}">${esc(status)}</span>`;
   }
 
+  /* Trusted when the database sends it, added up here when it does not, so the column
+     always matches the two beside it rather than having to be taken on trust. */
+  const overallOf = r => r.overall != null ? Number(r.overall) : Number(r.original_total || 0) + Number(r.interest_total || 0);
+  const owedOf = r => Number(r.unpaid_total || 0);
+
+  /* What is still owed, said in the same words everywhere it appears. The figure is a
+     quantity of that item, not a number of orders, so it is worded as such. */
+  function owedNote(r) {
+    const owed = owedOf(r);
+    if (!owed) return '';
+    const qty = Number(r.unpaid_qty || 0);
+    return `<p class="seller-owed-note">${num(qty)} still unpaid, worth ${money(owed)} &mdash; not counted above.</p>`;
+  }
+
   /* Customer | Variants | Payment | Quantity for one item. The choices column only
      earns its place when something was actually chosen, or an item with no variants
      gets a column of dashes. */
   function buyersTable(buyers) {
     if (!buyers.length) return '<p class="seller-item-empty">Nobody has ordered this yet.</p>';
     const anyVariants = buyers.some(b => String(b.variants || '').trim());
+    /* Unpaid rows are dimmed so the eye can tell at a glance which of these the
+       totals above were built from. */
+    const row = b => `<tr class="${b.is_paid === false ? 'buyers-row-unpaid' : ''}"><td class="buyers-name">${esc(b.name)}</td>${anyVariants ? `<td class="buyers-variants">${esc(b.variants) || '<span class="buyers-none">&mdash;</span>'}</td>` : ''}<td class="buyers-pay">${payChip(b.payment_status)}</td><td class="num">${num(b.qty)}</td></tr>`;
     return `<div class="buyers-table-wrap"><table class="buyers-table">
       <thead><tr><th scope="col">Customer</th>${anyVariants ? '<th scope="col">Variants</th>' : ''}<th scope="col">Payment</th><th scope="col" class="num">Quantity</th></tr></thead>
-      <tbody>${buyers.map(b => `<tr><td class="buyers-name">${esc(b.name)}</td>${anyVariants ? `<td class="buyers-variants">${esc(b.variants) || '<span class="buyers-none">&mdash;</span>'}</td>` : ''}<td class="buyers-pay">${payChip(b.payment_status)}</td><td class="num">${num(b.qty)}</td></tr>`).join('')}</tbody>
+      <tbody>${buyers.map(row).join('')}</tbody>
     </table></div>`;
   }
 
@@ -59,40 +81,74 @@
     </table></div>`;
   }
 
-  /* Trusted when the database sends it, added up here when it does not, so the column
-     always matches the two beside it rather than having to be taken on trust. */
-  const overallOf = r => r.overall != null ? Number(r.overall) : Number(r.original_total || 0) + Number(r.interest_total || 0);
+  /* ---------- the list of sellers ---------- */
 
-  /* A seller's folder: shut, it is one line. Open, it is everything they sold and who
-     bought it. The name is the id, so reopening survives the next refresh. */
-  function folderHtml(seller, index) {
+  function sellerCard(seller) {
     const items = seller.items || [];
-    const id = `sellerFolder${index}`;
-    const open = openSellers.has(seller.name);
-    return `<section class="seller-folder${open ? ' is-open' : ''}">
-      <h2 class="seller-folder-heading">
-        <button type="button" class="seller-folder-head" aria-expanded="${open}" aria-controls="${id}" data-seller="${esc(seller.name)}">
-          <span class="seller-folder-caret" aria-hidden="true">&rsaquo;</span>
-          <span class="seller-folder-name">${esc(seller.name)}</span>
-          <span class="seller-folder-figs">
-            <span class="seller-folder-qty">${num(seller.qty)} sold &middot; ${items.length} item${items.length === 1 ? '' : 's'}</span>
-            <span class="seller-folder-overall">${money(overallOf(seller))}</span>
-          </span>
-        </button>
-      </h2>
-      <div class="seller-folder-body" id="${id}"${open ? '' : ' hidden'}>
-        ${moneyTable(items, { label: 'All items', qty: seller.qty, original_total: seller.original_total, interest_total: seller.interest_total, overall: seller.overall })}
-        ${items.map(it => `<div class="seller-item-buyers"><h3 class="seller-item-heading">Who ordered <span>${esc(it.name)}</span></h3>${buyersTable(it.buyers || [])}</div>`).join('')}
-      </div>
-    </section>`;
+    const owed = owedOf(seller);
+    return `<button type="button" class="seller-card" data-seller="${esc(seller.name)}">
+      <span class="seller-card-main">
+        <span class="seller-card-name">${esc(seller.name)}</span>
+        <span class="seller-card-sub">${num(seller.qty)} paid &middot; ${items.length} item${items.length === 1 ? '' : 's'}</span>
+      </span>
+      <span class="seller-card-figs">
+        <span class="seller-card-overall">${money(overallOf(seller))}</span>
+        ${owed ? `<span class="seller-card-owed">${money(owed)} unpaid</span>` : ''}
+      </span>
+      <span class="seller-card-go" aria-hidden="true">&rsaquo;</span>
+    </button>`;
   }
 
-  function paintFolders(sellers) {
-    /* Only one seller means there is nothing to choose between, so it starts open. */
-    if (!everPainted && sellers.length === 1) openSellers.add(sellers[0].name);
+  /* ---------- one seller's window ---------- */
+
+  function dialogMarkup(title, body) {
+    return `<div class="modal-body">
+      <button type="button" class="icon-btn modal-close" id="sellerDialogClose" aria-label="Close"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button>
+      <h2 class="seller-dialog-title">${esc(title)}</h2>
+      ${body}
+    </div>`;
+  }
+
+  function wireDialogClose() {
+    const close = $('sellerDialogClose');
+    if (close) close.onclick = () => $('sellerDialog').close();
+  }
+
+  function paintDialog(seller) {
+    /* Same guard as the list: rebuilding this every few seconds would drop the focus
+       ring and any selected text while nothing had actually changed. */
+    const signature = JSON.stringify(seller);
+    if (signature === openSignature) return;
+    openSignature = signature;
+    const items = seller.items || [];
+    const body = items.length
+      ? `<p class="seller-dialog-sub">${num(seller.qty)} paid &middot; ${money(overallOf(seller))} overall${owedOf(seller) ? ` &middot; <span class="seller-dialog-owed">${money(owedOf(seller))} unpaid</span>` : ''}</p>
+         ${moneyTable(items, { label: 'All items', qty: seller.qty, original_total: seller.original_total, interest_total: seller.interest_total, overall: seller.overall })}
+         ${items.map(it => `<div class="seller-item-buyers"><h3 class="seller-item-heading">Who ordered <span>${esc(it.name)}</span></h3>${buyersTable(it.buyers || [])}${owedNote(it)}</div>`).join('')}`
+      : '<p class="seller-item-empty">Nothing sold yet.</p>';
+    $('sellerDialog').innerHTML = dialogMarkup(seller.name, body);
+    wireDialogClose();
+  }
+
+  function openSellerWindow(name) {
+    const seller = (lastSellers || []).find(s => s.name === name);
+    if (!seller) return;
+    openSeller = name;
+    openSignature = '';
+    const dlg = $('sellerDialog');
+    paintDialog(seller);
+    if (!dlg.open) dlg.showModal();
+    $('sellerDialogClose')?.focus();
+  }
+
+  /* ---------- painting ---------- */
+
+  let lastSellers = null;
+
+  function paintSellers(sellers) {
     $('sellerBody').innerHTML = sellers.length
-      ? `<div class="seller-folders">${sellers.map(folderHtml).join('')}</div>`
-      : '<p class="seller-empty seller-empty-block">No sales yet.</p>';
+      ? `<div class="seller-cards">${sellers.map(sellerCard).join('')}</div>`
+      : '<p class="seller-empty seller-empty-block">No paid sales yet.</p>';
   }
 
   /* What the page can still show when the database has not been updated to record who
@@ -105,7 +161,7 @@
       original_total: a.original_total + Number(r.original_total || 0),
       interest_total: a.interest_total + Number(r.interest_total || 0)
     }), { label: 'All items', qty: 0, original_total: 0, interest_total: 0 });
-    $('sellerBody').innerHTML = `<p class="seller-notice">Sales are not grouped by seller yet. Run <code>supabase-setup.sql</code> on the store database and this page will fill in each seller's folder.</p>`
+    $('sellerBody').innerHTML = '<p class="seller-notice">Sales are not grouped by seller yet. Run <code>supabase-setup.sql</code> on the store database and this page will give each seller their own card.</p>'
       + (items.length ? moneyTable(items, totals) : '<p class="seller-empty seller-empty-block">No sales yet.</p>');
   }
 
@@ -116,17 +172,27 @@
     const items = data.items || [];
     /* Repaint only when something actually changed: this runs every few seconds and
        rebuilding the page each time would fight anyone reading it. */
-    const signature = JSON.stringify(sellers || items) + data.overall + data.interest;
+    const signature = JSON.stringify(sellers || items) + data.overall + data.interest + data.unpaid;
     if (signature !== lastSignature) {
       lastSignature = signature;
-      if (sellers) paintFolders(sellers); else paintFlat(items);
-      everPainted = true;
+      lastSellers = sellers;
+      if (sellers) paintSellers(sellers); else paintFlat(items);
       $('sellerQty').textContent = num(data.total_qty);
       $('sellerOriginal').textContent = money(data.original);
       $('sellerInterest').textContent = money(data.interest);
-      /* Overall is cost plus markup, the same figure the admin calls Total Sell. */
+      /* Overall is cost plus markup on settled orders, the same figure the admin
+         calls Total Sell. What is still owed is kept out of it and shown beside it. */
       $('sellerOverall').textContent = money(data.overall);
+      const owed = Number(data.unpaid || 0);
+      $('sellerOwed').textContent = money(owed);
+      $('sellerOwedCard').classList.toggle('hidden', !owed);
       $('sellerTotals').classList.remove('hidden');
+      /* An open window follows the figures behind it rather than sitting on numbers
+         the list has already moved past. */
+      if (openSeller) {
+        const still = (sellers || []).find(s => s.name === openSeller);
+        if (still) paintDialog(still); else $('sellerDialog').close();
+      }
     }
     const when = new Date(data.as_of || Date.now());
     $('sellerAsOf').textContent = `Updated ${when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}`;
@@ -151,19 +217,13 @@
   function boot() {
     if (!window.BILIHAN_SUPABASE_CONFIGURED || !window.db) { fail('This page is not connected to the store yet.'); return; }
     if (!token) { fail('This link is missing its code. Ask the store for the full link.'); return; }
-    /* Delegated, because the folders are rebuilt from scratch whenever the figures
+    /* Delegated, because the cards are rebuilt from scratch whenever the figures
        move and a handler bound to one would go with it. */
     $('sellerBody').addEventListener('click', e => {
-      const head = e.target.closest('.seller-folder-head');
-      if (!head) return;
-      const name = head.dataset.seller || '';
-      const panel = document.getElementById(head.getAttribute('aria-controls'));
-      const open = head.getAttribute('aria-expanded') !== 'true';
-      head.setAttribute('aria-expanded', String(open));
-      panel.hidden = !open;
-      head.closest('.seller-folder').classList.toggle('is-open', open);
-      if (open) openSellers.add(name); else openSellers.delete(name);
+      const card = e.target.closest('.seller-card');
+      if (card) openSellerWindow(card.dataset.seller || '');
     });
+    $('sellerDialog').addEventListener('close', () => { openSeller = null; openSignature = ''; });
     load();
     setInterval(load, POLL_MS);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
