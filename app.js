@@ -364,8 +364,56 @@ function syncBottomNav(id){
   secs.forEach(sec=>io.observe(sec));
   syncBottomNav('home');
 })();
-function validateCartAgainstLive(liveProducts){let changed=false, invalid=[];for(const item of state.cart){const p=liveProducts.find(x=>x.id===item.productId);if(!p){invalid.push(`${item.name} is no longer available.`);changed=true;continue}if(!p.is_available||p.stock<item.qty){invalid.push(`${item.name} no longer has enough stock.`);changed=true}if(+p.price!==+item.price){item.price=+p.price;invalid.push(`${item.name} price was updated.`);changed=true}}if(changed)saveCart();return invalid}
-async function fetchLiveProducts(){const {data,error}=await db.from('products').select('*');if(error)throw error;return data}
+function validateCartAgainstLive(live){
+  let changed=false, invalid=[];
+  /* One product can sit on several lines now, a Large and a Regular of the same
+     thing, so stock is checked against what the whole cart asks for rather than
+     line by line. This is the same sum place_order does. */
+  const wanted=new Map();
+  for(const item of state.cart)wanted.set(item.productId,(wanted.get(item.productId)||0)+Number(item.qty||0));
+  const flagged=new Set();
+  for(const item of state.cart){
+    const p=live.products.find(x=>x.id===item.productId);
+    if(!p){invalid.push(`${item.name} is no longer available.`);changed=true;continue}
+    if((!p.is_available||p.stock<wanted.get(item.productId))&&!flagged.has(p.id)){
+      flagged.add(p.id);invalid.push(`${item.name} no longer has enough stock.`);changed=true;
+    }
+    const expected=livePriceForLine(item,live);
+    if(expected===null){
+      invalid.push(`${item.name}: one of your choices is no longer available. Please open it and choose again.`);changed=true;
+    }else if(expected!==+item.price){
+      item.price=expected;invalid.push(`${item.name} price was updated.`);changed=true;
+    }
+  }
+  if(changed)saveCart();
+  return invalid;
+}
+/* The variants come along with the products: a line's price is the product plus
+   whatever was chosen, and checking it against the bare product price alone would
+   call every variant order a price change. */
+async function fetchLiveProducts(){
+  const [{data:products,error},{data:groups,error:ge},{data:options,error:oe}]=await Promise.all([
+    db.from('products').select('*'),
+    db.from('product_variant_groups').select('*'),
+    db.from('product_variant_options').select('*')
+  ]);
+  if(error)throw error;
+  return {products:products||[],groups:ge?[]:(groups||[]),options:oe?[]:(options||[])};
+}
+/* What this cart line should cost right now. null means one of the choices has
+   gone, which the customer has to resolve by opening the product again. */
+function livePriceForLine(item,live){
+  const p=live.products.find(x=>x.id===item.productId);
+  if(!p)return null;
+  let base=Number(p.price||0),add=0,gone=false;
+  for(const id of (item.optionIds||[])){
+    const o=live.options.find(x=>x.id===id);
+    const g=o&&live.groups.find(x=>x.id===o.group_id&&x.product_id===p.id);
+    if(!o||!g||o.is_available===false){gone=true;break}
+    if(g.price_mode==='absolute')base=Number(o.amount||0);else add+=Number(o.amount||0);
+  }
+  return gone?null:Math.max(0,base+add);
+}
 async function syncOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;const items=(order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',store_name:realSetting(state.data.settings?.business_name)||'Bilihan',pickup_location:realSetting(state.data.settings?.pickup_location)||'',store_email:realSetting(state.data.settings?.email)||''};await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(err){console.warn('Google Sheets sync failed:',err)}}
 function fileToBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');reader.onerror=()=>reject(new Error('Unable to read receipt file.'));reader.readAsDataURL(file)})}
 function formatFileSize(bytes){if(bytes<1024)return `${bytes} B`;if(bytes<1024*1024)return `${(bytes/1024).toFixed(0)} KB`;return `${(bytes/1024/1024).toFixed(1)} MB`}
