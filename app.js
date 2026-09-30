@@ -239,6 +239,72 @@ function settleProductImages(root){
     img.addEventListener('error',failed,{once:true});
   });
 }
+/* Live stock.
+
+   Supabase pushes a row down an open websocket the moment it changes, so a card
+   turns Sold Out while the customer is looking at it rather than at the next
+   reload. That beats polling on both counts: it arrives sooner, and it costs one
+   connection instead of a request every few seconds from every phone in the shop.
+
+   The grid is patched in place rather than repainted. A full repaint on every
+   change would restart the images and throw away where the customer had scrolled,
+   several times a minute on a busy day. */
+function applyStockUpdate(row){
+  if(!row||!row.id)return;
+  const p=(state.data?.products||[]).find(x=>x.id===row.id);
+  if(!p)return;
+  const before={stock:p.stock,is_available:p.is_available,price:p.price};
+  Object.assign(p,row);
+  if(before.stock===p.stock&&before.is_available===p.is_available&&before.price===p.price)return;
+  try{localStorage.setItem(LS.cache,JSON.stringify(state.data))}catch(e){}
+
+  const showStock=state.data.settings?.show_stock!==false;
+  const sold=!p.is_available||p.stock<=0;
+  const card=document.querySelector(`.product-card[data-id="${CSS.escape(p.id)}"]`);
+  if(card){
+    const price=card.querySelector('.price');
+    if(price)price.textContent=money(p.price);
+    const bottom=card.querySelector('.product-card-bottom');
+    if(bottom){
+      let line=bottom.querySelector('.stock');
+      if(showStock||sold){
+        if(!line){line=document.createElement('div');line.className='stock';bottom.prepend(line)}
+        line.textContent=sold?'Sold Out':p.stock<=5?`Only ${p.stock} left!`:`${p.stock} available`;
+        line.classList.toggle('sold',sold);
+      }else if(line)line.remove();
+      /* The add button goes when it sells out and comes back when it returns. */
+      const add=bottom.querySelector('.product-card-add');
+      if(sold&&add)add.remove();
+      if(!sold&&!add){
+        bottom.insertAdjacentHTML('beforeend',`<button class="product-card-add" type="button" data-add-id="${esc(p.id)}" aria-label="Add ${esc(p.name)} to cart" title="Add to cart"><img class="ui-icon" src="ios-icons/add-to-cart.svg" alt="" aria-hidden="true"></button>`);
+      }
+    }
+  }
+  /* A product window left open on something that just sold out has to say so,
+     rather than letting the customer add what is no longer there. */
+  const open=$('productDialog');
+  if(open?.open&&open.dataset.productId===p.id)openProduct(p.id);
+}
+
+/* One subscription for the whole catalogue. If the socket cannot be established,
+   or drops and stays down, the timer below keeps the page honest on its own. */
+const STOCK_FALLBACK_MS=30000;
+function watchStock(){
+  if(!window.BILIHAN_SUPABASE_CONFIGURED||!window.db)return;
+  let live=false;
+  try{
+    window.db.channel('bilihan-stock')
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'products'},payload=>applyStockUpdate(payload.new))
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'products'},()=>bootstrap())
+      .on('postgres_changes',{event:'DELETE',schema:'public',table:'products'},()=>bootstrap())
+      .subscribe(status=>{live=status==='SUBSCRIBED'});
+  }catch(err){console.warn('Live stock unavailable, falling back to refreshing',err)}
+  /* Belt and braces: a tab that has been asleep, or a socket that quietly died,
+     still catches up. Skipped entirely while the push channel is healthy. */
+  setInterval(()=>{if(!live&&!document.hidden)bootstrap()},STOCK_FALLBACK_MS);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!live)bootstrap()});
+}
+
 function renderProducts(){const showStock=state.data.settings?.show_stock!==false;const ps=(state.data.products||[]).filter(p=>state.category==='all'||p.category_id===state.category).sort((a,b)=>a.sort_order-b.sort_order);const allSold=ps.length&&ps.every(p=>!p.is_available||p.stock<=0);const empty=!ps.length?'<div class="empty-state"><h3>No products here yet</h3><p>Try another category or check back soon.</p></div>':'';$('menuGrid').innerHTML=empty+(allSold?'<div class="status-banner" style="grid-column:1/-1">We’re currently sold out. Please check back again soon!</div>':'')+ps.map(p=>{const sold=!p.is_available||p.stock<=0;const stock=sold?'Sold Out':p.stock<=5?`Only ${p.stock} left!`:`${p.stock} available`;const stockHtml=(showStock||sold)?`<div class="stock ${sold?'sold':''}">${stock}</div>`:'';const addButton=sold?'':`<button class="product-card-add" type="button" data-add-id="${p.id}" aria-label="Add ${esc(p.name)} to cart" title="Add to cart"><img class="ui-icon" src="ios-icons/add-to-cart.svg" alt="" aria-hidden="true"></button>`;return `<article class="product-card" data-id="${p.id}">${productImageHtml(p,'product-card-image','loading="lazy" decoding="async"')}<div class="product-info"><div class="product-row"><strong>${esc(p.name)}</strong><span class="price">${money(p.price)}</span></div><div class="product-card-bottom">${stockHtml}${addButton}</div></div></article>`}).join('');settleProductImages($('menuGrid'));bindMenuGrid()}
 /* One delegated listener for the whole grid, attached once. The previous version
    re-bound two handlers per card on every render, which got slower with the
@@ -276,7 +342,7 @@ function missingRequired(groups,chosenIds){
 /* Two of the same product with different choices are two different cart lines. */
 const cartKey=(productId,ids)=>productId+'|'+[...ids].sort().join(',');
 
-function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=state.cart.find(x=>x.productId===id)?.qty||0;const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${p.stock<=5?`Only ${p.stock} left!`:`${p.stock} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));$('productDialog').showModal();let q=1;
+function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=state.cart.find(x=>x.productId===id)?.qty||0;const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').dataset.productId=id;$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${p.stock<=5?`Only ${p.stock} left!`:`${p.stock} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));$('productDialog').showModal();let q=1;
   const groups=variantGroupsFor(id);
   let chosen=[];
   const priceEl=$('productDialog').querySelector('.product-modal-grid h3');
@@ -671,3 +737,4 @@ function syncThemeIcon(){const dark=document.documentElement.dataset.theme==='da
 window.addEventListener('offline',()=>{state.online=false;renderConnection()});window.addEventListener('online',()=>bootstrap());
 bootstrap();
 watchStoreState();
+watchStock();
