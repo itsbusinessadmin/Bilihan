@@ -130,8 +130,11 @@ function lineItemPrices(item){
   const p=A.data.products.find(x=>x.id===item.product_id)
         ||A.data.products.find(x=>String(x.name||'').toLowerCase()===String(item.product_name||'').toLowerCase());
   const unit=Number(item.unit_price??p?.price??0);
-  const original=Number(item.original_price??p?.original_price??unit);
-  const interest=Number(item.interest??p?.interest??0);
+  /* The split recorded on the line wins. It is the only one that knows what the
+     variants added, and it cannot be rewritten later by editing the product.
+     Only orders placed before those columns existed fall back to the product. */
+  const original=Number(item.unit_original_price??item.original_price??p?.original_price??unit);
+  const interest=Number(item.unit_interest??item.interest??p?.interest??0);
   return {original,interest};
 }
 /* A cancelled order is not a sale. */

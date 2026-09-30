@@ -288,6 +288,7 @@ declare
   v_absolute numeric(12,2);
   v_known integer;
   v_unit_original numeric(12,2);
+  v_unit_interest numeric(12,2);
   v_needed integer;
   v_phone text;
   v_email text;
@@ -435,14 +436,19 @@ begin
 
     -- The cost-and-markup split is frozen onto the line so the seller page keeps
     -- reporting what was actually charged, whatever happens to the product later.
-    -- Variant uplift counts as markup; a variant that sells BELOW cost simply has
-    -- no markup rather than a negative one.
-    v_unit_original := least(coalesce(v_product.original_price, v_product.price), v_unit);
+    --
+    -- The markup is the product's own interest and stays there; everything the
+    -- variants add belongs to the seller, who is the one supplying the larger
+    -- size or the extra topping. The cap keeps a variant priced below the markup
+    -- from handing the seller a negative amount, and the two always sum to what
+    -- was charged.
+    v_unit_interest := least(greatest(coalesce(v_product.interest, 0), 0), v_unit);
+    v_unit_original := v_unit - v_unit_interest;
 
     v_total := v_total + (v_unit * v_qty);
     v_items_out := v_items_out || jsonb_build_array(jsonb_build_object(
       'product_id',v_product.id,'product_name',v_product.name,'unit_price',v_unit,'qty',v_qty,
-      'variants',v_chosen,'unit_original_price',v_unit_original,'unit_interest',v_unit - v_unit_original
+      'variants',v_chosen,'unit_original_price',v_unit_original,'unit_interest',v_unit_interest
     ));
     v_unit := null; v_absolute := null;
   end loop;
