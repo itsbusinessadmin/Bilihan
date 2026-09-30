@@ -409,9 +409,18 @@ no phone, email, address, order number or date. People are grouped case-insensit
 so someone who typed their name in lower case one week is not split in half, and the
 quantities add up to the qty on the row the button sits in.
 
-A row is one person and one set of choices, not just one person: somebody who
+A row is one person, one set of choices, and one payment state. Somebody who
 ordered a Large and a Regular wants to see both, rather than a single row of two
-that says nothing about which. The Variants column only appears when something
+that says nothing about which, and the same goes for one order paid while another
+is still pending. The Payment column shows the same three states the admin sets
+in Orders, in the same three colours, and follows within the page's three-second
+refresh when the owner changes one.
+
+Realtime is deliberately not used for this. Pushing `orders` down a websocket
+would broadcast customer names, phones and addresses to anyone holding the seller
+link, which is the one thing the seller page exists not to do. The page asks
+`seller_item_buyers()` instead, which returns a name, the choices, the payment
+state and a quantity, and nothing else. The Variants column only appears when something
 was actually chosen, so an item with no variants is still two plain columns. Cancelled orders are
 left out of both, which is why the two agree.
 
