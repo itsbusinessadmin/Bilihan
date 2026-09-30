@@ -183,7 +183,11 @@ again" rather than a wrong price, which is the behaviour that matters.
 ### What this changed elsewhere
 
 `order_items` now records `variants`, `unit_original_price` and `unit_interest`
-per line, frozen at the moment of the order. The seller page reads that split in
+per line, frozen at the moment of the order. The markup on a line is the
+product's own interest and stays there; everything the variants add goes to the
+seller, who is the one supplying the larger size or the extra topping. A variant
+priced below the markup gives the seller zero rather than a negative amount, and
+the two always add up to what was charged. The seller page reads that split in
 preference to the product's current figures. Before this, changing a product's
 price quietly re-valued every past sale it had ever been part of; variants would
 have made that worse, because a flavour sold at its own price was not in the
