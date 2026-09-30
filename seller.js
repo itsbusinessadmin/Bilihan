@@ -63,8 +63,11 @@
      falls back to Pending rather than rendering an unstyled word. */
   const PAY_STATES = { 'Paid': 'paid', 'Pending': 'pending', 'Not Paid': 'unpaid' };
   function payChip(status) {
-    const label = PAY_STATES[status] ? status : 'Pending';
-    return `<span class="pay-chip pay-${PAY_STATES[label]}">${esc(label)}</span>`;
+    /* No status at all means the database has not been told about this column
+       yet, not that the order is pending. Saying "Pending" there would be a
+       confident wrong answer; a dash says plainly that nothing is known. */
+    if (!PAY_STATES[status]) return '<span class="buyers-none" title="Payment status unavailable. Re-run supabase-setup.sql.">&mdash;</span>';
+    return `<span class="pay-chip pay-${PAY_STATES[status]}">${esc(status)}</span>`;
   }
 
   function paintBuyers(data) {
