@@ -208,6 +208,29 @@ It is a trade: a much shorter checkout in exchange for no proof of payment. That
 is why it ships off, and why the setting says so. `place_order()` refuses the
 method outright while the setting is off, so it cannot be reached by posting it.
 
+## Live stock
+
+Stock on the storefront updates the moment it changes, without a reload. Supabase
+pushes the changed row down a websocket and the card repaints itself: the count,
+the "Only 3 left!" warning, Sold Out, the price, and whether the add button is
+there at all. A product window left open on something that has just sold out
+follows too.
+
+This is a push, not a poll. It arrives sooner than any polling interval would and
+costs one connection per visitor instead of a request every few seconds from
+every phone in the shop, which on a free tier matters.
+
+Only `products` is published to Realtime. Orders, customers and messages have no
+business being broadcast to every browser on the site, and `supabase-setup.sql`
+adds that one table to the publication and nothing else.
+
+The grid is patched in place rather than repainted, so a change does not restart
+the product images or throw away where the customer had scrolled to.
+
+If the websocket cannot be established, or drops and stays down, the page falls
+back to refreshing itself every thirty seconds and whenever the tab comes back to
+the front. While the push channel is healthy that timer does nothing.
+
 ## Customer order behavior
 When a customer places an order, the `place_order` PostgreSQL function locks the product rows, rechecks stock and authoritative prices, inserts the order, inserts its line items, and deducts inventory in the same database transaction.
 

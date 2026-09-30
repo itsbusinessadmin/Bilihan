@@ -575,6 +575,28 @@ create policy "admins manage order items" on public.order_items for all using (p
 drop policy if exists "admin sees own membership" on public.admin_users;
 create policy "admin sees own membership" on public.admin_users for select using (user_id=auth.uid());
 
+-- ===================================================================
+-- Live stock on the storefront
+--
+-- Supabase pushes row changes down a websocket, but only for tables in this
+-- publication. Without it the storefront sees nothing until the next reload.
+-- Only products is published: orders, customers and messages have no business
+-- being broadcast to every browser on the site.
+-- ===================================================================
+do $$ begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+  -- ALTER PUBLICATION ... ADD TABLE errors if the table is already a member,
+  -- so it is checked first and this file stays safe to re-run.
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'products'
+  ) then
+    alter publication supabase_realtime add table public.products;
+  end if;
+end $$;
+
 -- Storage buckets for no-code image uploads.
 insert into storage.buckets(id,name,public) values ('product-images','product-images',true) on conflict (id) do update set public=true;
 insert into storage.buckets(id,name,public) values ('store-assets','store-assets',true) on conflict (id) do update set public=true;
