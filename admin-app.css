@@ -409,6 +409,13 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .admin-modal-wide{width:min(920px,100%)}
 .sales-table td:nth-child(n+2),.sales-table th:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums}
 .sales-table tfoot td{border-top:2px solid var(--admin-line);background:var(--admin-soft)}
+/* Quiet on the row, obvious once you look for it: the figures stay the headline. One
+   step more specific than .table button, which would otherwise dress it as an action. */
+.sales-table .sales-item-name{display:block}
+.sales-table .who-btn{display:inline-flex;align-items:center;min-height:0;margin-top:4px;padding:3px 9px;border:1px solid var(--admin-line);border-radius:999px;background:var(--admin-soft);color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:600;box-shadow:none;cursor:pointer}
+.sales-table .who-btn:hover{border-color:var(--admin-line-strong);background:var(--admin-card);color:var(--admin-text)}
+.sales-table .who-btn+.owed-sub{margin-top:4px}
+.buyers-count{margin:0 0 var(--admin-space-md);font-size:var(--admin-text-caption)}
 
 /* ---- Orders: compact list + detail modal ---- */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}

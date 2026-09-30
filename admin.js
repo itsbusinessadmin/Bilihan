@@ -225,7 +225,7 @@ const owedSub=r=>Number(r.unpaid||0)?`<small class="owed-sub">${r.unpaidQty} unp
 const owedFootnote=rows=>{
   const owed=rows.reduce((a,r)=>a+Number(r.unpaid||0),0);
   const qty=rows.reduce((a,r)=>a+Number(r.unpaidQty||0),0);
-  return owed?` A further ${money(owed)} across ${qty} unpaid is still Pending or Not Paid, and is left out of every figure above.`:'';
+  return owed?` A further ${qty} unpaid, worth ${money(owed)}, is still Pending or Not Paid and is left out of every figure above.`:'';
 };
 
 /* Shared plumbing for the two dashboard folders: both are a table in a modal that
@@ -235,8 +235,16 @@ function openDashboardModal({id,eyebrow,title,body,footnote,opener}){
   document.body.insertAdjacentHTML('beforeend',`<div class="admin-modal-backdrop" id="${id}"><div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="${id}Title"><div class="admin-modal-header"><div><span class="eyebrow">${esc(eyebrow)}</span><h2 id="${id}Title">${esc(title)}</h2></div><button type="button" class="admin-modal-close" data-close="1" aria-label="Close">&times;</button></div>${body}${footnote?`<p class="muted" style="margin:14px 0 0;font-size:var(--admin-text-caption)">${footnote}</p>`:''}</div></div>`);
   document.body.classList.add('modal-open');
   const modal=document.getElementById(id);
-  const onKey=e=>{if(e.key==='Escape')close()};
-  function close(){modal.remove();document.body.classList.remove('modal-open');document.removeEventListener('keydown',onKey);document.getElementById(opener)?.focus()}
+  /* A window can be opened from inside another one, so Escape closes the topmost
+     rather than all of them, and the page stays locked until the last one goes. */
+  const isTop=()=>modal===[...document.querySelectorAll('.admin-modal-backdrop')].pop();
+  const onKey=e=>{if(e.key==='Escape'&&isTop())close()};
+  function close(){
+    modal.remove();
+    document.removeEventListener('keydown',onKey);
+    if(!document.querySelector('.admin-modal-backdrop'))document.body.classList.remove('modal-open');
+    document.getElementById(opener)?.focus();
+  }
   modal.querySelector('[data-close]').onclick=close;
   modal.addEventListener('click',e=>{if(e.target===modal)close()});
   document.addEventListener('keydown',onKey);
@@ -269,14 +277,77 @@ function openSellersModal(){
   });
 }
 
+/* Who bought one item, grouped the way the seller page groups it: one row per person,
+   per set of choices, AND per payment state. Somebody who ordered a Large and a Regular
+   wants to see both, not a single row of two that says nothing about which; the same
+   goes for one order paid and another still pending, which a single row would average
+   into a lie. Names are matched case-insensitively so one person who typed theirs
+   differently between orders is not split in half.
+
+   The product is matched by its exact name, the same key salesByProduct groups on, so
+   these quantities add up to the row this was opened from. */
+function buyersForProduct(name){
+  const rows=new Map();
+  for(const o of soldOrders()){
+    const status=o.payment_status||'Pending';
+    const paid=isPaidOrder(o);
+    for(const item of (o.order_items||[])){
+      if((item.product_name||'(unnamed product)')!==name)continue;
+      const who=String(o.customer_name||'').trim()||'Customer';
+      const variants=(item.variants||[]).map(v=>v&&v.label).filter(Boolean).join(', ');
+      const k=`${who.toLowerCase()}|${variants}|${status}`;
+      const at=new Date(o.created_at||0).getTime();
+      const row=rows.get(k)||{name:who,at:-Infinity,variants,status,paid,qty:0,amount:0};
+      const qty=Number(item.qty||0);
+      const {original,interest}=lineItemPrices(item);
+      row.qty+=qty;row.amount+=(original+interest)*qty;
+      /* The spelling shown is the one they used most recently. */
+      if(at>=row.at){row.at=at;row.name=who}
+      rows.set(k,row);
+    }
+  }
+  /* Unpaid first: those are the rows somebody still has to chase. */
+  return [...rows.values()].sort((a,b)=>(a.paid-b.paid)||(b.qty-a.qty)
+    ||a.name.localeCompare(b.name,'en')||a.variants.localeCompare(b.variants,'en'));
+}
+
+/* The three payment states as the same chips the seller page shows, so the shop owner
+   and the seller are reading the same thing. */
+const PAY_CHIP_CLASS={'Paid':'paid','Pending':'pending','Not Paid':'unpaid'};
+const payChipHtml=st=>`<span class="pay-chip pay-${PAY_CHIP_CLASS[st]||'pending'}">${esc(st)}</span>`;
+
+function openProductBuyersModal(name,opener){
+  const buyers=buyersForProduct(name);
+  /* The choices column only earns its place when something was actually chosen, or an
+     item with no variants gets a column of dashes. */
+  const anyVariants=buyers.some(b=>b.variants);
+  const paidQty=buyers.reduce((a,b)=>a+(b.paid?b.qty:0),0);
+  const owedQty=buyers.reduce((a,b)=>a+(b.paid?0:b.qty),0);
+  const owed=buyers.reduce((a,b)=>a+(b.paid?0:b.amount),0);
+  /* One person who ordered the same thing twice with different choices is two rows,
+     so this counts people rather than rows. */
+  const people=new Set(buyers.map(b=>b.name.toLowerCase())).size;
+  const row=b=>`<tr class="${b.paid?'':'buyers-row-unpaid'}"><td class="buyers-name">${esc(b.name)}</td>${anyVariants?`<td class="buyers-variants">${esc(b.variants)||'<span class="buyers-none">&mdash;</span>'}</td>`:''}<td class="buyers-pay">${payChipHtml(b.status)}</td><td class="num">${b.qty}</td></tr>`;
+  const body=buyers.length?`<p class="muted buyers-count">${paidQty} paid, sold to ${people} ${people===1?'customer':'customers'}</p>
+    <div class="buyers-table-wrap"><table class="buyers-table">
+      <thead><tr><th scope="col">Customer</th>${anyVariants?'<th scope="col">Variants</th>':''}<th scope="col">Payment Status</th><th scope="col" class="num">Quantity</th></tr></thead>
+      <tbody>${buyers.map(row).join('')}</tbody>
+    </table></div>`
+    :'<p class="muted" style="padding:20px 0">Nobody has ordered this yet.</p>';
+  openDashboardModal({id:'productBuyersModal',eyebrow:'All Sales',title:name,body,
+    footnote:owed?`${owedQty} of these are still Pending or Not Paid, worth ${money(owed)}, and are left out of the totals behind this window.`:'',
+    opener});
+}
+
 function openAllSalesModal(){
   const rows=salesByProduct();
   const t=rows.reduce((a,r)=>({qty:a.qty+r.qty,original:a.original+r.original,interest:a.interest+r.interest,overall:a.overall+r.overall}),{qty:0,original:0,interest:0,overall:0});
-  const body=rows.length?`<div class="table-wrap"><table class="table sales-table"><thead><tr><th>Item</th><th>Qty Sold</th><th>Original Price Total</th><th>Interest Total</th><th>Overall</th></tr></thead><tbody>${rows.map(r=>`<tr><td><strong>${esc(r.name)}</strong>${owedSub(r)}</td><td>${r.qty}</td><td>${money(r.original)}</td><td>${money(r.interest)}</td><td><strong>${money(r.overall)}</strong></td></tr>`).join('')}</tbody><tfoot><tr><td><strong>All items</strong></td><td><strong>${t.qty}</strong></td><td><strong>${money(t.original)}</strong></td><td><strong>${money(t.interest)}</strong></td><td><strong>${money(t.overall)}</strong></td></tr></tfoot></table></div>`
+  const body=rows.length?`<div class="table-wrap"><table class="table sales-table"><thead><tr><th>Item</th><th>Qty Sold</th><th>Original Price Total</th><th>Interest Total</th><th>Overall</th></tr></thead><tbody>${rows.map((r,i)=>`<tr><td><strong class="sales-item-name">${esc(r.name)}</strong><button type="button" class="who-btn" id="whoOrdered${i}" data-item="${esc(r.name)}">Who ordered</button>${owedSub(r)}</td><td>${r.qty}</td><td>${money(r.original)}</td><td>${money(r.interest)}</td><td><strong>${money(r.overall)}</strong></td></tr>`).join('')}</tbody><tfoot><tr><td><strong>All items</strong></td><td><strong>${t.qty}</strong></td><td><strong>${money(t.original)}</strong></td><td><strong>${money(t.interest)}</strong></td><td><strong>${money(t.overall)}</strong></td></tr></tfoot></table></div>`
     :'<p class="muted" style="padding:20px 0">No sales yet. Once customers place orders they will be broken down here.</p>';
-  openDashboardModal({id:'allSalesModal',eyebrow:'Overview',title:'All Sales',body,
+  const modal=openDashboardModal({id:'allSalesModal',eyebrow:'Overview',title:'All Sales',body,
     footnote:`Only orders marked Paid are counted; cancelled orders never are. Where an order line has no stored price split, the product's current original price and interest are used, so those rows move if you change a price later.${owedFootnote(rows)}`,
     opener:'openAllSales'});
+  modal.querySelectorAll('.who-btn').forEach(b=>b.onclick=()=>openProductBuyersModal(b.dataset.item||'',b.id));
 }
 
 function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal=salesByProduct().reduce((sum,r)=>sum+r.overall,0);/* Everyone who has either a product on the shelf or a past sale, so the folder
