@@ -327,6 +327,17 @@ function variantGroupsFor(productId){
 }
 /* Mirrors the sum place_order does. This one is only ever a preview: the price
    charged is the one the database works out for itself when the order lands. */
+/* Money, to the centavo. Adding prices in binary floating point does not land on a
+   round figure: a 90.00 size with a 5.05 and an 8.10 topping comes to
+   103.14999999999999, and place_order stores round(v_unit,2) = 103.15. Left alone,
+   the two disagree the next time the cart is checked, and the customer is bounced
+   back with "cart updated" over a difference of one hundred-billionth of a peso.
+   Every price this page works out goes through here, so it cannot drift from what
+   the database will charge. */
+const pesos=n=>Math.round((Number(n)||0)*100)/100;
+/* Comparing two amounts is the same question asked in whole centavos. */
+const samePesos=(a,b)=>Math.round((Number(a)||0)*100)===Math.round((Number(b)||0)*100);
+
 function priceWithVariants(product,groups,chosenIds){
   let base=Number(product.price||0),add=0;
   groups.forEach(g=>g.options.forEach(o=>{
@@ -334,7 +345,7 @@ function priceWithVariants(product,groups,chosenIds){
     if(g.price_mode==='absolute')base=Number(o.amount||0);
     else add+=Number(o.amount||0);
   }));
-  return Math.max(0,base+add);
+  return pesos(Math.max(0,base+add));
 }
 function missingRequired(groups,chosenIds){
   return groups.filter(g=>g.is_required&&!g.options.some(o=>chosenIds.includes(o.id)));
@@ -447,8 +458,12 @@ function validateCartAgainstLive(live){
     const expected=livePriceForLine(item,live);
     if(expected===null){
       invalid.push(`${item.name}: one of your choices is no longer available. Please open it and choose again.`);changed=true;
-    }else if(expected!==+item.price){
+    }else if(!samePesos(expected,item.price)){
       item.price=expected;invalid.push(`${item.name} price was updated.`);changed=true;
+    }else if(expected!==+item.price){
+      /* The same amount, written more precisely. Worth storing so the cart stops
+         carrying a stale figure, but not worth telling the customer about. */
+      item.price=expected;changed=true;
     }
   }
   if(changed)saveCart();
@@ -478,7 +493,7 @@ function livePriceForLine(item,live){
     if(!o||!g||o.is_available===false){gone=true;break}
     if(g.price_mode==='absolute')base=Number(o.amount||0);else add+=Number(o.amount||0);
   }
-  return gone?null:Math.max(0,base+add);
+  return gone?null:pesos(Math.max(0,base+add));
 }
 async function syncOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;const items=(order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',store_name:realSetting(state.data.settings?.business_name)||'Bilihan',pickup_location:realSetting(state.data.settings?.pickup_location)||'',store_email:realSetting(state.data.settings?.email)||''};await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(err){console.warn('Google Sheets sync failed:',err)}}
 function fileToBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');reader.onerror=()=>reject(new Error('Unable to read receipt file.'));reader.readAsDataURL(file)})}

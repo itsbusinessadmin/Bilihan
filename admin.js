@@ -1,5 +1,11 @@
 const GOOGLE_SHEETS_WEB_APP_URL = (window.BILIHAN_CONFIG||{}).GOOGLE_SHEETS_WEB_APP_URL || '';
-const A={section:'dashboard',session:null,orderFilter:'all',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const A={section:'dashboard',session:null,orderFilter:'all',orderSearch:'',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+
+/* ========================================================================
+   Setting up, signing in, and keeping the session
+   Nothing else runs until init() has a session and has confirmed it belongs to
+   somebody listed in admin_users.
+   ======================================================================== */
 function configured(){return !!window.BILIHAN_SUPABASE_CONFIGURED}
 /* The Supabase client stores the session in this browser (persistSession), so a
    device that has signed in once stays signed in until Log Out is used.
@@ -49,6 +55,12 @@ async function init(){
 }
 function renderSetup(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-logo.png" style="width:90px;border-radius:50%"><span class="eyebrow">Bilihan v3</span><h2>Connect Supabase</h2><p>Edit <strong>config.js</strong> once and paste your Supabase Project URL and anon public key, then reload this page.</p><p class="muted">Never paste a service_role key into the website.</p></div></div>`}
 function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword(d);if(error)return renderLogin(error.message);A.session=data.session;const status=await adminStatus();if(status==='no'){await db.auth.signOut();A.session=null;return renderLogin('This account is not listed as a Bilihan admin.')}if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');try{await loadAll()}catch(err){console.error(err);return renderReconnect(err?.message)}renderShell()}}
+
+/* ========================================================================
+   Reading the store
+   One round of queries fills A.data, and every screen draws from that rather than
+   fetching for itself.
+   ======================================================================== */
 async function loadAll(){const [p,c,o,s,t,sl,vg,vo]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single(),db.from('support_threads').select('*,support_messages(count)').order('last_message_at',{ascending:false}),db.from('seller_links').select('token').eq('id',1).single(),db.from('product_variant_groups').select('*'),db.from('product_variant_options').select('*')]);for(const r of [p,c,o,s])if(r.error)throw r.error;
   /* The support tables may not exist yet on a database that predates the chat, so
      a failure there must not stop the rest of Admin from loading. */
@@ -71,7 +83,14 @@ async function loadAll(){const [p,c,o,s,t,sl,vg,vo]=await Promise.all([db.from('
    order, their place in a long list. Instead the data is refetched and the current
    section repainted, and even the repaint is skipped whenever it would take
    something away from the person using the page. */
-const AUTO={ms:3000,timer:null,busy:false,fails:0};
+
+/* ========================================================================
+   Keeping the screen current
+   A poll that has nothing to report costs 32 characters: admin_data_version() is
+   asked first, and the data is only pulled down when its answer changes. What is
+   on screen is redrawn only when what it draws has moved.
+   ======================================================================== */
+const AUTO={ms:3000,timer:null,busy:false,fails:0,skip:0,print:''};
 /* Sections that own their markup: forms would lose unsaved edits to a repaint, the
    messages view runs its own poll and holds a reply box, and Security holds
    measurements it took itself. Their data still refreshes underneath. */
@@ -84,21 +103,58 @@ function autoRefreshPaused(){
   if(bulk.section)return true;                                 /* mid bulk-select: a repaint drops the ticks */
   const el=document.activeElement;
   if(el&&el.closest&&el.closest('form'))return true;           /* someone is typing */
+  /* Not every box sits in a form — the order search does not — and a repaint under a
+     typing finger takes the caret with it even when the text itself is restored. */
+  if(el&&/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName||''))return true;
   return false;
+}
+
+/* What the page is currently drawing. Rebuilding a whole section every three seconds
+   threw away the browser's layout work, dropped any text the reader had selected and
+   reset the section's own state, all to redraw figures that had not moved. Nothing is
+   left out of this on purpose: a projection of "the fields that matter" would quietly
+   stop the page updating the day somebody added a field and forgot to list it here. */
+const dataPrint=()=>{try{return JSON.stringify(A.data)}catch{return String(Date.now())}};
+
+/* What the database says its data is at, so a poll that has nothing to report costs
+   32 characters instead of every order with every line on it. */
+const VER={at:null,unavailable:false};
+async function dataVersion(){
+  if(VER.unavailable)return null;
+  try{
+    const {data,error}=await db.rpc('admin_data_version');
+    /* A database that predates this function, or a reply that is not a digest, means
+       fall back to fetching every time -- which is exactly what this page did before. */
+    if(error||typeof data!=='string'){VER.unavailable=true;return null}
+    return data;
+  }catch{VER.unavailable=true;return null}
 }
 
 async function autoRefresh(){
   if(AUTO.busy||!A.session||autoRefreshPaused())return;
+  /* An outage should not be hammered at the same rate as a healthy connection:
+     3s, 6s, 12s, 24s, up to a minute, and straight back to 3s on the first success. */
+  if(AUTO.skip>0){AUTO.skip--;return}
   AUTO.busy=true;
   try{
+    /* Read the version before the fetch, not after: if something changes while the
+       fetch is in flight, the next poll sees a difference and picks it up. Storing
+       the later value would lose that change until something else moved. */
+    const version=await dataVersion();
+    if(version&&version===VER.at){AUTO.fails=0;AUTO.skip=0;return}
     await loadAll();
-    AUTO.fails=0;
+    VER.at=version;
+    AUTO.fails=0;AUTO.skip=0;
     /* loadAll() is a round trip, so re-check: a modal may have opened or typing may
        have started while it was in flight. */
     if(autoRefreshPaused())return;
     paintNavBadge();
     if(A.section==='messages'){paintThreadList();paintSeen()}  /* receipts, without touching the reply box */
     if(AUTO_KEEP_MARKUP.has(A.section))return;
+    /* Nothing moved, so there is nothing to redraw. */
+    const print=dataPrint();
+    if(print===AUTO.print)return;
+    AUTO.print=print;
     const m=document.getElementById('adminMain');
     const paint={dashboard,products,categories,orders}[A.section];
     if(!m||!paint)return;
@@ -109,6 +165,7 @@ async function autoRefresh(){
     /* A blip must not drop the owner onto the reconnect screen — the next tick
        retries. Logged once per outage rather than every three seconds. */
     if(++AUTO.fails===1)console.warn('Bilihan admin: auto-refresh failed, will retry',err);
+    AUTO.skip=Math.min(2**AUTO.fails,20)-1;
   }finally{AUTO.busy=false}
 }
 
@@ -120,12 +177,18 @@ function startAutoRefresh(){
    of stale figures. */
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefresh()});
 
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');({dashboard,products,categories,orders,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
-/* ---- Sales reporting ----------------------------------------------------
-   Resolve the original-price / interest split for one order line. An order item
-   may carry its own original_price and interest recorded at order time; when it
-   does not, fall back to the product row, matched by id first and then by name
-   so renamed or deleted products still resolve. */
+
+/* ========================================================================
+   The shell: sidebar, and whichever section is showing
+   ======================================================================== */
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,categories,orders,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
+/* ========================================================================
+   Sales reporting
+   ======================================================================== */
+/* Resolve the original-price / interest split for one order line. An order item may
+   carry its own original_price and interest recorded at order time; when it does not,
+   fall back to the product row, matched by id first and then by name so renamed or
+   deleted products still resolve. */
 function lineItemPrices(item){
   const p=A.data.products.find(x=>x.id===item.product_id)
         ||A.data.products.find(x=>String(x.name||'').toLowerCase()===String(item.product_name||'').toLowerCase());
@@ -230,6 +293,10 @@ const owedFootnote=rows=>{
 
 /* Shared plumbing for the two dashboard folders: both are a table in a modal that
    closes on Escape, on a click outside it, and on its own close button. */
+
+/* ========================================================================
+   Dashboard windows: Sellers, All Sales, and who ordered one item
+   ======================================================================== */
 function openDashboardModal({id,eyebrow,title,body,footnote,opener}){
   document.getElementById(id)?.remove();
   document.body.insertAdjacentHTML('beforeend',`<div class="admin-modal-backdrop" id="${id}"><div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="${id}Title"><div class="admin-modal-header"><div><span class="eyebrow">${esc(eyebrow)}</span><h2 id="${id}Title">${esc(title)}</h2></div><button type="button" class="admin-modal-close" data-close="1" aria-label="Close">&times;</button></div>${body}${footnote?`<p class="muted" style="margin:14px 0 0;font-size:var(--admin-text-caption)">${footnote}</p>`:''}</div></div>`);
@@ -431,6 +498,10 @@ function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal
    every customer on every visit. Downscale and re-encode in the browser first.
    WebP is used so logos with transparency survive; if anything about the re-encode
    fails, or it would not actually be smaller, the original file is uploaded. */
+
+/* ========================================================================
+   Product photos: shrinking them before they are uploaded
+   ======================================================================== */
 const IMAGE_MAX_SIDE=1600, IMAGE_QUALITY=0.82, IMAGE_SKIP_BELOW=200*1024;
 /* Animated GIFs and SVGs skip the re-encode below, so nothing shrinks them: the
    file that is picked is the file every customer downloads on every visit. Cap
@@ -482,7 +553,10 @@ async function uploadImage(file,bucket='product-images'){
   if(error)throw error;
   return db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
 }
-/* ---- Bulk selection, shared by Products and Orders -------------------------
+/* ========================================================================
+   Bulk selection, shared by Products, Orders and Messages
+
+  
    Selection lives outside the render so that re-drawing a list (a search keystroke
    on Orders, a reload after saving) keeps the ticks. The checkbox markup is always
    in the DOM and revealed by a class, so toggling select mode never re-renders. */
@@ -539,12 +613,16 @@ function wireBulk(section,container,noun,remove){
   return sync;
 }
 
+
+/* ========================================================================
+   Products: the catalogue, and the add and edit forms
+   ======================================================================== */
 function products(m) {   m.innerHTML = `     <div class="products-page">        <div class="products-page-header">          <div>           <span class="eyebrow">Catalog</span>           <h2>Products</h2>         </div>          <div class="row-actions"><button type="button" id="bulkToggle">Select</button><button type="button" class="danger-btn" id="deleteAllProducts">Delete All Products</button><button type="button" class="primary-btn" id="openAddProduct">+ Add Product</button></div>        </div>         ${bulkBarHtml()}         <div class="panel table-wrap">          <table class="table">            <thead>             <tr>               <th></th>               <th>Product</th>               <th>Original Price</th><th>Interest</th><th>Total Price</th><th>Stock</th>               <th></th>             </tr>           </thead>            <tbody>              ${A.data.products.map(p => `               <tr>                  <td>                   ${bulkCheckboxHtml(p.id)}<img                     class="thumb"                     src="${esc(p.image_url || 'bilihan-logo.png')}"                     alt="${esc(p.name)}"                   >                 </td>                  <td>                   <strong>${esc(p.name)}</strong>                   <br>                    <small>                     ${esc(                       A.data.categories.find(                         c => c.id === p.category_id                       )?.name || ''                     )}${p.seller_name?` &middot; ${esc(p.seller_name)}`:''}                   </small>                 </td>                  <td>${money(p.original_price??p.price)}</td><td>${money(p.interest||0)}</td><td>${money(p.price)}</td><td>${p.stock}                 </td>                  <td>                    <div class="row-actions">                      <button                       onclick="editProduct('${p.id}')"                     >                       Edit                     </button>                      <button                       onclick="moveProduct('${p.id}',-1)"                       title="Move up"                     >                       ↑                     </button>                      <button                       onclick="moveProduct('${p.id}',1)"                       title="Move down"                     >                       ↓                     </button>                      <button                       onclick="deleteProduct('${p.id}')"                     >                       Delete                     </button>                    </div>                  </td>                </tr>             `).join('')}            </tbody>          </table>        </div>      </div>   `;    document.getElementById('openAddProduct').onclick=openAddProductModal;document.getElementById('deleteAllProducts').onclick=deleteAllProducts;
   wireBulk('products',m.querySelector('.products-page'),'product',async ids=>{
     const {error}=await db.from('products').delete().in('id',ids);
     if(error)throw error;
   });
-}   function openAddProductModal() {    const categoryOptions = A.data.categories     .map(c => `       <option value="${c.id}">         ${esc(c.name)}       </option>     `)     .join('');     const oldModal =     document.getElementById('addProductModal');    if (oldModal) {     oldModal.remove();   }     document.body.insertAdjacentHTML(     'beforeend',     `     <div       class="admin-modal-backdrop"       id="addProductModal"     >        <div         class="admin-modal"         role="dialog"         aria-modal="true"         aria-labelledby="addProductTitle"       >          <div class="admin-modal-header">            <div>             <span class="eyebrow">               Catalog             </span>              <h2 id="addProductTitle">               Add Product             </h2>           </div>            <button             type="button"             class="admin-modal-close"             id="closeAddProduct"             aria-label="Close"           >             ×           </button>          </div>           <form           id="addProductForm"           class="admin-form"         >            <label>             Product name              <input               name="name"               placeholder="Product name"               required             >           </label>             <label>             Description              <textarea               name="description"               rows="4"               placeholder="Description"               required             ></textarea>           </label>             <label>             Category              <select               name="category_id"               required             >               ${categoryOptions}             </select>           </label>             <label>Seller name<input name="seller_name" list="sellerNameList" placeholder="Who is selling this" autocomplete="off" required pattern=".*\\S.*" title="Type the name of whoever is selling this product."></label>${sellerNameListHtml()}<div class="edit-product-row">              <label>Original Price<input id="addOriginalPrice" name="original_price" type="number" min="0" step="0.01" placeholder="0.00" required></label><label>Interest<input id="addInterest" name="interest" type="number" min="0" step="0.01" value="0" required></label></div><div class="edit-product-row"><label>Total Price<input id="addTotalPrice" name="price" type="number" readonly></label><label>Stock                <input                 name="stock"                 type="number"                 min="0"                 step="1"                 placeholder="0"                 required               >             </label>            </div>             <label>             Product photo              <input               name="image_file"               type="file"               accept="image/*"             >           </label>             <label>             Image URL              <input               name="image_url"               placeholder="Or paste an image URL"             >           </label>             <div class="variant-editor" id="addVariantsMount"></div><label class="edit-available-row">              <input               type="checkbox"               name="is_available"               checked             >              <span>               <strong>Available</strong>                <small>                 Customers can order this product                 while stock is available.               </small>             </span>            </label>             <div class="admin-modal-actions">              <button               type="button"               class="modal-secondary-btn"               id="cancelAddProduct"             >               Cancel             </button>              <button               type="submit"               class="primary-btn"               id="saveAddProduct"             >               Save Product             </button>            </div>          </form>        </div>      </div>     `   );     const modal =     document.getElementById('addProductModal');    const form =     document.getElementById('addProductForm');    const closeButton =     document.getElementById('closeAddProduct');    const cancelButton=document.getElementById('cancelAddProduct');const readAddVariants=mountVariantEditor(document.getElementById('addVariantsMount'),[]);const aop=document.getElementById('addOriginalPrice'),ai=document.getElementById('addInterest'),at=document.getElementById('addTotalPrice');const calc=()=>at.value=(Number(aop.value||0)+Number(ai.value||0)).toFixed(2);aop.oninput=calc;ai.oninput=calc;calc();document.body.classList.add('modal-open');     const closeModal = () => {      modal.remove();      document.body.classList.remove(       'modal-open'     );      document.removeEventListener(       'keydown',       escapeModal     );    };     const escapeModal = e => {      if (e.key === 'Escape') {       closeModal();     }    };     closeButton.onclick = closeModal;    cancelButton.onclick = closeModal;     modal.addEventListener('click', e => {      if (e.target === modal) {       closeModal();     }    });     document.addEventListener(     'keydown',     escapeModal   );     form.onsubmit = async e => {      e.preventDefault();       const saveButton =       document.getElementById(         'saveAddProduct'       );       saveButton.disabled = true;      saveButton.textContent =       'Saving...';       const fd =       new FormData(form);       try {        const file =         fd.get('image_file');         let imageUrl =         String(           fd.get('image_url') || ''         ).trim();         if (file && file.size) {          imageUrl =           await uploadImage(file);        }         const stock =         Number(fd.get('stock'));         const row = {          name:           String(             fd.get('name') || ''           ).trim(),          description:           String(             fd.get('description') || ''           ).trim(),          category_id:fd.get('category_id'),seller_name:String(fd.get('seller_name')||'').trim(),original_price:Number(fd.get('original_price')||0),interest:Number(fd.get('interest')||0),price:Number(fd.get('original_price')||0)+Number(fd.get('interest')||0),          stock:           stock,          is_available:           fd.get('is_available') === 'on' &&           stock > 0,          image_url:           imageUrl || null,          sort_order:           A.data.products.length + 1        };         const { data: created, error } =
+}   function openAddProductModal() {    const categoryOptions = A.data.categories     .map(c => `       <option value="${c.id}">         ${esc(c.name)}       </option>     `)     .join('');     const oldModal =     document.getElementById('addProductModal');    if (oldModal) {     oldModal.remove();   }     document.body.insertAdjacentHTML(     'beforeend',     `     <div       class="admin-modal-backdrop"       id="addProductModal"     >        <div         class="admin-modal"         role="dialog"         aria-modal="true"         aria-labelledby="addProductTitle"       >          <div class="admin-modal-header">            <div>             <span class="eyebrow">               Catalog             </span>              <h2 id="addProductTitle">               Add Product             </h2>           </div>            <button             type="button"             class="admin-modal-close"             id="closeAddProduct"             aria-label="Close"           >             ×           </button>          </div>           <form           id="addProductForm"           class="admin-form"         >            <label>             Product name              <input               name="name"               placeholder="Product name"               required             >           </label>             <label>             Description              <textarea               name="description"               rows="4"               placeholder="Description"               required             ></textarea>           </label>             <label>             Category              <select               name="category_id"               required             >               ${categoryOptions}             </select>           </label>             <label>Seller name<input name="seller_name" list="sellerNameList" placeholder="Who is selling this" autocomplete="off" required pattern=".*\\S.*" title="Type the name of whoever is selling this product."></label>${sellerNameListHtml()}<div class="edit-product-row">              <label>Original Price<input id="addOriginalPrice" name="original_price" type="number" min="0" step="0.01" placeholder="0.00" required></label><label>Interest<input id="addInterest" name="interest" type="number" min="0" step="0.01" value="0" required></label></div><div class="edit-product-row"><label>Total Price<input id="addTotalPrice" name="price" type="number" readonly></label><label>Stock                <input                 name="stock"                 type="number"                 min="0"                 step="1"                 placeholder="0"                 required               >             </label>            </div>             <label>             Product photo              <input               name="image_file"               type="file"               accept="image/*"             >           </label>             <label>             Image URL              <input               name="image_url"               placeholder="Or paste an image URL"             >           </label>             <div class="variant-editor" id="addVariantsMount"></div><label class="edit-available-row">              <input               type="checkbox"               name="is_available"               checked             >              <span>               <strong>Available</strong>                <small>                 Customers can order this product                 while stock is available.               </small>             </span>            </label>             <div class="admin-modal-actions">              <button               type="button"               class="modal-secondary-btn"               id="cancelAddProduct"             >               Cancel             </button>              <button               type="submit"               class="primary-btn"               id="saveAddProduct"             >               Save Product             </button>            </div>          </form>        </div>      </div>     `   );     const modal =     document.getElementById('addProductModal');    const form =     document.getElementById('addProductForm');    const closeButton =     document.getElementById('closeAddProduct');    const cancelButton=document.getElementById('cancelAddProduct');const readAddVariants=mountVariantEditor(document.getElementById('addVariantsMount'),[]);const aop=document.getElementById('addOriginalPrice'),ai=document.getElementById('addInterest'),at=document.getElementById('addTotalPrice');const calc=()=>at.value=(Number(aop.value||0)+Number(ai.value||0)).toFixed(2);aop.oninput=calc;ai.oninput=calc;calc();document.body.classList.add('modal-open');     const closeModal = () => {      modal.remove();      document.body.classList.remove(       'modal-open'     );      document.removeEventListener(       'keydown',       escapeModal     );    };     const escapeModal = e => {      if (e.key === 'Escape') {       closeModal();     }    };     closeButton.onclick = closeModal;    cancelButton.onclick = closeModal;     modal.addEventListener('click', e => {      if (e.target === modal) {       closeModal();     }    });     document.addEventListener(     'keydown',     escapeModal   );     form.onsubmit = async e => {      e.preventDefault();       const saveButton =       document.getElementById(         'saveAddProduct'       );       saveButton.disabled = true;      saveButton.textContent =       'Saving...';       const fd =       new FormData(form);       try {        const file =         fd.get('image_file');         let imageUrl =         String(           fd.get('image_url') || ''         ).trim();         if (file && file.size) {          imageUrl =           await uploadImage(file);        }         const stock =         Number(fd.get('stock'));         const row = {          name:           String(             fd.get('name') || ''           ).trim(),          description:           String(             fd.get('description') || ''           ).trim(),          category_id:fd.get('category_id'),seller_name:String(fd.get('seller_name')||'').trim(),original_price:Number(fd.get('original_price')||0),interest:Number(fd.get('interest')||0),price:Number(fd.get('original_price')||0)+Number(fd.get('interest')||0),          stock:           stock,          is_available:           fd.get('is_available') === 'on' &&           stock > 0,          image_url:           imageUrl || null,          sort_order:           nextSortOrder(A.data.products)        };         const { data: created, error } =
         await db
           .from('products')
           .insert(row)
@@ -557,9 +635,37 @@ window.editProduct = id => {   const p = A.data.products.find(x => x.id === id);
 
        await loadAll();        closeModal();        renderShell();      } catch (err) {       console.error(err);        alert(         'Unable to update product: ' +         err.message       );        saveButton.disabled = false;       saveButton.textContent = 'Save Changes';     }   }; };
 window.deleteProduct=async id=>{if(!confirm('Delete this product?'))return;const {error}=await db.from('products').delete().eq('id',id);if(error)return alert(error.message);await loadAll();renderShell()};async function deleteAllProducts(){if(!A.data.products.length)return alert('There are no products to delete.');if(!confirm(`Delete ALL ${A.data.products.length} products? This cannot be undone.`))return;if(prompt('Type DELETE ALL PRODUCTS to confirm:')!=='DELETE ALL PRODUCTS')return alert('Delete All cancelled.');const {error}=await db.from('products').delete().in('id',A.data.products.map(p=>p.id));if(error)return alert(error.message);await loadAll();renderShell();alert('All products have been deleted.');}
-window.moveProduct=async(id,d)=>{const s=[...A.data.products].sort((a,b)=>a.sort_order-b.sort_order),i=s.findIndex(p=>p.id===id),j=i+d;if(j<0||j>=s.length)return;const a=s[i],b=s[j];const {error:e1}=await db.from('products').update({sort_order:b.sort_order}).eq('id',a.id);const {error:e2}=await db.from('products').update({sort_order:a.sort_order}).eq('id',b.id);if(e1||e2)return alert((e1||e2).message);await loadAll();renderShell()};
-function categories(m){m.innerHTML=`<span class="eyebrow">Menu structure</span><h2>Categories</h2><div class="admin-grid"><div class="panel">${A.data.categories.map(c=>`<div class="summary-row"><strong>${esc(c.name)}</strong><div class="row-actions"><button onclick="renameCategory('${c.id}')">Rename</button><button onclick="moveCategory('${c.id}',-1)">↑</button><button onclick="moveCategory('${c.id}',1)">↓</button><button onclick="deleteCategory('${c.id}')">Delete</button></div></div>`).join('')}</div><form id="catForm" class="panel admin-form"><input name="name" placeholder="New category name" required><button class="primary-btn">Add Category</button></form></div>`;document.getElementById('catForm').onsubmit=async e=>{e.preventDefault();const name=new FormData(e.currentTarget).get('name');const {error}=await db.from('categories').insert({name,sort_order:A.data.categories.length+1});if(error)return alert(error.message);await loadAll();renderShell()}}
-window.renameCategory=async id=>{const c=A.data.categories.find(x=>x.id===id),n=prompt('Category name',c.name);if(!n)return;const {error}=await db.from('categories').update({name:n}).eq('id',id);if(error)return alert(error.message);await loadAll();renderShell()};window.deleteCategory=async id=>{if(A.data.products.some(p=>p.category_id===id))return alert('Move or delete products in this category first.');if(!confirm('Delete category?'))return;const {error}=await db.from('categories').delete().eq('id',id);if(error)return alert(error.message);await loadAll();renderShell()};window.moveCategory=async(id,d)=>{const s=[...A.data.categories].sort((a,b)=>a.sort_order-b.sort_order),i=s.findIndex(c=>c.id===id),j=i+d;if(j<0||j>=s.length)return;const a=s[i],b=s[j];await db.from('categories').update({sort_order:b.sort_order}).eq('id',a.id);await db.from('categories').update({sort_order:a.sort_order}).eq('id',b.id);await loadAll();renderShell()};
+/* Renumber the list rather than swapping two values. Two rows can end up sharing a
+   sort_order -- deleting one from the middle and adding another was enough, because a
+   new row was numbered by how many there were rather than by the highest number in
+   use -- and swapping two equal numbers moves nothing, so the arrows looked broken
+   with no sign of why. Writing the settled order back is correct from any starting
+   state, and only the rows whose number actually changes are sent. */
+async function reorder(table,list,id,delta){
+  const rows=[...list].sort((a,b)=>(Number(a.sort_order||0)-Number(b.sort_order||0))||String(a.id).localeCompare(String(b.id)));
+  const i=rows.findIndex(x=>x.id===id),j=i+delta;
+  if(i<0||j<0||j>=rows.length)return;
+  rows.splice(j,0,rows.splice(i,1)[0]);
+  for(const [n,row] of rows.entries()){
+    if(Number(row.sort_order)===n+1)continue;
+    const {error}=await db.from(table).update({sort_order:n+1}).eq('id',row.id);
+    if(error)return alert(error.message);
+  }
+  await loadAll();renderShell();
+}
+/* One past the highest in use, so a new row never lands on top of an existing one. */
+const nextSortOrder=list=>Math.max(0,...(list||[]).map(r=>Number(r.sort_order)||0))+1;
+window.moveProduct=(id,d)=>reorder('products',A.data.products,id,d);
+
+/* ========================================================================
+   Categories
+   ======================================================================== */
+function categories(m){m.innerHTML=`<span class="eyebrow">Menu structure</span><h2>Categories</h2><div class="admin-grid"><div class="panel">${A.data.categories.map(c=>`<div class="summary-row"><strong>${esc(c.name)}</strong><div class="row-actions"><button onclick="renameCategory('${c.id}')">Rename</button><button onclick="moveCategory('${c.id}',-1)">↑</button><button onclick="moveCategory('${c.id}',1)">↓</button><button onclick="deleteCategory('${c.id}')">Delete</button></div></div>`).join('')}</div><form id="catForm" class="panel admin-form"><input name="name" placeholder="New category name" required><button class="primary-btn">Add Category</button></form></div>`;document.getElementById('catForm').onsubmit=async e=>{e.preventDefault();const name=new FormData(e.currentTarget).get('name');const {error}=await db.from('categories').insert({name,sort_order:nextSortOrder(A.data.categories)});if(error)return alert(error.message);await loadAll();renderShell()}}
+window.renameCategory=async id=>{const c=A.data.categories.find(x=>x.id===id),n=prompt('Category name',c.name);if(!n)return;const {error}=await db.from('categories').update({name:n}).eq('id',id);if(error)return alert(error.message);await loadAll();renderShell()};window.deleteCategory=async id=>{if(A.data.products.some(p=>p.category_id===id))return alert('Move or delete products in this category first.');if(!confirm('Delete category?'))return;const {error}=await db.from('categories').delete().eq('id',id);if(error)return alert(error.message);await loadAll();renderShell()};window.moveCategory=(id,d)=>reorder('categories',A.data.categories,id,d);
+
+/* ========================================================================
+   Orders: the list, one order's detail, and the Google Sheet it mirrors
+   ======================================================================== */
 const PAY_COLORS={Paid:{bg:'#dcfce7',text:'#166534',border:'#86efac'},Pending:{bg:'#fef9c3',text:'#854d0e',border:'#fde047'},'Not Paid':{bg:'#fee2e2',text:'#991b1b',border:'#fca5a5'}};
 function paySelectHtml(o){const st=o.payment_status||'Pending';const c=PAY_COLORS[st]||PAY_COLORS.Pending;return `<select onchange="updatePaymentStatus('${o.id}',this.value)" style="font-weight:700;padding:4px 8px;border-radius:8px;border:1px solid ${c.border};background:${c.bg};color:${c.text};cursor:pointer">${Object.keys(PAY_COLORS).map(k=>`<option value="${k}" ${k===st?'selected':''}>${k}</option>`).join('')}</select>`}
 /* The orders table shows only what you scan for. Everything else lives here,
@@ -614,9 +720,11 @@ function openOrderDetails(id){
 }
 
 function orders(m){
-  const totals=A.data.orders.reduce((acc,o)=>{const st=o.payment_status||'Pending';acc.sell+=+o.total;if(st==='Paid')acc.paid+=+o.total;else acc.unpaid+=+o.total;(o.order_items||[]).forEach(i=>{const q=Number(i.qty||0);const {original,interest}=lineItemPrices(i);acc.original+=original*q;acc.interest+=interest*q});return acc},{sell:0,paid:0,unpaid:0,original:0,interest:0});
+  /* soldOrders(), not every order: a cancelled order is not a sale, and counting it
+     here made this page disagree with the dashboard about how much the shop had taken. */
+  const totals=soldOrders().reduce((acc,o)=>{const st=o.payment_status||'Pending';acc.sell+=+o.total;if(st==='Paid')acc.paid+=+o.total;else acc.unpaid+=+o.total;(o.order_items||[]).forEach(i=>{const q=Number(i.qty||0);const {original,interest}=lineItemPrices(i);acc.original+=original*q;acc.interest+=interest*q});return acc},{sell:0,paid:0,unpaid:0,original:0,interest:0});
   m.innerHTML=`<div class="orders-sticky"><div class="page-head"><div><span class="eyebrow">Customer orders</span><h2>Orders</h2></div><div class="row-actions"><button type="button" id="bulkToggle">Select</button><button type="button" class="danger-btn" id="deleteAllOrders">Delete All Orders</button></div></div><div class="cards orders-cards"><div class="metric metric-money"><small>Total Sell</small><h2>${money(totals.sell)}</h2></div><div class="metric metric-money" style="border-color:#86efac"><small>Total Paid</small><h2 style="color:#166534">${money(totals.paid)}</h2></div><div class="metric metric-money" style="border-color:#fca5a5"><small>Total Unpaid</small><h2 style="color:#991b1b">${money(totals.unpaid)}</h2></div><div class="metric metric-money"><small>Total Interest</small><h2>${money(totals.interest)}</h2></div><div class="metric metric-money"><small>Total Original Price</small><h2>${money(totals.original)}</h2></div></div>
-  <div class="panel"><input id="orderSearch" placeholder="Search name, phone, order number" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
+  <div class="panel"><input id="orderSearch" placeholder="Search name, phone, order number" value="${esc(A.orderSearch||'')}" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
   <div id="payFilters" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">${['all','Paid','Pending','Not Paid'].map(f=>{const active=A.orderFilter===f;const c=f==='all'?null:PAY_COLORS[f];const bg=active?(c?c.bg:'var(--text)'):'transparent';const text=active?(c?c.text:'var(--bg)'):'var(--text)';const border=c?c.border:'var(--line)';return `<button data-f="${f}" style="padding:6px 14px;border-radius:999px;border:1px solid ${border};background:${bg};color:${text};font-weight:600;cursor:pointer">${f==='all'?'All':f}</button>`}).join('')}</div>
   </div></div>
   ${bulkBarHtml()}
@@ -625,7 +733,7 @@ function orders(m){
   const draw=()=>{
     const t=document.getElementById('orderSearch').value.toLowerCase();
     const rows=A.data.orders.filter(o=>{
-      const matchesSearch=`${o.order_code} ${o.customer_name} ${o.phone||''}`.toLowerCase().includes(t);
+      const matchesSearch=`${o.order_code||''} ${o.customer_name||''} ${o.phone||''}`.toLowerCase().includes(t);
       const matchesFilter=A.orderFilter==='all'||((o.payment_status||'Pending')===A.orderFilter);
       return matchesSearch&&matchesFilter;
     });
@@ -640,7 +748,9 @@ function orders(m){
     if(error)throw error;
     for(const code of codes)await deleteOrderFromGoogleSheet(code);
   });
-  document.getElementById('orderSearch').oninput=()=>{draw();syncBulk()};
+  /* Held in state rather than only in the box: this page is redrawn whenever the
+     orders change underneath, and the search term has to survive that. */
+  document.getElementById('orderSearch').oninput=e=>{A.orderSearch=e.target.value;draw();syncBulk()};
   draw();syncBulk();
 }
 async function syncAdminOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL||!order)return;/* Same shape the storefront writes. Without the choices, marking an order Paid
@@ -650,7 +760,10 @@ window.updatePaymentStatus=async(id,status)=>{const {error}=await db.from('order
 async function deleteOrderFromGoogleSheet(orderCode){try{if(!GOOGLE_SHEETS_WEB_APP_URL||!orderCode)return;await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'delete_order',order_code:orderCode})})}catch(err){console.warn('Google Sheets/Drive delete sync failed:',err)}}
 async function deleteAllOrdersFromGoogleServices(){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'delete_all_orders'})})}catch(err){console.warn('Google Sheets/Drive bulk delete sync failed:',err)}}
 window.deleteOrder=async id=>{const o=A.data.orders.find(x=>x.id===id);if(!o)return alert('Order not found.');if(!confirm(`Delete Order #${o.order_code} permanently? This will also delete its Google Sheet row and matching payment receipt from Google Drive.`))return;const {error}=await db.from('orders').delete().eq('id',id);if(error)return alert(error.message);await deleteOrderFromGoogleSheet(o.order_code);await loadAll();renderShell()};async function deleteAllOrders(){if(!A.data.orders.length)return alert('There are no orders to delete.');if(!confirm(`Delete ALL ${A.data.orders.length} customer orders? This cannot be undone. It will also remove all matching Google Sheet rows and payment receipt files from Google Drive.`))return;if(prompt('Type DELETE ALL ORDERS to confirm:')!=='DELETE ALL ORDERS')return alert('Delete All cancelled.');const ids=A.data.orders.map(o=>o.id);const {error}=await db.from('orders').delete().in('id',ids);if(error)return alert(error.message);await deleteAllOrdersFromGoogleServices();A.orderFilter='all';await loadAll();renderShell();alert('All customer orders, matching Google Sheet rows, and matching Google Drive receipts have been deleted.');}
-/* ---- Customer messages -----------------------------------------------------
+/* ========================================================================
+   Customer messages
+
+  
    One thread per customer, so several orders from the same person stay in a
    single conversation. Threads arrive with loadAll(); the messages of the open
    thread are fetched on demand and polled while this section is on screen. */
@@ -834,9 +947,17 @@ function messages(m){
   stopMessagePolling();
   /* 4s rather than 12s: this is what carries the customer's read receipt while the
      admin has focus in the reply box, which pauses the page-wide refresh. */
-  MSG.timer=setInterval(()=>{if(!document.hidden&&A.section==='messages')refreshThreads()},4000);
+  MSG.timer=setInterval(()=>{
+    /* Only while the page-wide refresh has stood down, which is the case this exists
+       for. Running it regardless fetched every thread twice over. */
+    if(!document.hidden&&A.section==='messages'&&autoRefreshPaused())refreshThreads();
+  },4000);
 }
 
+
+/* ========================================================================
+   Settings, Appearance, and Security
+   ======================================================================== */
 function settings(m){
   const s=A.data.settings;
 
@@ -1062,7 +1183,10 @@ function settings(m){
   };
 }
 
-/* ---- Capacity and latency (Security tab) ------------------------------------
+/* ========================================================================
+   Capacity and latency, for the Security tab
+
+  
    Sizes come from admin_usage(), which reads pg_database_size and the storage
    objects table, so the numbers are the real ones rather than an estimate.
    Plan limits are not readable from the browser, so they come from config.js. */
@@ -1252,24 +1376,22 @@ if(window.db){
     if(event==='SIGNED_OUT'&&!A.session)renderLogin();
   });
 }
-init().catch(e=>{console.error(e);app.innerHTML=`<div class="login-wrap"><div class="login-card"><h2>Bilihan Admin</h2><p>${esc(e.message)}</p></div></div>`});
-/* =========================================================================
-   Product variants
+/* ========================================================================
+   Variants: what a product asks the customer
 
-   A group is one question the customer answers ("Size", "Toppings"); an option
-   is one answer. The group's type comes from this list rather than a text box,
-   so two products never end up with "Toppings" and "toppings", and every type
-   arrives with sensible defaults and a starting set of options to edit.
+   A group is one question ("Size", "Toppings"); an option is one answer. Every
+   variant is the shop's own: the name is typed, and three switches decide what
+   the amounts mean and how the customer answers.
 
    price_mode is what an option's amount means:
      add       the amount is added to the product's price  (a topping)
-     absolute  the amount IS the price                     (a flavour sold at its own price)
-   ========================================================================= */
-/* Every variant is the shop's own. The name is typed, and the three switches
-   below it decide what the amounts mean and how the customer answers. */
+     absolute  the amount IS the price                     (a flavour at its own price)
 
-/* One editor, mounted into both the Add and the Edit product form. It owns a
-   plain array; nothing reaches the database until the form is saved. */
+   The editor below is mounted into both the Add and the Edit product form and owns
+   a plain array; nothing reaches the database until the form is saved, and then it
+   goes through set_product_variants() in one transaction, so a failure leaves the
+   product with the choices it already had rather than none at all.
+   ======================================================================== */
 function mountVariantEditor(mount,groups){
   /* Saved variants start folded away: a product with four of them is otherwise a
      wall of controls when all the owner wanted was to glance at the list. */
@@ -1368,19 +1490,20 @@ function mountVariantEditor(mount,groups){
 /* Replace a product's variants wholesale. Simpler than working out a diff, and
    the options are only ever read through place_order, which rejects an id it
    does not recognise with a "please pick again" rather than a wrong price. */
+/* One call, one transaction. This used to be a delete and two inserts from here: a
+   blip between them left the product with no choices at all, and the options were
+   attached by trusting the insert to hand back ids in the order they were sent,
+   which nothing promises. If set_product_variants fails now, the product keeps the
+   choices it already had. */
 async function saveVariants(productId,groups){
-  const {error:delErr}=await db.from('product_variant_groups').delete().eq('product_id',productId);
-  if(delErr)throw delErr;
-  if(!groups.length)return;
-  const {data:saved,error}=await db.from('product_variant_groups')
-    .insert(groups.map((g,i)=>({product_id:productId,variant_type:g.variant_type||'custom',label:g.label,
-      price_mode:g.price_mode,selection:g.selection,is_required:!!g.is_required,sort_order:i+1})))
-    .select('id');
+  const {data,error}=await db.rpc('set_product_variants',{
+    p_product_id:productId,
+    p_groups:groups.map(g=>({variant_type:g.variant_type||'custom',label:g.label,
+      price_mode:g.price_mode,selection:g.selection,is_required:!!g.is_required,
+      options:(g.options||[]).map(o=>({label:o.label,amount:Number(o.amount||0)}))}))
+  });
   if(error)throw error;
-  const rows=[];
-  saved.forEach((row,i)=>groups[i].options.forEach((o,oi)=>
-    rows.push({group_id:row.id,label:o.label,amount:Number(o.amount||0),sort_order:oi+1})));
-  if(rows.length){const {error:optErr}=await db.from('product_variant_options').insert(rows);if(optErr)throw optErr}
+  if(!data?.ok)throw new Error(data?.error||'We could not save the choices for this product.');
 }
 
 function variantsForProduct(productId){
@@ -1388,3 +1511,8 @@ function variantsForProduct(productId){
     .sort((a,b)=>a.sort_order-b.sort_order)
     .map(g=>({...g,options:(A.data.variantOptions||[]).filter(o=>o.group_id===g.id).sort((a,b)=>a.sort_order-b.sort_order)}));
 }
+
+/* ========================================================================
+   Start
+   ======================================================================== */
+init().catch(e=>{console.error(e);app.innerHTML=`<div class="login-wrap"><div class="login-card"><h2>Bilihan Admin</h2><p>${esc(e.message)}</p></div></div>`});
