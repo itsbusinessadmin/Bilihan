@@ -374,6 +374,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .seller-caret{display:inline-block;width:12px;flex:0 0 auto;color:var(--admin-muted);font-size:1.1rem;line-height:1;transition:transform .16s var(--admin-ease-out)}
 .sellers-table .seller-toggle[aria-expanded="true"] .seller-caret{transform:rotate(90deg)}
 .seller-row-sub{display:block;margin-top:2px;padding-left:20px;color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:400}
+/* Money the shop has not taken yet. Never added to a total, always said out loud. */
+.owed-sub{display:block;margin-top:2px;color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:400;font-variant-numeric:tabular-nums}
+.seller-row-sub+.owed-sub{padding-left:20px}
 .sellers-table .seller-items-row>td{padding:0;background:var(--admin-soft);border-bottom:1px solid var(--admin-line)}
 .seller-subtable{width:100%;margin:0;background:transparent;border-left:3px solid color-mix(in srgb,var(--admin-gold) 55%,transparent)}
 .seller-subtable thead th{background:transparent;color:var(--admin-muted);font-size:var(--admin-text-caption)}

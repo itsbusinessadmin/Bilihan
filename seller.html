@@ -48,12 +48,18 @@
       <div class="seller-metric"><small>Seller price total</small><strong id="sellerOriginal">₱0.00</strong></div>
       <div class="seller-metric"><small>Interest total</small><strong id="sellerInterest">₱0.00</strong></div>
       <div class="seller-metric seller-metric-lead"><small>Overall total</small><strong id="sellerOverall">₱0.00</strong></div>
+      <!-- Shown only when something is actually owed: a permanent ₱0.00 here would
+           read as a problem rather than as nothing to report. -->
+      <div class="seller-metric seller-metric-owed hidden" id="sellerOwedCard"><small>Still unpaid</small><strong id="sellerOwed">₱0.00</strong></div>
     </section>
 
     <!-- One folder per seller, filled in by seller.js. Empty until the first reply
          so the page never flashes a table head with nothing under it. -->
     <div id="sellerBody"></div>
   </main>
+
+  <!-- One seller's sales, opened from their card. -->
+  <dialog id="sellerDialog" class="modal"></dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
   <script src="config.js" defer></script>

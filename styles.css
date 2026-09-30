@@ -806,32 +806,41 @@ body.store-closed{overflow:hidden}
 /* The seller's own totals row, closing their table off. */
 .seller-table tfoot td{background:var(--card-soft);border-top:1px solid var(--line-strong);border-bottom:0;font-weight:700}
 
-/* ---------- Seller folders ----------
-   One folder per seller. Shut, it is a single line with their overall on the right;
-   open, it is every item of theirs and who bought each one. Everything a folder needs
-   arrives with the page, so opening one is instant and costs no extra request. */
-.seller-folders{display:grid;gap:var(--space-md)}
-.seller-folder{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden}
-.seller-folder.is-open{border-color:var(--line-strong);box-shadow:var(--shadow-xs)}
-.seller-folder-heading{margin:0;font-size:inherit;font-weight:inherit}
-.seller-folder-head{display:flex;align-items:center;gap:var(--space-sm);width:100%;padding:var(--space-md) var(--space-md);border:0;background:none;color:var(--text);font:inherit;text-align:left;cursor:pointer}
-.seller-folder-head:hover{background:var(--card-soft)}
-.seller-folder-caret{flex:0 0 auto;width:14px;color:var(--muted);font-size:1.15rem;line-height:1;transition:transform .16s var(--ease-out,ease)}
-.seller-folder-head[aria-expanded="true"] .seller-folder-caret{transform:rotate(90deg)}
-.seller-folder-name{flex:1 1 auto;min-width:0;font-size:1.05rem;font-weight:700;letter-spacing:-.01em;overflow-wrap:anywhere}
-.seller-folder-figs{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:1px}
-.seller-folder-qty{color:var(--muted);font-size:var(--text-caption);white-space:nowrap}
-.seller-folder-overall{font-size:1.05rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap}
-.seller-folder-body{display:grid;gap:var(--space-lg);padding:0 var(--space-md) var(--space-md);border-top:1px solid var(--line)}
-.seller-folder-body>.seller-table-wrap{margin-top:var(--space-md)}
+/* ---------- Seller cards ----------
+   One card per seller, and that is all the list ever shows: name, what they have been
+   paid for, and what is still owed. Tapping one opens their sales in a window, so a
+   shop with a dozen sellers stays one screen you can scan instead of a page that
+   grows every time somebody looks at it. */
+.seller-cards{display:grid;gap:var(--space-sm)}
+.seller-card{display:flex;align-items:center;gap:var(--space-md);width:100%;padding:var(--space-md);border:1px solid var(--line);border-radius:var(--radius);background:var(--card);color:var(--text);font:inherit;text-align:left;cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease,transform .1s ease}
+.seller-card:hover{border-color:var(--line-strong);box-shadow:var(--shadow-xs)}
+.seller-card:active{transform:scale(.995)}
+.seller-card-main{flex:1 1 auto;min-width:0}
+.seller-card-name{display:block;font-size:1.05rem;font-weight:700;letter-spacing:-.01em;overflow-wrap:anywhere}
+.seller-card-sub{display:block;margin-top:1px;color:var(--muted);font-size:var(--text-caption)}
+.seller-card-figs{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:1px}
+.seller-card-overall{font-size:1.05rem;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap}
+.seller-card-owed{color:var(--muted);font-size:var(--text-caption);font-variant-numeric:tabular-nums;white-space:nowrap}
+.seller-card-go{flex:0 0 auto;color:var(--muted);font-size:1.25rem;line-height:1}
+
+/* One seller's sales, in a window over the list. */
+.seller-dialog-title{margin:0 0 2px;padding-right:48px;font-size:1.25rem;letter-spacing:-.02em;overflow-wrap:anywhere}
+.seller-dialog-sub{margin:0 0 var(--space-md);color:var(--muted);font-size:var(--text-caption);font-variant-numeric:tabular-nums}
+.seller-dialog-owed{color:var(--text)}
+#sellerDialog .seller-table-wrap{margin-bottom:var(--space-sm)}
+.seller-item-buyers{margin-top:var(--space-lg)}
 .seller-item-heading{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 var(--space-sm);color:var(--muted);font-size:var(--text-caption);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
 .seller-item-heading span{color:var(--text);text-transform:none;letter-spacing:0;overflow-wrap:anywhere}
 .seller-item-empty{margin:0;color:var(--muted);font-size:var(--text-caption)}
+/* Money the shop has not taken yet. Said plainly, and never folded into a total. */
+.seller-owed-note{margin:var(--space-sm) 0 0;color:var(--muted);font-size:var(--text-caption)}
+.buyers-table .buyers-row-unpaid td{opacity:.62}
+.seller-metric-owed strong{color:var(--muted)}
 /* Shown only while the database has not been updated to record who sells what. */
 .seller-notice{margin:0 0 var(--space-md);padding:var(--space-md);border:1px solid var(--line);border-radius:var(--radius);background:var(--card-soft);color:var(--muted);font-size:var(--text-caption)}
 .seller-notice code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .seller-empty-block{padding:var(--space-lg);border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
-@media (prefers-reduced-motion:reduce){.seller-folder-caret{transition:none}}
+@media (prefers-reduced-motion:reduce){.seller-card{transition:none}.seller-card:active{transform:none}}
 .buyers-table-wrap{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
 .buyers-table{width:100%;border-collapse:collapse;font-size:var(--text-secondary)}
 .buyers-table th,.buyers-table td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line)}
@@ -879,11 +888,9 @@ body.store-closed{overflow:hidden}
 }
 .seller-empty{color:var(--muted);text-align:center;font-weight:500}
 @media (max-width:480px){
-  .seller-folder-head{padding:var(--space-sm) var(--space-md)}
-  .seller-folder-name{font-size:1rem}
-  .seller-folder-overall{font-size:1rem}
-  .seller-folder-body{gap:var(--space-md);padding:0 var(--space-sm) var(--space-sm)}
-  .seller-folder-body>.seller-table-wrap{margin-top:var(--space-sm)}
+  .seller-card{padding:var(--space-sm) var(--space-md);gap:var(--space-sm)}
+  .seller-card-name{font-size:1rem}
+  .seller-card-overall{font-size:1rem}
 }
 @media (max-width:420px){
   .seller-logo{width:120px}
