@@ -507,6 +507,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .variant-opt-remove{min-height:var(--admin-touch);border:1px solid var(--admin-line);border-radius:10px;background:var(--admin-card);color:var(--admin-danger);cursor:pointer;font-size:1.1rem;line-height:1}
 .variant-opt-remove:hover,.variant-remove:hover{border-color:var(--admin-danger)}
 .variant-add-option{width:100%}
+.variant-zero-hint{margin:6px 0 0;font-size:var(--admin-text-caption);line-height:1.45}
 @media (max-width:560px){
   .variant-head{flex-direction:column}
   .variant-add{width:100%}

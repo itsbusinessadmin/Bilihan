@@ -338,12 +338,19 @@ const pesos=n=>Math.round((Number(n)||0)*100)/100;
 /* Comparing two amounts is the same question asked in whole centavos. */
 const samePesos=(a,b)=>Math.round((Number(a)||0)*100)===Math.round((Number(b)||0)*100);
 
+/* An option left at zero changes nothing, whichever mode its group is in. It only
+   adds to the price, or stands in for it, when the shop has actually put an amount
+   on it. A whole-price flavour left at 0 used to replace the price with 0, and the
+   product was sold for nothing. place_order applies the same rule, so what this
+   page shows is what the customer is charged. */
+const hasAmount=o=>Number(o?.amount)>0;
+
 function priceWithVariants(product,groups,chosenIds){
   let base=Number(product.price||0),add=0;
   groups.forEach(g=>g.options.forEach(o=>{
-    if(!chosenIds.includes(o.id))return;
-    if(g.price_mode==='absolute')base=Number(o.amount||0);
-    else add+=Number(o.amount||0);
+    if(!chosenIds.includes(o.id)||!hasAmount(o))return;
+    if(g.price_mode==='absolute')base=Number(o.amount);
+    else add+=Number(o.amount);
   }));
   return pesos(Math.max(0,base+add));
 }
@@ -373,7 +380,7 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
       <div class="variant-choices">${g.options.map(o=>`<label class="variant-choice">
         <input type="${g.selection==='multi'?'checkbox':'radio'}" name="vg-${esc(g.id)}" value="${esc(o.id)}" data-group="${esc(g.id)}">
         <span class="variant-choice-label">${esc(o.label)}</span>
-        <span class="variant-choice-price">${g.price_mode==='absolute'?money(o.amount):(Number(o.amount)>0?'+'+money(o.amount):'')}</span>
+        ${hasAmount(o)?`<span class="variant-choice-price">${g.price_mode==='absolute'?'':'+'}${money(o.amount)}</span>`:''}
       </label>`).join('')}</div></fieldset>`).join('');
     $('variantPicker').querySelectorAll('input').forEach(input=>{
       /* click, not change: tapping an already-picked radio fires no change event,
@@ -491,7 +498,8 @@ function livePriceForLine(item,live){
     const o=live.options.find(x=>x.id===id);
     const g=o&&live.groups.find(x=>x.id===o.group_id&&x.product_id===p.id);
     if(!o||!g||o.is_available===false){gone=true;break}
-    if(g.price_mode==='absolute')base=Number(o.amount||0);else add+=Number(o.amount||0);
+    if(!hasAmount(o))continue;
+    if(g.price_mode==='absolute')base=Number(o.amount);else add+=Number(o.amount);
   }
   return gone?null:pesos(Math.max(0,base+add));
 }

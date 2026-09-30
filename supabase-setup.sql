@@ -313,6 +313,7 @@ declare
   v_unit numeric(12,2);
   v_addon numeric(12,2);
   v_absolute numeric(12,2);
+  v_group_addon numeric(12,2);
   v_known integer;
   v_unit_original numeric(12,2);
   v_unit_interest numeric(12,2);
@@ -441,22 +442,29 @@ begin
         return jsonb_build_object('ok',false,'error','Please choose only one ' || lower(v_group.label) || ' for ' || v_product.name || '.');
       end if;
 
-      select coalesce(sum(case when v_group.price_mode = 'add' then o.amount else 0 end),0),
-             max(case when v_group.price_mode = 'absolute' then o.amount else null end),
+      -- An option left at zero changes nothing, in either mode. For an add-on that was
+      -- always so; for a whole-price option it was not -- a flavour whose price was
+      -- left at 0 replaced the product's price with 0, and the product was sold for
+      -- nothing. Only an amount above zero adds to the price or stands in for it.
+      --
+      -- The subtotal has its own numeric variable. It used to borrow v_picked, an
+      -- integer, which rounded every add-on to the whole peso: a 5.05 topping was
+      -- charged as 5.00 while the cart showed 5.05.
+      select coalesce(sum(case when v_group.price_mode = 'add' and o.amount > 0 then o.amount else 0 end),0),
+             max(case when v_group.price_mode = 'absolute' and o.amount > 0 then o.amount else null end),
              coalesce(jsonb_agg(jsonb_build_object('group',v_group.label,'label',o.label,
                                                    'amount',o.amount,'price_mode',v_group.price_mode)
                       order by o.sort_order, o.label), '[]'::jsonb)
-        into v_picked, v_absolute, v_group_rows
+        into v_group_addon, v_absolute, v_group_rows
         from public.product_variant_options o
        where o.group_id = v_group.id and o.id = any(v_option_ids);
-      -- v_picked is reused here as the group's add-on subtotal.
-      v_addon := v_addon + coalesce(v_picked,0);
+      v_addon := v_addon + coalesce(v_group_addon,0);
       if v_absolute is not null then v_unit := v_absolute; end if;
       v_chosen := v_chosen || v_group_rows;
     end loop;
 
-    -- An 'absolute' option replaces the product's price; add-ons stack on top of
-    -- whichever of the two is in play.
+    -- An 'absolute' option priced above zero replaces the product's price; add-ons
+    -- stack on top of whichever of the two is in play.
     v_unit := coalesce(v_unit, v_product.price) + v_addon;
     if v_unit < 0 then v_unit := 0; end if;
     v_unit := round(v_unit, 2);
