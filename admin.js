@@ -1403,7 +1403,7 @@ function mountVariantEditor(mount,groups){
         <div><strong>Variants</strong><small class="muted">Sizes, flavours, toppings, anything this product needs the customer to choose. Leave it empty if it has none.</small></div>
         <div class="variant-add"><button type="button" class="modal-secondary-btn" id="variantAddGroup">+ Add variant</button></div>
       </div>
-      ${state.groups.length?state.groups.map((g,gi)=>variantGroupHtml(g,gi)).join(''):'<p class="muted variant-empty">No variants yet. Pick a type above and press Add.</p>'}`;
+      ${state.groups.length?state.groups.map((g,gi)=>variantGroupHtml(g,gi)).join(''):'<p class="muted variant-empty">No variants yet. Press + Add variant to create one.</p>'}`;
     wire();
   }
 
@@ -1438,6 +1438,9 @@ function mountVariantEditor(mount,groups){
           <button type="button" class="variant-opt-remove" data-a="delopt" data-g="${gi}" data-o="${oi}" title="Remove ${esc(o.label)}">×</button>
         </div>`).join('')}
         <button type="button" class="modal-secondary-btn variant-add-option" data-a="addopt" data-g="${gi}">+ Add option</button>
+        <p class="muted variant-zero-hint">${g.price_mode==='absolute'
+          ?'Leave an option at 0 and choosing it keeps the product&rsquo;s own price. Customers only see a price on the options that have one.'
+          :'Leave an option at 0 and it adds nothing. Customers only see a price on the options that have one.'}</p>
       </div>
     </div>`;
   }
