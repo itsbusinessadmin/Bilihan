@@ -10,6 +10,7 @@
    money is reported separately as still owed rather than folded into a figure the
    shop has not actually taken. */
 (() => {
+  /* ---------- what this page is holding ---------- */
   const POLL_MS = 3000;          /* matches the admin dashboard, so the two agree */
   const $ = id => document.getElementById(id);
   const money = n => `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -34,6 +35,7 @@
   /* The sellers the list is currently drawing, so a window can be opened from one. */
   let lastSellers = null;
 
+  /* ---------- pieces every table and window is built from ---------- */
   function fail(message) {
     $('sellerError').textContent = message;
     $('sellerError').classList.remove('hidden');
@@ -188,7 +190,7 @@
     loadBuyers(name);
   }
 
-  /* ---------- painting ---------- */
+  /* ---------- drawing the page ---------- */
 
   function paintSellers(sellers) {
     $('sellerBody').innerHTML = sellers.length
@@ -250,6 +252,7 @@
     $('sellerError').classList.add('hidden');
   }
 
+  /* ---------- the poll ---------- */
   async function load() {
     if (busy || document.hidden) return;      /* a background tab spends quota for nothing */
     busy = true;
@@ -265,6 +268,7 @@
     } finally { busy = false; }
   }
 
+  /* ---------- start ---------- */
   function boot() {
     if (!window.BILIHAN_SUPABASE_CONFIGURED || !window.db) { fail('This page is not connected to the store yet.'); return; }
     if (!token) { fail('This link is missing its code. Ask the store for the full link.'); return; }
