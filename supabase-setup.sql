@@ -123,6 +123,14 @@ alter table public.orders drop constraint if exists orders_payment_method_check;
 alter table public.orders add constraint orders_payment_method_check
   check (payment_method in ('QR Payment','Cash on Delivery / Pickup','Paid Already'));
 
+-- Whether the money has actually arrived, set by hand in Admin -> Orders. This
+-- lived only in the live database until now, which meant a shop set up from this
+-- file had a column the admin wrote to and nothing had created.
+alter table public.orders add column if not exists payment_status text not null default 'Pending';
+alter table public.orders drop constraint if exists orders_payment_status_check;
+alter table public.orders add constraint orders_payment_status_check
+  check (payment_status in ('Paid','Pending','Not Paid'));
+
 -- If you already ran an earlier version of this file where phone was NOT NULL,
 -- this line makes it optional on an existing table. Safe to run even if the
 -- table was just created above with phone already nullable.
@@ -977,6 +985,7 @@ begin
       coalesce(nullif(btrim(o.customer_name), ''), 'Customer') as buyer,
       i.qty,
       o.created_at,
+      coalesce(nullif(btrim(o.payment_status), ''), 'Pending') as payment_status,
       -- The choices as one readable line, kept in the order they were recorded:
       -- variant group order first, then option order within each group, which is
       -- the order the customer met them in on the page.
@@ -991,17 +1000,20 @@ begin
     where coalesce(nullif(btrim(i.product_name), ''), '(unnamed product)')
         = coalesce(nullif(btrim(p_name), ''), '(unnamed product)')
   ), agg as (
-    -- One row per person AND per set of choices. Somebody who ordered a Large
-    -- and a Regular wants to see both, not a single row of two that says nothing
-    -- about which. Names are still grouped case-insensitively so one person who
+    -- One row per person, per set of choices, AND per payment state. Somebody
+    -- who ordered a Large and a Regular wants to see both, not a single row of
+    -- two that says nothing about which; the same goes for one order paid and
+    -- another still pending, which a single row would average into a lie. Names are still grouped case-insensitively so one person who
     -- typed theirs differently between orders is not split in half, and the
     -- spelling shown is the one they used most recently.
     select (array_agg(buyer order by created_at desc))[1] as buyer,
            variants,
+           payment_status,
            sum(qty)::bigint as qty
-    from lines group by lower(buyer), variants
+    from lines group by lower(buyer), variants, payment_status
   )
-  select coalesce(jsonb_agg(jsonb_build_object('name', buyer, 'variants', variants, 'qty', qty)
+  select coalesce(jsonb_agg(jsonb_build_object('name', buyer, 'variants', variants,
+                                               'payment_status', payment_status, 'qty', qty)
                   order by qty desc, buyer, variants), '[]'::jsonb),
          coalesce(sum(qty), 0)
   into v_rows, v_qty

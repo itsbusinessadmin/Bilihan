@@ -58,6 +58,15 @@
     </div>`;
   }
 
+  /* The same three states the admin sets in Orders, in the same three colours, so
+     the seller reads the chip the shop owner is looking at. Anything unexpected
+     falls back to Pending rather than rendering an unstyled word. */
+  const PAY_STATES = { 'Paid': 'paid', 'Pending': 'pending', 'Not Paid': 'unpaid' };
+  function payChip(status) {
+    const label = PAY_STATES[status] ? status : 'Pending';
+    return `<span class="pay-chip pay-${PAY_STATES[label]}">${esc(label)}</span>`;
+  }
+
   function paintBuyers(data) {
     const buyers = data.buyers || [];
     /* Same guard as the table: rebuilding this every few seconds would drop the
@@ -74,8 +83,8 @@
     const body = buyers.length
       ? `<p class="muted buyers-sub">${Number(data.total_qty || 0).toLocaleString('en-PH')} sold to ${people} ${people === 1 ? 'customer' : 'customers'}</p>
          <div class="buyers-table-wrap"><table class="buyers-table">
-           <thead><tr><th scope="col">Customer</th>${anyVariants ? '<th scope="col">Variants</th>' : ''}<th scope="col" class="num">Quantity</th></tr></thead>
-           <tbody>${buyers.map(b => `<tr><td>${esc(b.name)}</td>${anyVariants ? `<td class="buyers-variants">${esc(b.variants) || '<span class="buyers-none">&mdash;</span>'}</td>` : ''}<td class="num">${Number(b.qty || 0).toLocaleString('en-PH')}</td></tr>`).join('')}</tbody>
+           <thead><tr><th scope="col">Customer</th>${anyVariants ? '<th scope="col">Variants</th>' : ''}<th scope="col">Payment</th><th scope="col" class="num">Quantity</th></tr></thead>
+           <tbody>${buyers.map(b => `<tr><td>${esc(b.name)}</td>${anyVariants ? `<td class="buyers-variants">${esc(b.variants) || '<span class="buyers-none">&mdash;</span>'}</td>` : ''}<td>${payChip(b.payment_status)}</td><td class="num">${Number(b.qty || 0).toLocaleString('en-PH')}</td></tr>`).join('')}</tbody>
          </table></div>`
       : '<p class="muted buyers-sub">Nobody has ordered this yet.</p>';
     $('buyersDialog').innerHTML = buyersMarkup(data.name || '', body);
