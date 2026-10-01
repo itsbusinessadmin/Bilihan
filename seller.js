@@ -32,6 +32,13 @@
      moved, neither has anything inside their window. */
   let openPrint = '';
   let buyersBusy = false;
+  /* Which item folders are open inside the seller's window, by item name. The window
+     is redrawn whenever that seller's figures move, and a folder the reader opened
+     must still be open afterwards. Emptied when the window closes. */
+  const openItemFolders = new Set();
+  /* A seller with a single item has nothing to choose between, so that one folder
+     starts open -- once, when the window first fills, not on every refresh. */
+  let autoOpenSingle = false;
   /* The sellers the list is currently drawing, so a window can be opened from one. */
   let lastSellers = null;
 
@@ -142,12 +149,39 @@
         + moneyTable(seller.items, { label: 'All items', qty: seller.qty, original_total: seller.original_total, interest_total: seller.interest_total, overall: seller.overall })
         + '<p class="seller-item-empty">Loading who ordered&hellip;</p>';
     } else {
+      if (autoOpenSingle) { autoOpenSingle = false; if (items.length === 1) openItemFolders.add(items[0].name) }
       body = head
         + moneyTable(items, { label: 'All items', qty: seller.qty, original_total: seller.original_total, interest_total: seller.interest_total, overall: seller.overall })
-        + items.map(it => `<div class="seller-item-buyers"><h3 class="seller-item-heading">Who ordered <span>${esc(it.name)}</span></h3>${buyersTable(it.buyers || [])}${owedNote(it)}</div>`).join('');
+        + `<h3 class="seller-item-heading seller-folders-title">Who ordered</h3>`
+        + `<div class="item-folders">${items.map(itemFolder).join('')}</div>`;
     }
-    $('sellerDialog').innerHTML = dialogMarkup(seller.name, body);
+    /* Keep the reader's place: rebuilding the window would otherwise jump it back to
+       the top every time a figure moved underneath them. */
+    const dlg = $('sellerDialog'), y = dlg.scrollTop;
+    dlg.innerHTML = dialogMarkup(seller.name, body);
+    dlg.scrollTop = y;
     wireDialogClose();
+  }
+
+  /* One item's buyers, folded away behind its name until tapped, so a seller with a
+     dozen items opens onto a short list rather than a dozen tables at once. */
+  function itemFolder(it, i) {
+    const id = `itemFolder${i}`;
+    const open = openItemFolders.has(it.name);
+    const paid = Number(it.qty || 0), unpaid = Number(it.unpaid_qty || 0);
+    const people = new Set((it.buyers || []).map(b => String(b.name || '').toLowerCase())).size;
+    return `<section class="item-folder${open ? ' is-open' : ''}">
+      <h4 class="item-folder-heading">
+        <button type="button" class="item-folder-head" aria-expanded="${open}" aria-controls="${id}" data-item="${esc(it.name)}">
+          <span class="item-folder-caret" aria-hidden="true"></span>
+          <span class="item-folder-main">
+            <span class="item-folder-name">${esc(it.name)}</span>
+            <span class="item-folder-sub">${[paid || !unpaid ? `${num(paid)} paid` : '', unpaid ? `${num(unpaid)} unpaid` : '', `${people} ${people === 1 ? 'customer' : 'customers'}`].filter(Boolean).join(' &middot; ')}</span>
+          </span>
+        </button>
+      </h4>
+      <div class="item-folder-body" id="${id}"${open ? '' : ' hidden'}>${buyersTable(it.buyers || [])}${owedNote(it)}</div>
+    </section>`;
   }
 
   async function loadBuyers(name) {
@@ -182,6 +216,8 @@
     openSeller = name;
     openSignature = '';
     openItems = null;
+    openItemFolders.clear();
+    autoOpenSingle = true;
     openPrint = sellerPrint(seller);
     const dlg = $('sellerDialog');
     paintDialog(seller, null);
@@ -278,7 +314,21 @@
       const card = e.target.closest('.seller-card');
       if (card) openSellerWindow(card.dataset.seller || '');
     });
-    $('sellerDialog').addEventListener('close', () => { openSeller = null; openSignature = ''; openItems = null; openPrint = ''; });
+    $('sellerDialog').addEventListener('close', () => { openSeller = null; openSignature = ''; openItems = null; openPrint = ''; openItemFolders.clear(); });
+    /* Opening or shutting an item folder is done in place rather than by redrawing the
+       window, so nothing else in it moves. Delegated, because the window's contents are
+       rebuilt whenever the figures change. */
+    $('sellerDialog').addEventListener('click', e => {
+      const head = e.target.closest('.item-folder-head');
+      if (!head) return;
+      const open = head.getAttribute('aria-expanded') !== 'true';
+      head.setAttribute('aria-expanded', String(open));
+      const body = document.getElementById(head.getAttribute('aria-controls'));
+      if (body) body.hidden = !open;
+      head.closest('.item-folder')?.classList.toggle('is-open', open);
+      const name = head.dataset.item || '';
+      if (open) openItemFolders.add(name); else openItemFolders.delete(name);
+    });
     load();
     setInterval(load, POLL_MS);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });

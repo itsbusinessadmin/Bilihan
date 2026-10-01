@@ -828,7 +828,25 @@ body.store-closed{overflow:hidden}
 .seller-dialog-sub{margin:0 0 var(--space-md);color:var(--muted);font-size:var(--text-caption);font-variant-numeric:tabular-nums}
 .seller-dialog-owed{color:var(--text)}
 #sellerDialog .seller-table-wrap{margin-bottom:var(--space-sm)}
-.seller-item-buyers{margin-top:var(--space-lg)}
+.seller-folders-title{margin-top:var(--space-lg)}
+/* One folder per item inside a seller's window: its name and counts until tapped,
+   then who ordered it. */
+.item-folders{display:grid;gap:var(--space-sm)}
+.item-folder{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden}
+.item-folder.is-open{border-color:var(--line-strong)}
+.item-folder-heading{margin:0;font-size:inherit;font-weight:inherit}
+.item-folder-head{display:flex;align-items:center;gap:var(--space-sm);width:100%;min-height:52px;padding:var(--space-sm) var(--space-md);border:0;background:none;color:var(--text);font:inherit;text-align:left;cursor:pointer}
+.item-folder-head:hover{background:var(--card-soft)}
+/* Drawn rather than a rotated character: a glyph turned on its side lands wherever
+   the font's metrics put it, and in the storefront font that was a stray corner mark. */
+.item-folder-caret{flex:0 0 auto;width:8px;height:8px;margin:0 4px 0 2px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .16s ease}
+.item-folder-head[aria-expanded="true"] .item-folder-caret{transform:rotate(45deg)}
+.item-folder-main{flex:1 1 auto;min-width:0}
+.item-folder-name{display:block;font-weight:700;overflow-wrap:anywhere}
+.item-folder-sub{display:block;margin-top:1px;color:var(--muted);font-size:var(--text-caption);font-variant-numeric:tabular-nums}
+.item-folder-body{padding:0 var(--space-sm) var(--space-sm)}
+.item-folder-body .seller-owed-note{padding:0 var(--space-xs)}
+@media (prefers-reduced-motion:reduce){.item-folder-caret{transition:none}}
 .seller-item-heading{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 var(--space-sm);color:var(--muted);font-size:var(--text-caption);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
 .seller-item-heading span{color:var(--text);text-transform:none;letter-spacing:0;overflow-wrap:anywhere}
 .seller-item-empty{margin:0;color:var(--muted);font-size:var(--text-caption)}
