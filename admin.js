@@ -61,7 +61,7 @@ function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="lo
    One round of queries fills A.data, and every screen draws from that rather than
    fetching for itself.
    ======================================================================== */
-async function loadAll(){const [p,c,o,s,t,sl,vg,vo]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single(),db.from('support_threads').select('*,support_messages(count)').order('last_message_at',{ascending:false}),db.from('seller_links').select('token').eq('id',1).single(),db.from('product_variant_groups').select('*'),db.from('product_variant_options').select('*')]);for(const r of [p,c,o,s])if(r.error)throw r.error;
+async function loadAll(){const started=Date.now();const [p,c,o,s,t,sl,vg,vo]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single(),db.from('support_threads').select('*,support_messages(count)').order('last_message_at',{ascending:false}),db.from('seller_links').select('token').eq('id',1).single(),db.from('product_variant_groups').select('*'),db.from('product_variant_options').select('*')]);for(const r of [p,c,o,s])if(r.error)throw r.error;
   /* The support tables may not exist yet on a database that predates the chat, so
      a failure there must not stop the rest of Admin from loading. */
   if(t.error)console.warn('Bilihan admin: support threads unavailable',t.error);
@@ -73,7 +73,8 @@ async function loadAll(){const [p,c,o,s,t,sl,vg,vo]=await Promise.all([db.from('
     /* A database that predates variants has no such tables; the rest of Admin
        must still load, so a failure here is an empty list, not a dead page. */
     variantGroups:vg.error?[]:(vg.data||[]),variantOptions:vo.error?[]:(vo.data||[])}
-  if(vg.error)console.warn('Bilihan admin: variants unavailable',vg.error)}
+  if(vg.error)console.warn('Bilihan admin: variants unavailable',vg.error);
+  if(!t.error)noticeCustomerMessages(A.data.threads,started)}
 /* Auto-refresh ---------------------------------------------------------------
    Orders and messages arrive while this page sits open, so the data refetches on a
    timer instead of waiting for someone to hit reload.
@@ -767,6 +768,43 @@ window.deleteOrder=async id=>{const o=A.data.orders.find(x=>x.id===id);if(!o)ret
    One thread per customer, so several orders from the same person stay in a
    single conversation. Threads arrive with loadAll(); the messages of the open
    thread are fetched on demand and polled while this section is on screen. */
+/* The chime for a new customer message.
+
+   admin_unread on a thread only ever rises when the customer writes (support_send)
+   and only falls when the owner opens it (support_admin_mark_read), so a rise is
+   exactly "a customer just wrote" -- never the owner's own reply. It is compared
+   per thread, so one conversation being read while another receives a message still
+   chimes. The first look only sets the baseline: messages already waiting when the
+   page opened are on the badge, not announced.
+
+   Thread data reaches this page by three routes that can overlap, so each reading
+   carries the time its request started, and one that started before the reading
+   already applied is ignored. Otherwise a slow reply could put the baseline back
+   and the same message would chime twice. */
+const CHIME={seen:null,at:0};
+function noticeCustomerMessages(threads,started){
+  if(started<CHIME.at)return;
+  CHIME.at=started;
+  const next=new Map((threads||[]).map(t=>[t.id,Number(t.admin_unread||0)]));
+  if(CHIME.seen&&[...next].some(([id,n])=>n>(CHIME.seen.get(id)??0)))window.BilihanChime?.play();
+  CHIME.seen=next;
+}
+/* The page's own refresh stands down in a background tab, while a window is open and
+   while someone is typing -- which is exactly when a chime is most use. This keeps
+   listening then, asking only for each thread's unread count: a few dozen bytes. A
+   browser may slow it to once a minute in a tab left in the background a while. */
+const CHIME_WATCH_MS=8000;
+setInterval(async()=>{
+  if(!A.session||!window.db)return;
+  if(!document.hidden&&!autoRefreshPaused())return;          /* the 3-second refresh has it */
+  if(!document.hidden&&A.section==='messages')return;         /* the Messages poll has it   */
+  const started=Date.now();
+  try{
+    const {data,error}=await db.from('support_threads').select('id,admin_unread');
+    if(!error)noticeCustomerMessages(data,started);
+  }catch{/* the next tick tries again */}
+},CHIME_WATCH_MS);
+
 function adminUnreadTotal(){return (A.data.threads||[]).reduce((n,t)=>n+Number(t.admin_unread||0),0)}
 const MSG={openId:null,messages:[],timer:null,loading:false,sync:null};
 
@@ -791,6 +829,10 @@ async function openThread(id){
      badge was already clear. */
   const thread=(A.data.threads||[]).find(t=>t.id===id);
   const {error}=await db.rpc('support_admin_mark_read',{p_thread_id:id});
+  /* Zeroed here as well as on the server, and stamped now, so a poll that set off
+     before this and lands after it cannot put the old count back and swallow the
+     chime for the next message. */
+  if(!error&&CHIME.seen){CHIME.seen.set(id,0);CHIME.at=Date.now()}
   if(!error&&thread){
     thread.admin_unread=0;
     thread.admin_last_read_at=new Date().toISOString();
@@ -905,9 +947,11 @@ function paintThread(){
 async function refreshThreads(){
   /* The count comes along here too. Without it this poll would blank message_count
      every few seconds and the empty threads would flicker back into the list. */
+  const started=Date.now();
   const {data,error}=await db.from('support_threads').select('*,support_messages(count)').order('last_message_at',{ascending:false});
   if(error)return;
   A.data.threads=(data||[]).map(th=>({...th,message_count:Number(th.support_messages?.[0]?.count||0)}));
+  noticeCustomerMessages(A.data.threads,started);
   paintThreadList();paintNavBadge();
   if(MSG.openId)await loadThreadMessages(MSG.openId,{silent:true});
 }

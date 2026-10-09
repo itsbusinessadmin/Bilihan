@@ -17,6 +17,12 @@
      so a visitor who never opened the chat makes no requests at all. */
   const POLL_OPEN = 500;       /* while the panel is open        */
   const POLL_IDLE = 500;       /* badge refresh while it is shut */
+  /* A background tab used to poll nothing at all, so a reply arriving while the
+     customer was on another tab made no sound -- the one moment a chime is for.
+     It now checks the unread count every ten seconds. support_unread has no side
+     effects; support_fetch is never called from a hidden tab, because it marks the
+     conversation read and the store would see "Seen" for a reply nobody saw. */
+  const POLL_HIDDEN = 10000;
 
   const read = (key, fallback) => {
     try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; }
@@ -29,8 +35,16 @@
     session: read(LS_KEY, null),      /* {threadId, token, name, orderCode} */
     messages: read(LS_MSGS, []),
     open: false, busy: false, unread: 0, timer: null, lastError: '',
-    adminLastReadAt: null       /* when the store last had this conversation open */
+    adminLastReadAt: null,      /* when the store last had this conversation open */
+    /* What the chime has already accounted for. customer_unread only ever rises
+       when the store replies, and the panel shows replies directly, so each has its
+       own baseline. null means "not looked yet": the first reading only sets it, so
+       a reply already waiting when the page opened is on the badge, not announced. */
+    heardUnread: null, heardAdminAt: null,
+    pollSeq: 0, pollApplied: 0, lastHiddenPoll: 0
   };
+
+  const chime = () => window.BilihanChime?.play();
 
   const db = () => (window.BILIHAN_SUPABASE_CONFIGURED ? window.db : null);
   const latestOrder = () => read(LS_ORDER, null);
@@ -208,6 +222,12 @@
       if (error) throw error;
       if (!data?.ok) { clearSession(); renderIdentify('Please identify yourself again to continue.'); return; }
       const next = data.messages || [];
+      const newestReply = next.reduce((t, m) => (m.sender === 'admin' && String(m.created_at) > t ? String(m.created_at) : t), '');
+      if (state.heardAdminAt !== null && newestReply > state.heardAdminAt) chime();
+      state.heardAdminAt = newestReply;
+      /* support_fetch has just marked everything read, so the badge count starts
+         again from nothing: the next reply is a rise from 0 and must chime. */
+      state.heardUnread = 0;
       /* The receipt moves without the message count changing, so it counts as a
          change in its own right — otherwise "Seen" would not appear until the next
          message arrived. */
@@ -227,13 +247,24 @@
 
   async function pollUnread() {
     const client = db();
-    if (!client || !state.session || state.open) return;
+    /* An open panel normally reads the conversation itself. In a hidden tab it must
+       not (see POLL_HIDDEN), so this side-effect-free count stands in for it. */
+    if (!client || !state.session || (state.open && !document.hidden)) return;
+    /* Polls overlap when the network is slower than the interval. A reply that
+       comes back after a newer one is stale, and applying it would put the
+       baseline back and chime the same reply twice. */
+    const seq = ++state.pollSeq;
     try {
       const { data } = await client.rpc('support_unread', {
         p_thread_id: state.session.threadId, p_token: state.session.token
       });
+      if (seq < state.pollApplied) return;
+      state.pollApplied = seq;
       if (data?.ok) {
-        setUnread(data.unread || 0);
+        const n = data.unread || 0;
+        if (state.heardUnread !== null && n > state.heardUnread) chime();
+        state.heardUnread = n;
+        setUnread(n);
         state.adminLastReadAt = data.admin_last_read_at || null;
       }
     } catch { /* the badge is not worth surfacing an error for */ }
@@ -293,13 +324,20 @@
   function schedule() {
     clearInterval(state.timer);
     state.timer = setInterval(() => {
-      if (document.hidden) return;
+      if (document.hidden) {
+        if (Date.now() - state.lastHiddenPoll >= POLL_HIDDEN) { state.lastHiddenPoll = Date.now(); pollUnread(); }
+        return;
+      }
       if (state.open) refresh(false); else pollUnread();
     }, state.open ? POLL_OPEN : POLL_IDLE);
   }
 
   async function openPanel() {
     state.open = true;
+    /* Whatever is in the conversation when it opens is in front of the customer, and
+       any reply that arrived while it was shut has already chimed through the badge.
+       The first read after opening sets the baseline instead of announcing. */
+    state.heardAdminAt = null;
     $('supportPanel').hidden = false;
     $('supportFab').setAttribute('aria-expanded', 'true');
     root.classList.add('support-open');
@@ -331,7 +369,13 @@
     $('supportFab').onclick = () => (state.open ? closePanel() : openPanel());
     $('supportClose').onclick = closePanel;
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.open) closePanel(); });
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && state.open) refresh(false); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || !state.open) return;
+      /* A reply that came in while the tab was hidden has already chimed through the
+         hidden-tab count, so coming back re-reads quietly rather than chiming again. */
+      state.heardAdminAt = null;
+      refresh(false);
+    });
     if (state.session) pollUnread();
     schedule();
     window.BilihanSupport = { open: openPanel, close: closePanel };
