@@ -913,3 +913,22 @@ body.store-closed{overflow:hidden}
 @media (max-width:420px){
   .seller-logo{width:120px}
 }
+
+/* ========================================================================
+   Promo banner popup + checkout coupons
+   ======================================================================== */
+.ad-banner-overlay{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:20px;background:rgba(8,14,10,.55);backdrop-filter:blur(3px);cursor:pointer;animation:adBannerIn .25s ease-out}
+@keyframes adBannerIn{from{opacity:0}to{opacity:1}}
+.ad-banner-card{position:relative;max-width:min(92vw,560px);cursor:pointer;animation:adBannerPop .3s cubic-bezier(.34,1.56,.64,1)}
+@keyframes adBannerPop{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+.ad-banner-card img{display:block;width:100%;height:auto;max-height:82vh;object-fit:contain;border-radius:16px;box-shadow:0 24px 64px rgba(0,0,0,.35)}
+.ad-banner-close{position:absolute;top:-14px;right:-14px;width:40px;height:40px;border-radius:50%;border:none;background:#1f4d34;color:#fff;font-size:22px;line-height:1;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+.ad-banner-close:hover{background:#163826}
+.coupon-block{margin:12px 0 0;padding:12px;border:1px dashed var(--line,#d8d2c4);border-radius:12px}
+.coupon-block .field{margin:0}
+.coupon-row{display:flex;gap:8px}
+.coupon-row input{flex:1;min-width:0;text-transform:uppercase;letter-spacing:1px;font-weight:600}
+.coupon-row button{flex:none}
+#couponMsg{margin:8px 0 0;font-size:.85rem;min-height:1.2em}
+.summary-row.coupon-line{color:#166534}
+.summary-row.coupon-line strong{color:#166534}
