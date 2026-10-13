@@ -124,6 +124,7 @@ create or replace function public.place_order(
   p_note text,
   p_items jsonb,
   p_coupon_code text default null
+)
 returns jsonb
 language plpgsql
 security definer
