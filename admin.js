@@ -75,7 +75,7 @@ async function loadAll(){const started=Date.now();const [p,c,o,s,t,sl,vg,vo,cp]=
     variantGroups:vg.error?[]:(vg.data||[]),variantOptions:vo.error?[]:(vo.data||[]),
     /* A database that predates the coupons migration has no such table; the rest
        of Admin must still load, so a failure here is an empty list, not a dead page. */
-    coupons:cp.error?[]:(cp.data||[]),couponsUnavailable:!!cp.error}
+    coupons:cp.error?[]:(cp.data||[]),couponsUnavailable:!!cp.error&&/42P01|does not exist/i.test((cp.error.code||'')+' '+(cp.error.message||'')),couponsError:cp.error||null}
   if(vg.error)console.warn('Bilihan admin: variants unavailable',vg.error);
   if(cp.error)console.warn('Bilihan admin: coupons unavailable (run supabase-coupons.sql)',cp.error);
   if(!t.error)noticeCustomerMessages(A.data.threads,started)}
@@ -1397,7 +1397,14 @@ function skinOptionHtml(o,current){
       </span>
     </label>`;
 }
-function appearance(m){const s=A.data.settings;const currentSkin=skinIdOrDefault(s.storefront_skin);let heroItems=(s.hero_images||[]).map(url=>({id:crypto.randomUUID(),url,file:null}));m.innerHTML=`<span class="eyebrow">Storefront content</span><h2>Appearance</h2><form id="appearanceForm" class="panel admin-form"><fieldset class="theme-choice"><legend>Storefront theme</legend><p class="muted form-hint">The design customers see. Light and dark mode still work in either one.</p><div class="theme-options">${SKIN_OPTIONS.map(o=>skinOptionHtml(o,currentSkin)).join('')}</div></fieldset><label>Store Logo${s.logo_url?` <img src="${esc(s.logo_url)}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`:` <img src="bilihan-logo.png" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`}<input name="logo_file" type="file" accept="image/*"></label><label>Hero title<input name="hero_title" value="${esc(s.hero_title||'')}"></label><label>Hero tagline<textarea name="hero_tagline">${esc(s.hero_tagline||'')}</textarea></label><label>Hero images<small class="muted" style="display:block;font-weight:400;margin:2px 0 8px">Best size 1600×1200px (4:3 ratio). Tap the + tile to add an image, tap × to remove one.</small><div id="heroSlotsWrap" class="hero-slots-grid"></div></label><label>About text<textarea name="about_text" rows="6">${esc(s.about_text||'')}</textarea></label><label>About image<input name="about_file" type="file" accept="image/*"></label><input name="about_image_url" value="${esc(s.about_image_url||'')}" placeholder="Or About image URL"><fieldset class="theme-choice"><legend>Promo banner</legend><p class="muted form-hint">Shown as a popup when customers open the website. They tap anywhere on the screen or the &times; button to close it and see the store.</p><label>Banner image${s.ad_banner_url?` <img src="${esc(s.ad_banner_url)}" alt="Promo banner preview" style="display:block;max-width:260px;border-radius:12px;margin:8px 0;border:1px solid var(--line)">`:''}<input name="banner_file" type="file" accept="image/*"></label><label class="check-row"><input type="checkbox" name="ad_banner_enabled"${s.ad_banner_enabled?' checked':''}><span>Show banner popup on the website</span></label></fieldset><button class="primary-btn">Save Appearance</button></form>`;const wrap=document.getElementById('heroSlotsWrap');function renderHeroSlots(){wrap.innerHTML=heroItems.map((it,i)=>`<div class="hero-slot" data-id="${it.id}"><img src="${esc(it.file?URL.createObjectURL(it.file):it.url)}" alt="Hero image ${i+1}"><button type="button" class="hero-slot-remove" data-id="${it.id}" aria-label="Remove hero image ${i+1}" title="Remove">×</button></div>`).join('')+`<label class="hero-add-slot" title="Add hero image"><span>+</span><input type="file" accept="image/*" id="heroAddInput"></label>`;wrap.querySelectorAll('.hero-slot-remove').forEach(btn=>btn.onclick=()=>{heroItems=heroItems.filter(x=>x.id!==btn.dataset.id);renderHeroSlots()});document.getElementById('heroAddInput').onchange=ev=>{const f=ev.target.files[0];if(!f)return;heroItems.push({id:crypto.randomUUID(),url:null,file:f});renderHeroSlots()}}renderHeroSlots();const skinForm=document.getElementById('appearanceForm');skinForm.querySelectorAll('.theme-option input').forEach(r=>r.onchange=()=>{skinForm.querySelectorAll('.theme-option').forEach(l=>l.classList.toggle('is-selected',l.contains(r)&&r.checked))});skinForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const pickedSkin=skinIdOrDefault(fd.get('storefront_skin')||currentSkin);let logo=s.logo_url||null;let about=String(fd.get('about_image_url')||'');const logoFile=fd.get('logo_file');const aboutFile=fd.get('about_file');let banner=s.ad_banner_url||null;const bannerFile=fd.get('banner_file');try{if(logoFile&&logoFile.size)logo=await uploadImage(logoFile,'store-assets');if(aboutFile&&aboutFile.size)about=await uploadImage(aboutFile,'store-assets');if(bannerFile&&bannerFile.size)banner=await uploadImage(bannerFile,'store-assets');const heroUrls=[];for(const it of heroItems){if(it.file){heroUrls.push(await uploadImage(it.file,'store-assets'))}else if(it.url){heroUrls.push(it.url)}}const row={logo_url:logo,hero_title:fd.get('hero_title'),hero_tagline:fd.get('hero_tagline'),hero_images:heroUrls,about_text:fd.get('about_text'),about_image_url:about,storefront_skin:pickedSkin,ad_banner_url:banner,ad_banner_enabled:fd.get('ad_banner_enabled')==='on'};const {error}=await db.from('store_settings').update(row).eq('id',1);if(error){/* Database predates the coupons migration: save everything except the banner. */
+function appearance(m){const s=A.data.settings;const currentSkin=skinIdOrDefault(s.storefront_skin);let heroItems=(s.hero_images||[]).map(url=>({id:crypto.randomUUID(),url,file:null}));m.innerHTML=`<span class="eyebrow">Storefront content</span><h2>Appearance</h2><form id="appearanceForm" class="panel admin-form"><fieldset class="theme-choice"><legend>Storefront theme</legend><p class="muted form-hint">The design customers see. Light and dark mode still work in either one.</p><div class="theme-options">${SKIN_OPTIONS.map(o=>skinOptionHtml(o,currentSkin)).join('')}</div></fieldset><label>Store Logo${s.logo_url?` <img src="${esc(s.logo_url)}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`:` <img src="bilihan-logo.png" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`}<input name="logo_file" type="file" accept="image/*"></label><label>Hero title<input name="hero_title" value="${esc(s.hero_title||'')}"></label><label>Hero tagline<textarea name="hero_tagline">${esc(s.hero_tagline||'')}</textarea></label><label>Hero images<small class="muted" style="display:block;font-weight:400;margin:2px 0 8px">Best size 1600×1200px (4:3 ratio). Tap the + tile to add an image, tap × to remove one.</small><div id="heroSlotsWrap" class="hero-slots-grid"></div></label><label>About text<textarea name="about_text" rows="6">${esc(s.about_text||'')}</textarea></label><label>About image<input name="about_file" type="file" accept="image/*"></label><input name="about_image_url" value="${esc(s.about_image_url||'')}" placeholder="Or About image URL"><fieldset class="theme-choice"><legend>Promo banner</legend><p class="muted form-hint">Shown as a popup when customers open the website. They tap anywhere on the screen or the &times; button to close it and see the store.</p><label>Banner image${s.ad_banner_url?` <img src="${esc(s.ad_banner_url)}" alt="Promo banner preview" style="display:block;max-width:260px;border-radius:12px;margin:8px 0;border:1px solid var(--line)">`:''}<input name="banner_file" type="file" accept="image/*"></label>${s.ad_banner_url?`<button type="button" id="bannerRemoveBtn" class="danger-btn" style="margin:8px 0 0">Remove banner image</button>`:''}<label class="check-row"><input type="checkbox" name="ad_banner_enabled"${s.ad_banner_enabled?' checked':''}><span>Show banner popup on the website</span></label></fieldset><button class="primary-btn">Save Appearance</button></form>`;const wrap=document.getElementById('heroSlotsWrap');function renderHeroSlots(){wrap.innerHTML=heroItems.map((it,i)=>`<div class="hero-slot" data-id="${it.id}"><img src="${esc(it.file?URL.createObjectURL(it.file):it.url)}" alt="Hero image ${i+1}"><button type="button" class="hero-slot-remove" data-id="${it.id}" aria-label="Remove hero image ${i+1}" title="Remove">×</button></div>`).join('')+`<label class="hero-add-slot" title="Add hero image"><span>+</span><input type="file" accept="image/*" id="heroAddInput"></label>`;wrap.querySelectorAll('.hero-slot-remove').forEach(btn=>btn.onclick=()=>{heroItems=heroItems.filter(x=>x.id!==btn.dataset.id);renderHeroSlots()});document.getElementById('heroAddInput').onchange=ev=>{const f=ev.target.files[0];if(!f)return;heroItems.push({id:crypto.randomUUID(),url:null,file:f});renderHeroSlots()}}renderHeroSlots();const bannerRemoveBtn=document.getElementById('bannerRemoveBtn');
+if(bannerRemoveBtn)bannerRemoveBtn.onclick=async()=>{
+  if(!confirm('Remove the promo banner image? The popup will stop showing on the website.'))return;
+  const{error}=await db.from('store_settings').update({ad_banner_url:null,ad_banner_enabled:false}).eq('id',1);
+  if(error)return alert(error.message);
+  await loadAll();renderShell();
+};
+const skinForm=document.getElementById('appearanceForm');skinForm.querySelectorAll('.theme-option input').forEach(r=>r.onchange=()=>{skinForm.querySelectorAll('.theme-option').forEach(l=>l.classList.toggle('is-selected',l.contains(r)&&r.checked))});skinForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const pickedSkin=skinIdOrDefault(fd.get('storefront_skin')||currentSkin);let logo=s.logo_url||null;let about=String(fd.get('about_image_url')||'');const logoFile=fd.get('logo_file');const aboutFile=fd.get('about_file');let banner=s.ad_banner_url||null;const bannerFile=fd.get('banner_file');try{if(logoFile&&logoFile.size)logo=await uploadImage(logoFile,'store-assets');if(aboutFile&&aboutFile.size)about=await uploadImage(aboutFile,'store-assets');if(bannerFile&&bannerFile.size)banner=await uploadImage(bannerFile,'store-assets');const heroUrls=[];for(const it of heroItems){if(it.file){heroUrls.push(await uploadImage(it.file,'store-assets'))}else if(it.url){heroUrls.push(it.url)}}const row={logo_url:logo,hero_title:fd.get('hero_title'),hero_tagline:fd.get('hero_tagline'),hero_images:heroUrls,about_text:fd.get('about_text'),about_image_url:about,storefront_skin:pickedSkin,ad_banner_url:banner,ad_banner_enabled:fd.get('ad_banner_enabled')==='on'};const {error}=await db.from('store_settings').update(row).eq('id',1);if(error){/* Database predates the coupons migration: save everything except the banner. */
   if(/ad_banner/.test(error.message||'')){delete row.ad_banner_url;delete row.ad_banner_enabled;const retry=await db.from('store_settings').update(row).eq('id',1);if(retry.error)throw retry.error;await loadAll();alert('Appearance saved, but the promo banner needs the coupons migration (supabase-coupons.sql) to be run first.');renderShell();return}
   throw error}await loadAll();alert('Appearance saved.');renderShell()}catch(err){alert(err.message)}}}
 /* Say so the moment an oversized image is picked, rather than after the whole
@@ -1582,6 +1589,9 @@ function variantsForProduct(productId){
 /* No lookalikes: 0/O and 1/I are out, so a code read over the phone is exact. */
 const COUPON_CODE_CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function genCouponCode(){let s='';for(let i=0;i<8;i++)s+=COUPON_CODE_CHARS[Math.floor(Math.random()*COUPON_CODE_CHARS.length)];return s}
+/* Coupon expiries live in Philippine time, wherever the admin's device happens to be. */
+const manilaDateStr=iso=>new Date(iso).toLocaleDateString('en-CA',{timeZone:'Asia/Manila'});
+const manilaEndOfDay=ds=>{const p=String(ds).split('-').map(Number);return new Date(Date.UTC(p[0],p[1]-1,p[2],15,59,59)).toISOString()};
 /* Expiry is live: a coupon whose date has passed reads as expired without
    anyone having to flip a status for it. */
 function couponLiveStatus(c){
@@ -1598,12 +1608,17 @@ function couponValueHtml(c){
 }
 function couponRowHtml(c){
   const st=couponLiveStatus(c);
-  const expiry=c.expires_at?new Date(c.expires_at).toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}):'<span class="muted">No expiry</span>';
-  return `<tr><td><code class="coupon-code">${esc(c.code)}</code></td><td>${c.kind==='credit'?'Credit':'Discount'}</td><td>${couponValueHtml(c)}</td><td><span class="coupon-pill ${COUPON_STATUS_CLASS[st]}">${COUPON_STATUS_LABEL[st]}</span></td><td>${expiry}</td><td><div class="row-actions" style="justify-content:flex-start"><button type="button" data-cpause="${esc(c.id)}">${c.status==='paused'?'Resume':'Pause'}</button><button type="button" data-csettings="${esc(c.id)}">Settings</button><button type="button" class="danger-btn" data-cdelete="${esc(c.id)}">Delete</button></div></td></tr>`;
+  const expiry=c.expires_at?new Date(c.expires_at).toLocaleDateString('en-PH',{timeZone:'Asia/Manila',year:'numeric',month:'short',day:'numeric'}):'<span class="muted">No expiry</span>';
+  return `<tr><td><code class="coupon-code">${esc(c.code)}</code></td><td>${c.kind==='credit'?'Credit':'Discount'}</td><td>${couponValueHtml(c)}</td><td><span class="coupon-pill ${COUPON_STATUS_CLASS[st]}">${COUPON_STATUS_LABEL[st]}</span></td><td>${expiry}</td><td><div class="row-actions" style="justify-content:flex-start">${c.status==='used'?'':`<button type="button" data-cpause="${esc(c.id)}">${c.status==='paused'?'Resume':'Pause'}</button>`}<button type="button" data-csettings="${esc(c.id)}">Settings</button><button type="button" class="danger-btn" data-cdelete="${esc(c.id)}">Delete</button></div></td></tr>`;
 }
 function coupons(m){
   if(A.data.couponsUnavailable){
     m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Discounts &amp; credits</span><h2>Coupons</h2></div></div><div class="panel"><p><strong>Coupons are not set up yet.</strong></p><p class="muted">Run <code>supabase-coupons.sql</code> once in Supabase Dashboard &rarr; SQL Editor, then reload this page.</p></div>`;
+    return;
+  }
+  if(A.data.couponsError){
+    m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Discounts &amp; credits</span><h2>Coupons</h2></div></div><div class="panel"><p><strong>Could not load coupons.</strong></p><p class="muted">${esc(A.data.couponsError.message||'Check your connection and try again.')}</p><div class="row-actions" style="justify-content:flex-start;margin-top:12px"><button type="button" class="primary-btn" id="couponRetryBtn">Retry</button></div></div>`;
+    document.getElementById('couponRetryBtn').onclick=()=>repaintCoupons();
     return;
   }
   const list=[...(A.data.coupons||[])];
@@ -1637,7 +1652,7 @@ function coupons(m){
     const code=codeInput.value.trim().toUpperCase();
     const kind=kindSel.value;
     const val=Number(valueInput.value);
-    if(!/^[A-Z0-9]{8}$/.test(code))return alert('The code must be 8 letters/numbers.');
+    if(!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/.test(code))return alert('The code must be 8 characters: capital letters and numbers, without I, O, 0 or 1 to avoid confusion.');
     if(!(val>0))return alert(kind==='credit'?'Enter a credit amount greater than 0.':'Enter a discount percent greater than 0.');
     if(kind==='percent'&&val>100)return alert('A discount cannot be more than 100%.');
     if((A.data.coupons||[]).some(c=>String(c.code).toUpperCase()===code))return alert('That code is already in the list. Tap "\u21bb New" for another one.');
@@ -1648,7 +1663,7 @@ function coupons(m){
         remaining_credit:kind==='credit'?val:0,
         percent_value:kind==='percent'?val:0,
         status:'active',
-        expires_at:expiresInput.value?new Date(expiresInput.value+'T23:59:59').toISOString():null});
+        expires_at:expiresInput.value?manilaEndOfDay(expiresInput.value):null});
       if(error)throw error;
       await loadAll();coupons(document.getElementById('adminMain'));
     }catch(err){alert(err.message);btn.disabled=false}
@@ -1660,6 +1675,7 @@ function coupons(m){
 async function repaintCoupons(){await loadAll();const m=document.getElementById('adminMain');if(m&&A.section==='coupons')coupons(m)}
 async function togglePauseCoupon(id){
   const c=(A.data.coupons||[]).find(x=>x.id===id);if(!c)return;
+  if(c.status==='used'){alert('This coupon has already been used, so it can no longer be paused or resumed.');return}
   const next=c.status==='paused'?'active':'paused';
   const {error}=await db.from('coupons').update({status:next}).eq('id',id);
   if(error)return alert(error.message);
@@ -1683,7 +1699,7 @@ function openCouponSettings(id){
     <label class="field"><span class="field-label">Type</span><div class="choice-value">${isCredit?'Credit (\u20b1) \u2014 reusable until used up':'Discount (%) \u2014 one-time use'}</div></label>
     ${isCredit?`<label class="field"><span class="field-label">Remaining credit (\u20b1)</span><input id="csRemaining" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(c.remaining_credit)}"><small class="muted">Originally ${money(c.credit_amount)}. The list shows what is left.</small></label>`
               :`<label class="field"><span class="field-label">Discount (%)</span><input id="csPercent" type="number" min="0.01" max="100" step="0.01" inputmode="decimal" value="${esc(c.percent_value)}"></label>`}
-    <label class="field"><span class="field-label">Expires <span class="muted">(optional)</span></span><input id="csExpires" type="date" value="${c.expires_at?new Date(c.expires_at).toISOString().slice(0,10):''}"></label>
+    <label class="field"><span class="field-label">Expires <span class="muted">(optional)</span></span><input id="csExpires" type="date" value="${c.expires_at?manilaDateStr(c.expires_at):''}"></label>
     <label class="field"><span class="field-label">Status</span><select id="csStatus"><option value="active"${c.status==='active'?' selected':''}>Active</option><option value="paused"${c.status==='paused'?' selected':''}>Paused</option><option value="used"${c.status==='used'?' selected':''}>Used</option></select></label>
   </div>
   <div class="row-actions" style="margin-top:16px"><button type="button" class="primary-btn" id="csSave">Save</button><button type="button" id="csRegen">\u21bb Regenerate code</button><button type="button" class="danger-btn" id="csDelete">Delete</button></div>
@@ -1696,7 +1712,7 @@ function openCouponSettings(id){
   modal.addEventListener('click',e=>{if(e.target===modal)close()});
   document.addEventListener('keydown',onKey);
   document.getElementById('csSave').onclick=async()=>{
-    const patch={expires_at:document.getElementById('csExpires').value?new Date(document.getElementById('csExpires').value+'T23:59:59').toISOString():null,
+    const patch={expires_at:document.getElementById('csExpires').value?manilaEndOfDay(document.getElementById('csExpires').value):null,
                  status:document.getElementById('csStatus').value};
     if(isCredit){
       const rem=Number(document.getElementById('csRemaining').value);
@@ -1704,6 +1720,10 @@ function openCouponSettings(id){
       patch.remaining_credit=rem;
       /* Topping a spent coupon back up returns it to service. */
       if(rem>0&&patch.status==='used')patch.status='active';
+      /* A coupon with nothing left cannot stay Active. */
+      if(rem<=0&&patch.status==='active')patch.status='used';
+      /* Topping above the original amount moves the original too, so the "left of" display stays sane. */
+      if(rem>c.credit_amount)patch.credit_amount=rem;
     }else{
       const pct=Number(document.getElementById('csPercent').value);
       if(!(pct>0)||pct>100)return alert('Enter a discount between 0 and 100.');
