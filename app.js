@@ -143,6 +143,24 @@ function renderSettings(){
   $('year').textContent=new Date().getFullYear();
   renderHero();
   syncHeroTimer();
+  renderAdBanner(s);
+}
+/* Promo banner popup. Shows once per tab session when the owner enabled it and
+   uploaded an image. Tapping anywhere — the image, the backdrop, or the × —
+   closes it and reveals the store. */
+function renderAdBanner(s){
+  document.getElementById('adBannerOverlay')?.remove();
+  if(!(s && s.ad_banner_enabled && s.ad_banner_url))return;
+  try{if(sessionStorage.getItem('bilihan_ad_seen')==='1')return}catch{}
+  const ov=document.createElement('div');
+  ov.id='adBannerOverlay';
+  ov.className='ad-banner-overlay';
+  ov.setAttribute('role','dialog');
+  ov.setAttribute('aria-label','Promotion');
+  ov.innerHTML=`<div class="ad-banner-card"><button type="button" class="ad-banner-close" aria-label="Close promotion">&times;</button><img src="${esc(s.ad_banner_url)}" alt="Promotion"></div>`;
+  const close=()=>{ov.remove();try{sessionStorage.setItem('bilihan_ad_seen','1')}catch{}};
+  ov.addEventListener('click',close);
+  document.body.appendChild(ov);
 }
 function renderContact(s){
   const methods=[];
@@ -503,7 +521,7 @@ function livePriceForLine(item,live){
   }
   return gone?null:pesos(Math.max(0,base+add));
 }
-async function syncOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;const items=(order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',store_name:realSetting(state.data.settings?.business_name)||'Bilihan',pickup_location:realSetting(state.data.settings?.pickup_location)||'',store_email:realSetting(state.data.settings?.email)||''};await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(err){console.warn('Google Sheets sync failed:',err)}}
+async function syncOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;const items=(order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',coupon_code:order.coupon_code||'',coupon_discount:Number(order.coupon_discount||0),store_name:realSetting(state.data.settings?.business_name)||'Bilihan',pickup_location:realSetting(state.data.settings?.pickup_location)||'',store_email:realSetting(state.data.settings?.email)||''};await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(err){console.warn('Google Sheets sync failed:',err)}}
 function fileToBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');reader.onerror=()=>reject(new Error('Unable to read receipt file.'));reader.readAsDataURL(file)})}
 function formatFileSize(bytes){if(bytes<1024)return `${bytes} B`;if(bytes<1024*1024)return `${(bytes/1024).toFixed(0)} KB`;return `${(bytes/1024/1024).toFixed(1)} MB`}
 /* Receipts are read, not admired: 1280px at a size budget keeps every digit
@@ -589,9 +607,38 @@ function openCheckout(){
   const fixedDate=availableFrom||today;
   const availableLabel=availableFrom?new Date(availableFrom+'T00:00:00').toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'}):'';
   const preferredDateField=showPreferredDate?(preferredDateMode==='fixed'?`<div class="field"><span class="field-label">Preferred date</span><div class="status-banner" style="margin:0">${esc(availableLabel||fixedDate)}</div><input type="hidden" name="preferredDate" value="${esc(fixedDate)}"></div>`:`<label class="field"><span class="field-label">Preferred date *</span><input name="preferredDate" type="date" required min="${esc(minDate)}"></label>`):`<input type="hidden" name="preferredDate" value="${esc(fixedDate)}">`;
-  $('checkoutDialog').innerHTML=`<div class="modal-body checkout-modal"><button class="icon-btn modal-close" aria-label="Close" onclick="checkoutDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="checkout-heading"><h2>Complete your order</h2><p>Review your contact, fulfillment, and payment details before placing the order.</p></div><div id="checkoutError" class="status-banner hidden" role="alert" aria-live="assertive"></div><form id="checkoutForm" class="checkout-form" novalidate><div class="hp-field" aria-hidden="true"><label>Leave this field empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div><div class="checkout-layout"><div class="checkout-main"><section class="checkout-group" aria-labelledby="checkoutContactTitle"><div class="checkout-group-title"><h3 id="checkoutContactTitle">Contact</h3></div><div class="form-grid"><label class="field"><span class="field-label">Name *</span><input name="name" maxlength="100" autocomplete="name" required></label>${phoneField}${emailField}</div></section><section class="checkout-group" aria-labelledby="checkoutFulfillmentTitle"><div class="checkout-group-title"><h3 id="checkoutFulfillmentTitle">Fulfillment</h3></div><div class="form-grid">${fulfillmentField}${preferredDateField}<label id="addressField" class="field full"><span class="field-label">Delivery address *</span><textarea name="address" maxlength="500" autocomplete="street-address" rows="2"></textarea></label><div id="pickupInfo" class="field full hidden"><div class="status-banner" style="margin:0"><strong>Pickup location:</strong> ${esc(s.pickup_location||'Please contact the store for the pickup location.')}</div></div></div></section><section class="checkout-group" aria-labelledby="checkoutPaymentTitle"><div class="checkout-group-title"><h3 id="checkoutPaymentTitle">Payment</h3></div><div class="form-grid">${paymentField}<label class="field checkout-note"><span class="field-label">Customer note <span class="muted">(optional)</span></span><textarea name="note" maxlength="500" rows="2" placeholder="Anything the store should know?"></textarea></label><div id="paymentInfo" class="field full"></div></div></section></div><aside class="checkout-aside" aria-labelledby="checkoutSummaryTitle"><div class="checkout-aside-inner"><div class="checkout-group-title"><h3 id="checkoutSummaryTitle">Your order</h3></div><div class="summary" id="checkoutSummary"></div><div class="checkout-actions"><label class="checkout-confirm"><input type="checkbox" name="confirm" id="confirmOrder" required><span>I confirm that my order and contact details are correct.</span></label><button class="primary-btn" id="placeOrderBtn" disabled>Place Order</button><p class="muted checkout-progress" id="orderProgress" role="status" aria-live="polite"></p></div></div></aside></div></form></div>`;
+  $('checkoutDialog').innerHTML=`<div class="modal-body checkout-modal"><button class="icon-btn modal-close" aria-label="Close" onclick="checkoutDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="checkout-heading"><h2>Complete your order</h2><p>Review your contact, fulfillment, and payment details before placing the order.</p></div><div id="checkoutError" class="status-banner hidden" role="alert" aria-live="assertive"></div><form id="checkoutForm" class="checkout-form" novalidate><div class="hp-field" aria-hidden="true"><label>Leave this field empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div><div class="checkout-layout"><div class="checkout-main"><section class="checkout-group" aria-labelledby="checkoutContactTitle"><div class="checkout-group-title"><h3 id="checkoutContactTitle">Contact</h3></div><div class="form-grid"><label class="field"><span class="field-label">Name *</span><input name="name" maxlength="100" autocomplete="name" required></label>${phoneField}${emailField}</div></section><section class="checkout-group" aria-labelledby="checkoutFulfillmentTitle"><div class="checkout-group-title"><h3 id="checkoutFulfillmentTitle">Fulfillment</h3></div><div class="form-grid">${fulfillmentField}${preferredDateField}<label id="addressField" class="field full"><span class="field-label">Delivery address *</span><textarea name="address" maxlength="500" autocomplete="street-address" rows="2"></textarea></label><div id="pickupInfo" class="field full hidden"><div class="status-banner" style="margin:0"><strong>Pickup location:</strong> ${esc(s.pickup_location||'Please contact the store for the pickup location.')}</div></div></div></section><section class="checkout-group" aria-labelledby="checkoutPaymentTitle"><div class="checkout-group-title"><h3 id="checkoutPaymentTitle">Payment</h3></div><div class="form-grid">${paymentField}<label class="field checkout-note"><span class="field-label">Customer note <span class="muted">(optional)</span></span><textarea name="note" maxlength="500" rows="2" placeholder="Anything the store should know?"></textarea></label><div id="paymentInfo" class="field full"></div></div></section></div><aside class="checkout-aside" aria-labelledby="checkoutSummaryTitle"><div class="checkout-aside-inner"><div class="checkout-group-title"><h3 id="checkoutSummaryTitle">Your order</h3></div><div class="summary" id="checkoutSummary"></div><div class="coupon-block"><label class="field"><span class="field-label">Coupon code <span class="muted">(optional)</span></span><span class="coupon-row"><input id="couponInput" maxlength="8" placeholder="8-character code" autocomplete="off" spellcheck="false" style="text-transform:uppercase"><button type="button" id="applyCouponBtn" class="secondary-btn">Apply</button></span></label><p id="couponMsg" class="muted" role="status" aria-live="polite"></p></div><div class="checkout-actions"><label class="checkout-confirm"><input type="checkbox" name="confirm" id="confirmOrder" required><span>I confirm that my order and contact details are correct.</span></label><button class="primary-btn" id="placeOrderBtn" disabled>Place Order</button><p class="muted checkout-progress" id="orderProgress" role="status" aria-live="polite"></p></div></div></aside></div></form></div>`;
   $('checkoutDialog').showModal();
   const f=$('checkoutForm');
+  /* Coupons: one code per order. validate_coupon() checks it and the server
+     applies it inside place_order(), so the preview here is display-only. */
+  state.coupon=null;
+  const cartSubtotal=()=>state.cart.reduce((s,i)=>s+i.qty*i.price,0);
+  const couponDiscountFor=subtotal=>{const c=state.coupon;if(!c)return 0;if(c.kind==='credit')return Math.min(Number(c.remaining_credit||0),subtotal);return Math.round(subtotal*Number(c.percent_value||0))/100};
+  const paintCheckoutSummary=()=>{
+    const subtotal=cartSubtotal();
+    const disc=couponDiscountFor(subtotal);
+    $('checkoutSummary').innerHTML=state.cart.map(i=>`<div class="summary-row"><span>${esc(i.name)} × ${i.qty}</span><strong>${money(i.price*i.qty)}</strong></div>`).join('')
+      +(disc>0?`<div class="summary-row coupon-line"><span>Coupon ${esc(state.coupon.code)}</span><strong>&minus;${money(disc)}</strong></div>`:'')
+      +`<hr><div class="summary-row"><strong>Total</strong><strong>${money(subtotal-disc)}</strong></div>`;
+  };
+  $('applyCouponBtn').onclick=async()=>{
+    const msg=$('couponMsg');
+    const code=$('couponInput').value.trim().toUpperCase();
+    if(!code){msg.textContent='Enter a coupon code first.';return}
+    msg.textContent='Checking…';
+    try{
+      const {data,error}=await db.rpc('validate_coupon',{p_code:code});
+      if(error)throw error;
+      if(!data?.ok){state.coupon=null;msg.textContent=data?.error||'That coupon is not valid.';paintCheckoutSummary();return}
+      state.coupon=data.coupon;
+      const c=data.coupon;
+      msg.textContent=c.kind==='credit'
+        ?`Credit applied: ${money(Math.min(Number(c.remaining_credit),cartSubtotal()))} off this order.`
+        :`Discount applied: ${Number(c.percent_value)}% off this order.`;
+      paintCheckoutSummary();
+    }catch(err){console.warn('coupon check failed',err);state.coupon=null;msg.textContent='Could not check the coupon. Please try again.';paintCheckoutSummary()}
+  };
   f._receiptPrepared=null;f._receiptBase64=null;f._receiptPreparing=false;f.dataset.openedAt=String(Date.now());
   const updatePlaceOrderButton=()=>{const qr=f.payment.value==='QR Payment';const hasReceipt=!qr||!!f._receiptPrepared;const paidTicked=f.payment.value!=='Paid Already'||!!$('paidAlreadyTick')?.checked;const confirmed=$('confirmOrder')?.checked;$('placeOrderBtn').disabled=!!f._receiptPreparing||!(hasReceipt&&paidTicked&&confirmed)};
   const renderDynamic=()=>{
@@ -611,7 +658,7 @@ function openCheckout(){
       const receipt=$('paymentReceipt');receipt.onchange=async()=>{const file=receipt.files[0];f._receiptPrepared=null;f._receiptBase64=null;if(!file){$('receiptStatus').textContent='No receipt selected yet.';updatePlaceOrderButton();return}f._receiptPreparing=true;$('receiptStatus').textContent='Preparing receipt…';updatePlaceOrderButton();try{const prepared=await compressReceiptImage(file);f._receiptPrepared=prepared;f._receiptBase64=null;$('receiptStatus').textContent=`Receipt ready: ${prepared.name} (${formatFileSize(prepared.size)})`;fileToBase64(prepared).then(b64=>{if(f._receiptPrepared===prepared)f._receiptBase64=b64}).catch(()=>{})}catch(err){receipt.value='';f._receiptPrepared=null;f._receiptBase64=null;$('receiptStatus').textContent=err.message||'Unable to prepare this receipt. Please choose a JPG, PNG, WEBP, or PDF file.'}finally{f._receiptPreparing=false;updatePlaceOrderButton()}}
     }else{$('paymentInfo').innerHTML='<div class="status-banner">Please prepare the exact amount when possible.</div>'}
     updatePlaceOrderButton();
-    $('checkoutSummary').innerHTML=state.cart.map(i=>`<div class="summary-row"><span>${esc(i.name)} × ${i.qty}</span><strong>${money(i.price*i.qty)}</strong></div>`).join('')+`<hr><div class="summary-row"><strong>Total</strong><strong>${money(state.cart.reduce((sum,i)=>sum+i.qty*i.price,0))}</strong></div>`
+    paintCheckoutSummary();
   };
   f.fulfillment.onchange=renderDynamic;f.payment.onchange=renderDynamic;$('confirmOrder').onchange=updatePlaceOrderButton;renderDynamic();f.onsubmit=placeOrder
 }
@@ -662,7 +709,7 @@ async function placeOrder(e){
     const showPreferredDate=isExplicitlyEnabled(s,'show_preferred_date');const preferredDateMode=s.preferred_date_mode||'calendar';const availableFrom=s.order_available_from||'';
     let preferredDate=d.preferredDate||availableFrom||new Date().toISOString().slice(0,10);if(showPreferredDate&&preferredDateMode==='calendar'&&availableFrom&&preferredDate<availableFrom)throw new Error('Please select a date on or after the available-from date.');
     const items=state.cart.map(i=>({product_id:i.productId,qty:i.qty,option_ids:i.optionIds||[]}));
-    const {data,error}=await db.rpc('place_order',{p_customer_name:String(d.name||'').trim(),p_phone:phone||null,p_email:email||null,p_fulfillment:fulfillment,p_address:address,p_preferred_date:preferredDate,p_payment_method:d.payment,p_note:String(d.note||'').trim()||null,p_items:items});
+    const {data,error}=await db.rpc('place_order',{p_customer_name:String(d.name||'').trim(),p_phone:phone||null,p_email:email||null,p_fulfillment:fulfillment,p_address:address,p_preferred_date:preferredDate,p_payment_method:d.payment,p_note:String(d.note||'').trim()||null,p_items:items,p_coupon_code:state.coupon?.code||null});
     if(error)throw error;
     /* The shop closed while this form was open. Raise the notice rather than only
        showing the message inside a checkout the customer can no longer complete. */
@@ -675,7 +722,7 @@ async function placeOrder(e){
     if(isQr&&receiptFile)uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>console.warn('Receipt upload failed:',err));
     syncOrderToGoogleSheet(order);
     rememberOrder(order);localStorage.setItem(LS.lastOrderAt,String(Date.now()));
-    state.cart=[];saveCart();$('checkoutDialog').close();
+    state.cart=[];state.coupon=null;saveCart();$('checkoutDialog').close();
     showOrder(order);toast(`Order #${order.order_code} placed ✓`);track('order_placed');
     /* Refresh stock in the background; the confirmation is already on screen. */
     bootstrap().catch(err=>console.warn('Post-order refresh failed:',err))
@@ -738,7 +785,7 @@ function showOrderList(){
 
 function showOrder(order,opts){
   const cancelled=order.status==='Cancelled';
-  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status${cancelled?' is-cancelled':''}">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}${(i.variants||[]).length?`<small class="summary-variants">${i.variants.map(v=>esc(v.label)).join(' · ')}</small>`:''}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}<div class="contact-actions" style="margin-top:16px">${opts&&opts.fromList?'<button class="secondary-btn" id="backToOrders">&lsaquo; All orders</button>':''}<button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
+  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status${cancelled?' is-cancelled':''}">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}${(i.variants||[]).length?`<small class="summary-variants">${i.variants.map(v=>esc(v.label)).join(' · ')}</small>`:''}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}${order.coupon_code?`<div class="summary-row coupon-line"><span>Coupon ${esc(order.coupon_code)}</span><strong>&minus;${money(order.coupon_discount||0)}</strong></div>`:''}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}<div class="contact-actions" style="margin-top:16px">${opts&&opts.fromList?'<button class="secondary-btn" id="backToOrders">&lsaquo; All orders</button>':''}<button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
   if(!$('orderDialog').open)$('orderDialog').showModal();
   if($('backToOrders'))$('backToOrders').onclick=()=>showOrderList();
   $('copyOrderNo').onclick=async()=>{try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(order.order_code);else{const ta=document.createElement('textarea');ta.value=order.order_code;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}toast('Copied ✓')}catch{toast(`Order #${order.order_code}`)}};

@@ -748,3 +748,22 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   .orders-sticky{position:static;margin-top:0;padding-top:0}
   .orders-sticky::after{display:none}
 }
+
+/* ========================================================================
+   Coupons / Discounts
+   ======================================================================== */
+.coupon-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:2px;font-weight:700;background:var(--admin-soft);border:1px solid var(--admin-line);border-radius:8px;padding:2px 8px;white-space:nowrap}
+.coupon-pill{display:inline-block;padding:3px 12px;border-radius:999px;font-size:.75rem;font-weight:700;border:1px solid}
+.coupon-pill-active{background:#dcfce7;color:#166534;border-color:#86efac}
+.coupon-pill-paused{background:#fef9c3;color:#854d0e;border-color:#fde047}
+.coupon-pill-used{background:#f3f4f6;color:#6b7280;border-color:#d1d5db}
+.coupon-pill-expired{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
+.coupon-gen-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.coupon-code-row{display:flex;gap:8px}
+.coupon-code-row input{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:2px;font-weight:700}
+.coupon-code-row button{flex:none}
+.coupon-yes-btn{font-weight:700;color:var(--admin-green-dark,#166534);text-decoration:underline;cursor:pointer;background:none;border:none;padding:0;font-size:inherit}
+.coupon-yes-btn:hover{color:var(--admin-green)}
+@media(max-width:640px){
+  .coupon-gen-grid{grid-template-columns:1fr}
+}

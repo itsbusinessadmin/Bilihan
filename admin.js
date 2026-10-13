@@ -61,7 +61,7 @@ function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="lo
    One round of queries fills A.data, and every screen draws from that rather than
    fetching for itself.
    ======================================================================== */
-async function loadAll(){const started=Date.now();const [p,c,o,s,t,sl,vg,vo]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single(),db.from('support_threads').select('*,support_messages(count)').order('last_message_at',{ascending:false}),db.from('seller_links').select('token').eq('id',1).single(),db.from('product_variant_groups').select('*'),db.from('product_variant_options').select('*')]);for(const r of [p,c,o,s])if(r.error)throw r.error;
+async function loadAll(){const started=Date.now();const [p,c,o,s,t,sl,vg,vo,cp]=await Promise.all([db.from('products').select('*').order('sort_order'),db.from('categories').select('*').order('sort_order'),db.from('orders').select('*,order_items(*)').order('created_at',{ascending:false}),db.from('store_settings').select('*').eq('id',1).single(),db.from('support_threads').select('*,support_messages(count)').order('last_message_at',{ascending:false}),db.from('seller_links').select('token').eq('id',1).single(),db.from('product_variant_groups').select('*'),db.from('product_variant_options').select('*'),db.from('coupons').select('*').order('created_at',{ascending:false})]);for(const r of [p,c,o,s])if(r.error)throw r.error;
   /* The support tables may not exist yet on a database that predates the chat, so
      a failure there must not stop the rest of Admin from loading. */
   if(t.error)console.warn('Bilihan admin: support threads unavailable',t.error);
@@ -72,8 +72,12 @@ async function loadAll(){const started=Date.now();const [p,c,o,s,t,sl,vg,vo]=awa
     sellerToken:sl.error?'':(sl.data?.token||''),
     /* A database that predates variants has no such tables; the rest of Admin
        must still load, so a failure here is an empty list, not a dead page. */
-    variantGroups:vg.error?[]:(vg.data||[]),variantOptions:vo.error?[]:(vo.data||[])}
+    variantGroups:vg.error?[]:(vg.data||[]),variantOptions:vo.error?[]:(vo.data||[]),
+    /* A database that predates the coupons migration has no such table; the rest
+       of Admin must still load, so a failure here is an empty list, not a dead page. */
+    coupons:cp.error?[]:(cp.data||[]),couponsUnavailable:!!cp.error}
   if(vg.error)console.warn('Bilihan admin: variants unavailable',vg.error);
+  if(cp.error)console.warn('Bilihan admin: coupons unavailable (run supabase-coupons.sql)',cp.error);
   if(!t.error)noticeCustomerMessages(A.data.threads,started)}
 /* Auto-refresh ---------------------------------------------------------------
    Orders and messages arrive while this page sits open, so the data refetches on a
@@ -95,7 +99,7 @@ const AUTO={ms:3000,timer:null,busy:false,fails:0,skip:0,print:''};
 /* Sections that own their markup: forms would lose unsaved edits to a repaint, the
    messages view runs its own poll and holds a reply box, and Security holds
    measurements it took itself. Their data still refreshes underneath. */
-const AUTO_KEEP_MARKUP=new Set(['settings','appearance','messages','security']);
+const AUTO_KEEP_MARKUP=new Set(['settings','appearance','messages','security','coupons']);
 
 function autoRefreshPaused(){
   if(document.hidden)return true;                              /* a background tab spends quota for nothing */
@@ -182,7 +186,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefres
 /* ========================================================================
    The shell: sidebar, and whichever section is showing
    ======================================================================== */
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,categories,orders,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['coupons','Coupons'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,categories,orders,coupons,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
 /* ========================================================================
    Sales reporting
    ======================================================================== */
@@ -739,8 +743,9 @@ function orders(m){
       return matchesSearch&&matchesFilter;
     });
     const list=document.getElementById('orderList');
-    list.innerHTML=rows.length?`<table class="table orders-table"><thead><tr><th>Order #</th><th>Payment Status</th><th>Customer</th><th><span class="sr-only">Delete</span></th></tr></thead><tbody>${rows.map(o=>`<tr><td>${bulkCheckboxHtml(o.id)}<button type="button" class="order-code-btn" data-order="${esc(o.id)}" title="View full order details">#${esc(o.order_code)}</button>${o.status==='Cancelled'?'<span class="order-cancelled-tag">Cancelled</span>':''}</td><td>${paySelectHtml(o)}</td><td>${esc(o.customer_name)}</td><td><button type="button" class="icon-delete-btn" data-delete="${esc(o.id)}" title="Delete order" aria-label="Delete order #${esc(o.order_code)}"></button></td></tr>`).join('')}</tbody></table>`:'<p style="padding:20px">No orders match this filter.</p>';
+    list.innerHTML=rows.length?`<table class="table orders-table"><thead><tr><th>Order #</th><th>Payment Status</th><th>Customer</th><th>Coupon</th><th><span class="sr-only">Delete</span></th></tr></thead><tbody>${rows.map(o=>`<tr><td>${bulkCheckboxHtml(o.id)}<button type="button" class="order-code-btn" data-order="${esc(o.id)}" title="View full order details">#${esc(o.order_code)}</button>${o.status==='Cancelled'?'<span class="order-cancelled-tag">Cancelled</span>':''}</td><td>${paySelectHtml(o)}</td><td>${esc(o.customer_name)}</td><td>${o.coupon_code?`<button type="button" class="coupon-yes-btn" data-coupon="${esc(o.id)}" title="View coupon breakdown">Yes</button>`:'<span class="muted">No</span>'}</td><td><button type="button" class="icon-delete-btn" data-delete="${esc(o.id)}" title="Delete order" aria-label="Delete order #${esc(o.order_code)}"></button></td></tr>`).join('')}</tbody></table>`:'<p style="padding:20px">No orders match this filter.</p>';
     list.querySelectorAll('[data-order]').forEach(b=>b.onclick=()=>openOrderDetails(b.dataset.order));
+    list.querySelectorAll('[data-coupon]').forEach(b=>b.onclick=()=>openCouponBreakdown(b.dataset.coupon));
     list.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>deleteOrder(b.dataset.delete));
   };
   const syncBulk=wireBulk('orders',document.getElementById('orderList'),'order',async ids=>{
@@ -1392,7 +1397,9 @@ function skinOptionHtml(o,current){
       </span>
     </label>`;
 }
-function appearance(m){const s=A.data.settings;const currentSkin=skinIdOrDefault(s.storefront_skin);let heroItems=(s.hero_images||[]).map(url=>({id:crypto.randomUUID(),url,file:null}));m.innerHTML=`<span class="eyebrow">Storefront content</span><h2>Appearance</h2><form id="appearanceForm" class="panel admin-form"><fieldset class="theme-choice"><legend>Storefront theme</legend><p class="muted form-hint">The design customers see. Light and dark mode still work in either one.</p><div class="theme-options">${SKIN_OPTIONS.map(o=>skinOptionHtml(o,currentSkin)).join('')}</div></fieldset><label>Store Logo${s.logo_url?` <img src="${esc(s.logo_url)}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`:` <img src="bilihan-logo.png" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`}<input name="logo_file" type="file" accept="image/*"></label><label>Hero title<input name="hero_title" value="${esc(s.hero_title||'')}"></label><label>Hero tagline<textarea name="hero_tagline">${esc(s.hero_tagline||'')}</textarea></label><label>Hero images<small class="muted" style="display:block;font-weight:400;margin:2px 0 8px">Best size 1600×1200px (4:3 ratio). Tap the + tile to add an image, tap × to remove one.</small><div id="heroSlotsWrap" class="hero-slots-grid"></div></label><label>About text<textarea name="about_text" rows="6">${esc(s.about_text||'')}</textarea></label><label>About image<input name="about_file" type="file" accept="image/*"></label><input name="about_image_url" value="${esc(s.about_image_url||'')}" placeholder="Or About image URL"><button class="primary-btn">Save Appearance</button></form>`;const wrap=document.getElementById('heroSlotsWrap');function renderHeroSlots(){wrap.innerHTML=heroItems.map((it,i)=>`<div class="hero-slot" data-id="${it.id}"><img src="${esc(it.file?URL.createObjectURL(it.file):it.url)}" alt="Hero image ${i+1}"><button type="button" class="hero-slot-remove" data-id="${it.id}" aria-label="Remove hero image ${i+1}" title="Remove">×</button></div>`).join('')+`<label class="hero-add-slot" title="Add hero image"><span>+</span><input type="file" accept="image/*" id="heroAddInput"></label>`;wrap.querySelectorAll('.hero-slot-remove').forEach(btn=>btn.onclick=()=>{heroItems=heroItems.filter(x=>x.id!==btn.dataset.id);renderHeroSlots()});document.getElementById('heroAddInput').onchange=ev=>{const f=ev.target.files[0];if(!f)return;heroItems.push({id:crypto.randomUUID(),url:null,file:f});renderHeroSlots()}}renderHeroSlots();const skinForm=document.getElementById('appearanceForm');skinForm.querySelectorAll('.theme-option input').forEach(r=>r.onchange=()=>{skinForm.querySelectorAll('.theme-option').forEach(l=>l.classList.toggle('is-selected',l.contains(r)&&r.checked))});skinForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const pickedSkin=skinIdOrDefault(fd.get('storefront_skin')||currentSkin);let logo=s.logo_url||null;let about=String(fd.get('about_image_url')||'');const logoFile=fd.get('logo_file');const aboutFile=fd.get('about_file');try{if(logoFile&&logoFile.size)logo=await uploadImage(logoFile,'store-assets');if(aboutFile&&aboutFile.size)about=await uploadImage(aboutFile,'store-assets');const heroUrls=[];for(const it of heroItems){if(it.file){heroUrls.push(await uploadImage(it.file,'store-assets'))}else if(it.url){heroUrls.push(it.url)}}const row={logo_url:logo,hero_title:fd.get('hero_title'),hero_tagline:fd.get('hero_tagline'),hero_images:heroUrls,about_text:fd.get('about_text'),about_image_url:about,storefront_skin:pickedSkin};const {error}=await db.from('store_settings').update(row).eq('id',1);if(error)throw error;await loadAll();alert('Appearance saved.');renderShell()}catch(err){alert(err.message)}}}
+function appearance(m){const s=A.data.settings;const currentSkin=skinIdOrDefault(s.storefront_skin);let heroItems=(s.hero_images||[]).map(url=>({id:crypto.randomUUID(),url,file:null}));m.innerHTML=`<span class="eyebrow">Storefront content</span><h2>Appearance</h2><form id="appearanceForm" class="panel admin-form"><fieldset class="theme-choice"><legend>Storefront theme</legend><p class="muted form-hint">The design customers see. Light and dark mode still work in either one.</p><div class="theme-options">${SKIN_OPTIONS.map(o=>skinOptionHtml(o,currentSkin)).join('')}</div></fieldset><label>Store Logo${s.logo_url?` <img src="${esc(s.logo_url)}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`:` <img src="bilihan-logo.png" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`}<input name="logo_file" type="file" accept="image/*"></label><label>Hero title<input name="hero_title" value="${esc(s.hero_title||'')}"></label><label>Hero tagline<textarea name="hero_tagline">${esc(s.hero_tagline||'')}</textarea></label><label>Hero images<small class="muted" style="display:block;font-weight:400;margin:2px 0 8px">Best size 1600×1200px (4:3 ratio). Tap the + tile to add an image, tap × to remove one.</small><div id="heroSlotsWrap" class="hero-slots-grid"></div></label><label>About text<textarea name="about_text" rows="6">${esc(s.about_text||'')}</textarea></label><label>About image<input name="about_file" type="file" accept="image/*"></label><input name="about_image_url" value="${esc(s.about_image_url||'')}" placeholder="Or About image URL"><fieldset class="theme-choice"><legend>Promo banner</legend><p class="muted form-hint">Shown as a popup when customers open the website. They tap anywhere on the screen or the &times; button to close it and see the store.</p><label>Banner image${s.ad_banner_url?` <img src="${esc(s.ad_banner_url)}" alt="Promo banner preview" style="display:block;max-width:260px;border-radius:12px;margin:8px 0;border:1px solid var(--line)">`:''}<input name="banner_file" type="file" accept="image/*"></label><label class="check-row"><input type="checkbox" name="ad_banner_enabled"${s.ad_banner_enabled?' checked':''}><span>Show banner popup on the website</span></label></fieldset><button class="primary-btn">Save Appearance</button></form>`;const wrap=document.getElementById('heroSlotsWrap');function renderHeroSlots(){wrap.innerHTML=heroItems.map((it,i)=>`<div class="hero-slot" data-id="${it.id}"><img src="${esc(it.file?URL.createObjectURL(it.file):it.url)}" alt="Hero image ${i+1}"><button type="button" class="hero-slot-remove" data-id="${it.id}" aria-label="Remove hero image ${i+1}" title="Remove">×</button></div>`).join('')+`<label class="hero-add-slot" title="Add hero image"><span>+</span><input type="file" accept="image/*" id="heroAddInput"></label>`;wrap.querySelectorAll('.hero-slot-remove').forEach(btn=>btn.onclick=()=>{heroItems=heroItems.filter(x=>x.id!==btn.dataset.id);renderHeroSlots()});document.getElementById('heroAddInput').onchange=ev=>{const f=ev.target.files[0];if(!f)return;heroItems.push({id:crypto.randomUUID(),url:null,file:f});renderHeroSlots()}}renderHeroSlots();const skinForm=document.getElementById('appearanceForm');skinForm.querySelectorAll('.theme-option input').forEach(r=>r.onchange=()=>{skinForm.querySelectorAll('.theme-option').forEach(l=>l.classList.toggle('is-selected',l.contains(r)&&r.checked))});skinForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const pickedSkin=skinIdOrDefault(fd.get('storefront_skin')||currentSkin);let logo=s.logo_url||null;let about=String(fd.get('about_image_url')||'');const logoFile=fd.get('logo_file');const aboutFile=fd.get('about_file');let banner=s.ad_banner_url||null;const bannerFile=fd.get('banner_file');try{if(logoFile&&logoFile.size)logo=await uploadImage(logoFile,'store-assets');if(aboutFile&&aboutFile.size)about=await uploadImage(aboutFile,'store-assets');if(bannerFile&&bannerFile.size)banner=await uploadImage(bannerFile,'store-assets');const heroUrls=[];for(const it of heroItems){if(it.file){heroUrls.push(await uploadImage(it.file,'store-assets'))}else if(it.url){heroUrls.push(it.url)}}const row={logo_url:logo,hero_title:fd.get('hero_title'),hero_tagline:fd.get('hero_tagline'),hero_images:heroUrls,about_text:fd.get('about_text'),about_image_url:about,storefront_skin:pickedSkin,ad_banner_url:banner,ad_banner_enabled:fd.get('ad_banner_enabled')==='on'};const {error}=await db.from('store_settings').update(row).eq('id',1);if(error){/* Database predates the coupons migration: save everything except the banner. */
+  if(/ad_banner/.test(error.message||'')){delete row.ad_banner_url;delete row.ad_banner_enabled;const retry=await db.from('store_settings').update(row).eq('id',1);if(retry.error)throw retry.error;await loadAll();alert('Appearance saved, but the promo banner needs the coupons migration (supabase-coupons.sql) to be run first.');renderShell();return}
+  throw error}await loadAll();alert('Appearance saved.');renderShell()}catch(err){alert(err.message)}}}
 /* Say so the moment an oversized image is picked, rather than after the whole
    form has been filled in and saved. One delegated listener covers every image
    input in Admin, including the ones built later inside modals. uploadImage()
@@ -1557,6 +1564,187 @@ function variantsForProduct(productId){
   return (A.data.variantGroups||[]).filter(g=>g.product_id===productId)
     .sort((a,b)=>a.sort_order-b.sort_order)
     .map(g=>({...g,options:(A.data.variantOptions||[]).filter(o=>o.group_id===g.id).sort((a,b)=>a.sort_order-b.sort_order)}));
+}
+
+/* ========================================================================
+   Coupons / Discounts
+
+   Credit coupons carry a peso balance and work again and again until the
+   balance runs out; percent coupons are one-time. The checkout validates one
+   code at a time through validate_coupon() and redeems it inside
+   place_order(), so the admin never handles money math here — it only
+   creates, pauses, edits, regenerates and deletes coupons.
+
+   The section is in AUTO_KEEP_MARKUP: the generator form and the settings
+   modal must not be repainted out from under the person using them. Every
+   action reloads the data and repaints explicitly instead.
+   ======================================================================== */
+/* No lookalikes: 0/O and 1/I are out, so a code read over the phone is exact. */
+const COUPON_CODE_CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function genCouponCode(){let s='';for(let i=0;i<8;i++)s+=COUPON_CODE_CHARS[Math.floor(Math.random()*COUPON_CODE_CHARS.length)];return s}
+/* Expiry is live: a coupon whose date has passed reads as expired without
+   anyone having to flip a status for it. */
+function couponLiveStatus(c){
+  if(c.status==='paused')return 'paused';
+  if(c.status==='used')return 'used';
+  if(c.expires_at&&new Date(c.expires_at)<new Date())return 'expired';
+  return 'active';
+}
+const COUPON_STATUS_LABEL={active:'Active',paused:'Paused',used:'Used',expired:'Expired'};
+const COUPON_STATUS_CLASS={active:'coupon-pill-active',paused:'coupon-pill-paused',used:'coupon-pill-used',expired:'coupon-pill-expired'};
+function couponValueHtml(c){
+  if(c.kind==='credit')return `<strong>${money(c.remaining_credit)}</strong> <span class="muted">left of ${money(c.credit_amount)}</span>`;
+  return `<strong>${Number(c.percent_value)}% off</strong> <span class="muted">single use</span>`;
+}
+function couponRowHtml(c){
+  const st=couponLiveStatus(c);
+  const expiry=c.expires_at?new Date(c.expires_at).toLocaleDateString('en-PH',{year:'numeric',month:'short',day:'numeric'}):'<span class="muted">No expiry</span>';
+  return `<tr><td><code class="coupon-code">${esc(c.code)}</code></td><td>${c.kind==='credit'?'Credit':'Discount'}</td><td>${couponValueHtml(c)}</td><td><span class="coupon-pill ${COUPON_STATUS_CLASS[st]}">${COUPON_STATUS_LABEL[st]}</span></td><td>${expiry}</td><td><div class="row-actions" style="justify-content:flex-start"><button type="button" data-cpause="${esc(c.id)}">${c.status==='paused'?'Resume':'Pause'}</button><button type="button" data-csettings="${esc(c.id)}">Settings</button><button type="button" class="danger-btn" data-cdelete="${esc(c.id)}">Delete</button></div></td></tr>`;
+}
+function coupons(m){
+  if(A.data.couponsUnavailable){
+    m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Discounts &amp; credits</span><h2>Coupons</h2></div></div><div class="panel"><p><strong>Coupons are not set up yet.</strong></p><p class="muted">Run <code>supabase-coupons.sql</code> once in Supabase Dashboard &rarr; SQL Editor, then reload this page.</p></div>`;
+    return;
+  }
+  const list=[...(A.data.coupons||[])];
+  m.innerHTML=`
+  <div class="page-head"><div><span class="eyebrow">Discounts &amp; credits</span><h2>Coupons</h2></div></div>
+  <div class="panel admin-form">
+    <h3 style="margin:0 0 12px">Generate coupon</h3>
+    <div class="coupon-gen-grid">
+      <label class="field"><span class="field-label">Code</span><span class="coupon-code-row"><input id="couponCodeInput" maxlength="8" value="${genCouponCode()}" autocomplete="off" spellcheck="false" style="text-transform:uppercase"><button type="button" id="couponRegenBtn" title="Generate a new random code">&#8635; New</button></span></label>
+      <label class="field"><span class="field-label">Type</span><select id="couponKind"><option value="credit">Credit (&#8369;) &mdash; reusable until used up</option><option value="percent">Discount (%) &mdash; one-time use</option></select></label>
+      <label class="field"><span class="field-label" id="couponValueLabel">Credit amount (&#8369;)</span><input id="couponValue" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="e.g. 100"></label>
+      <label class="field"><span class="field-label">Expires <span class="muted">(optional)</span></span><input id="couponExpires" type="date"></label>
+    </div>
+    <div class="row-actions" style="justify-content:flex-start;margin-top:12px"><button type="button" id="couponCreateBtn" class="primary-btn">Generate coupon</button></div>
+    <p class="muted" style="margin:10px 0 0">The code goes straight into the list below. Credit coupons work again and again until the balance runs out; percent coupons work once, then are marked used.</p>
+  </div>
+  <div class="panel table-wrap">
+    <div class="page-head"><h3 style="margin:0">All coupons (${list.length})</h3><div class="row-actions"><button type="button" id="couponRefreshBtn">Refresh</button></div></div>
+    ${list.length?`<table class="table"><thead><tr><th>Code</th><th>Type</th><th>Value</th><th>Status</th><th>Expires</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>${list.map(couponRowHtml).join('')}</tbody></table>`:'<p class="muted" style="padding:20px">No coupons yet. Generate one above and it will appear here.</p>'}
+  </div>`;
+  const codeInput=document.getElementById('couponCodeInput');
+  const kindSel=document.getElementById('couponKind');
+  const valueInput=document.getElementById('couponValue');
+  const valueLabel=document.getElementById('couponValueLabel');
+  const expiresInput=document.getElementById('couponExpires');
+  const syncKind=()=>{const isCredit=kindSel.value==='credit';valueLabel.innerHTML=isCredit?'Credit amount (&#8369;)':'Discount (%)';valueInput.placeholder=isCredit?'e.g. 100':'e.g. 10';valueInput.removeAttribute('max')};
+  kindSel.onchange=syncKind;syncKind();
+  document.getElementById('couponRegenBtn').onclick=()=>{codeInput.value=genCouponCode()};
+  document.getElementById('couponRefreshBtn').onclick=async()=>{await loadAll();coupons(document.getElementById('adminMain'))};
+  document.getElementById('couponCreateBtn').onclick=async()=>{
+    const code=codeInput.value.trim().toUpperCase();
+    const kind=kindSel.value;
+    const val=Number(valueInput.value);
+    if(!/^[A-Z0-9]{8}$/.test(code))return alert('The code must be 8 letters/numbers.');
+    if(!(val>0))return alert(kind==='credit'?'Enter a credit amount greater than 0.':'Enter a discount percent greater than 0.');
+    if(kind==='percent'&&val>100)return alert('A discount cannot be more than 100%.');
+    if((A.data.coupons||[]).some(c=>String(c.code).toUpperCase()===code))return alert('That code is already in the list. Tap "\u21bb New" for another one.');
+    const btn=document.getElementById('couponCreateBtn');btn.disabled=true;
+    try{
+      const {error}=await db.from('coupons').insert({code,kind,
+        credit_amount:kind==='credit'?val:0,
+        remaining_credit:kind==='credit'?val:0,
+        percent_value:kind==='percent'?val:0,
+        status:'active',
+        expires_at:expiresInput.value?new Date(expiresInput.value+'T23:59:59').toISOString():null});
+      if(error)throw error;
+      await loadAll();coupons(document.getElementById('adminMain'));
+    }catch(err){alert(err.message);btn.disabled=false}
+  };
+  m.querySelectorAll('[data-cpause]').forEach(b=>b.onclick=()=>togglePauseCoupon(b.dataset.cpause));
+  m.querySelectorAll('[data-csettings]').forEach(b=>b.onclick=()=>openCouponSettings(b.dataset.csettings));
+  m.querySelectorAll('[data-cdelete]').forEach(b=>b.onclick=()=>deleteCoupon(b.dataset.cdelete));
+}
+async function repaintCoupons(){await loadAll();const m=document.getElementById('adminMain');if(m&&A.section==='coupons')coupons(m)}
+async function togglePauseCoupon(id){
+  const c=(A.data.coupons||[]).find(x=>x.id===id);if(!c)return;
+  const next=c.status==='paused'?'active':'paused';
+  const {error}=await db.from('coupons').update({status:next}).eq('id',id);
+  if(error)return alert(error.message);
+  repaintCoupons();
+}
+async function deleteCoupon(id){
+  const c=(A.data.coupons||[]).find(x=>x.id===id);if(!c)return;
+  if(!confirm(`Delete coupon ${c.code} permanently?\n\nAnyone holding this code will no longer be able to use it. This cannot be undone.`))return;
+  const {error}=await db.from('coupons').delete().eq('id',id);
+  if(error)return alert(error.message);
+  repaintCoupons();
+}
+/* Per-coupon settings: expiry, credit balance, regenerate the code with the
+   same data, or delete. Mirrors the modal pattern of openOrderDetails. */
+function openCouponSettings(id){
+  const c=(A.data.coupons||[]).find(x=>x.id===id);if(!c)return;
+  const isCredit=c.kind==='credit';
+  document.getElementById('couponModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend',`<div class="admin-modal-backdrop" id="couponModal"><div class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="couponModalTitle"><div class="admin-modal-header"><div><span class="eyebrow">Coupon settings</span><h2 id="couponModalTitle"><code class="coupon-code">${esc(c.code)}</code></h2></div><button type="button" class="admin-modal-close" id="closeCouponModal" aria-label="Close">&times;</button></div>
+  <div class="admin-form" style="margin-top:12px">
+    <label class="field"><span class="field-label">Type</span><div class="choice-value">${isCredit?'Credit (\u20b1) \u2014 reusable until used up':'Discount (%) \u2014 one-time use'}</div></label>
+    ${isCredit?`<label class="field"><span class="field-label">Remaining credit (\u20b1)</span><input id="csRemaining" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(c.remaining_credit)}"><small class="muted">Originally ${money(c.credit_amount)}. The list shows what is left.</small></label>`
+              :`<label class="field"><span class="field-label">Discount (%)</span><input id="csPercent" type="number" min="0.01" max="100" step="0.01" inputmode="decimal" value="${esc(c.percent_value)}"></label>`}
+    <label class="field"><span class="field-label">Expires <span class="muted">(optional)</span></span><input id="csExpires" type="date" value="${c.expires_at?new Date(c.expires_at).toISOString().slice(0,10):''}"></label>
+    <label class="field"><span class="field-label">Status</span><select id="csStatus"><option value="active"${c.status==='active'?' selected':''}>Active</option><option value="paused"${c.status==='paused'?' selected':''}>Paused</option><option value="used"${c.status==='used'?' selected':''}>Used</option></select></label>
+  </div>
+  <div class="row-actions" style="margin-top:16px"><button type="button" class="primary-btn" id="csSave">Save</button><button type="button" id="csRegen">\u21bb Regenerate code</button><button type="button" class="danger-btn" id="csDelete">Delete</button></div>
+  </div></div>`);
+  document.body.classList.add('modal-open');
+  const modal=document.getElementById('couponModal');
+  const onKey=e=>{if(e.key==='Escape')close()};
+  function close(){modal.remove();document.body.classList.remove('modal-open');document.removeEventListener('keydown',onKey)}
+  document.getElementById('closeCouponModal').onclick=close;
+  modal.addEventListener('click',e=>{if(e.target===modal)close()});
+  document.addEventListener('keydown',onKey);
+  document.getElementById('csSave').onclick=async()=>{
+    const patch={expires_at:document.getElementById('csExpires').value?new Date(document.getElementById('csExpires').value+'T23:59:59').toISOString():null,
+                 status:document.getElementById('csStatus').value};
+    if(isCredit){
+      const rem=Number(document.getElementById('csRemaining').value);
+      if(!(rem>=0))return alert('Remaining credit cannot be negative.');
+      patch.remaining_credit=rem;
+      /* Topping a spent coupon back up returns it to service. */
+      if(rem>0&&patch.status==='used')patch.status='active';
+    }else{
+      const pct=Number(document.getElementById('csPercent').value);
+      if(!(pct>0)||pct>100)return alert('Enter a discount between 0 and 100.');
+      patch.percent_value=pct;
+    }
+    const {error}=await db.from('coupons').update(patch).eq('id',id);
+    if(error)return alert(error.message);
+    close();repaintCoupons();
+  };
+  document.getElementById('csRegen').onclick=async()=>{
+    const taken=new Set((A.data.coupons||[]).map(x=>String(x.code).toUpperCase()));
+    let code='';do{code=genCouponCode()}while(taken.has(code));
+    if(!confirm(`Give this coupon a new code?\n\nOld: ${c.code}\nNew: ${code}\n\nThe old code stops working. Everything else stays the same.`))return;
+    const {error}=await db.from('coupons').update({code}).eq('id',id);
+    if(error)return alert(error.message);
+    close();repaintCoupons();
+  };
+  document.getElementById('csDelete').onclick=()=>{close();deleteCoupon(id)};
+  document.getElementById('closeCouponModal').focus();
+}
+/* The small breakdown behind the "Yes" in the orders table's Coupon column:
+   the lines, the subtotal before the coupon, the coupon itself, and the total. */
+function openCouponBreakdown(orderId){
+  const o=(A.data.orders||[]).find(x=>x.id===orderId);
+  if(!o||!o.coupon_code)return;
+  const items=(o.order_items||[]);
+  const discount=Number(o.coupon_discount||0);
+  const subtotal=Number(o.total||0)+discount;
+  const itemRows=items.map(i=>`<tr><td>${esc(i.product_name)} &times; ${i.qty}</td><td style="text-align:right">${money(Number(i.unit_price||0)*Number(i.qty||0))}</td></tr>`).join('');
+  document.getElementById('couponBreakdownModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend',`<div class="admin-modal-backdrop" id="couponBreakdownModal"><div class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="couponBreakdownTitle"><div class="admin-modal-header"><div><span class="eyebrow">Coupon used</span><h2 id="couponBreakdownTitle">#${esc(o.order_code)}</h2></div><button type="button" class="admin-modal-close" id="closeCouponBreakdown" aria-label="Close">&times;</button></div>
+  <div class="table-wrap" style="margin-top:12px"><table class="table"><tbody>${itemRows}<tr><td>Subtotal</td><td style="text-align:right"><strong>${money(subtotal)}</strong></td></tr><tr><td>Coupon <code class="coupon-code">${esc(o.coupon_code)}</code>${o.coupon_kind?` <span class="muted">(${o.coupon_kind==='credit'?'credit':'discount'})</span>`:''}</td><td style="text-align:right"><strong>&minus;${money(discount)}</strong></td></tr><tr><td><strong>Total</strong></td><td style="text-align:right"><strong>${money(o.total)}</strong></td></tr></tbody></table></div>
+  </div></div>`);
+  document.body.classList.add('modal-open');
+  const modal=document.getElementById('couponBreakdownModal');
+  const onKey=e=>{if(e.key==='Escape')close()};
+  function close(){modal.remove();document.body.classList.remove('modal-open');document.removeEventListener('keydown',onKey)}
+  document.getElementById('closeCouponBreakdown').onclick=close;
+  modal.addEventListener('click',e=>{if(e.target===modal)close()});
+  document.addEventListener('keydown',onKey);
+  document.getElementById('closeCouponBreakdown').focus();
 }
 
 /* ========================================================================
