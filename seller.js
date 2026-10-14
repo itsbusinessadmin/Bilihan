@@ -36,6 +36,10 @@
      window on screen can never be overwritten by, or left waiting on, someone else's
      reply. */
   let buyersGen = 0;
+  /* A buyer-list load that failed: the window keeps the totals with the error
+     under them, and the next poll retries the load even when the figures
+     haven't moved, so a passing blip clears itself. */
+  let buyersFailed = false, buyersErrorMsg = '';
   /* Which item folders are open inside the seller's window, by item name. The window
      is redrawn whenever that seller's figures move, and a folder the reader opened
      must still be open afterwards. Emptied when the window closes. */
@@ -143,15 +147,22 @@
     if (close) close.onclick = () => $('sellerDialog').close();
   }
 
-  function paintDialog(seller, items) {
+  function paintDialog(seller, items, buyersError) {
     /* Same guard as the list: rebuilding this every few seconds would drop the focus
        ring and any selected text while nothing had actually changed. */
-    const signature = JSON.stringify(seller) + JSON.stringify(items);
+    const signature = JSON.stringify(seller) + JSON.stringify(items) + '|' + (buyersError || '');
     if (signature === openSignature) return;
     openSignature = signature;
     const head = `<p class="seller-dialog-sub">${num(seller.qty)} paid &middot; ${money(overallOf(seller))} overall${owedOf(seller) ? ` &middot; <span class="seller-dialog-owed">${money(owedOf(seller))} unpaid</span>` : ''}</p>`;
     let body;
     if (!(seller.items || []).length) body = '<p class="seller-item-empty">Nothing sold yet.</p>';
+    else if (buyersError) {
+      /* Only the buyer list failed, so the error takes the list's place and the
+         totals stay on screen. */
+      body = head
+        + moneyTable(seller.items, { label: 'All items', qty: seller.qty, original_total: seller.original_total, interest_total: seller.interest_total, overall: seller.overall })
+        + `<p class="seller-item-empty">${esc(buyersError)}</p>`;
+    }
     else if (!items) {
       /* The totals are already here, so show them rather than an empty window while
          the buyers are still on their way. */
@@ -205,18 +216,21 @@
       if (error) throw error;
       if (!data?.ok) throw new Error(data.error || 'This link is no longer valid.');
       if (gen !== buyersGen || openSeller !== name) return;
+      buyersFailed = false; buyersErrorMsg = '';
       openItems = data.items || [];
       const seller = (lastSellers || []).find(s => s.name === name);
       if (seller) paintDialog(seller, openItems);
     } catch (err) {
       console.warn('Buyers lookup failed', err);
       /* A stale failure must not overwrite the window the reader has since moved on
-         to, but a failure for the window still on screen should say so rather than
-         sit on "Loading…". The poll retries the load whenever this seller's figures
-         move, so the window recovers on its own. */
+         to. A failure for the window still on screen keeps the totals up and puts
+         the error where the buyer list would go; the next poll retries the load
+         even when the figures haven't moved, so a passing blip clears itself. */
       if (gen !== buyersGen || openSeller !== name || openItems) return;
-      $('sellerDialog').innerHTML = dialogMarkup(name, `<p class="seller-item-empty">${esc(err.message || 'We could not load who ordered just now.')}</p>`);
-      wireDialogClose();
+      buyersFailed = true;
+      buyersErrorMsg = err.message || 'We could not load who ordered just now.';
+      const seller = (lastSellers || []).find(s => s.name === name);
+      if (seller) paintDialog(seller, null, buyersErrorMsg);
     }
   }
 
@@ -230,6 +244,7 @@
     openSeller = name;
     openSignature = '';
     openItems = null;
+    buyersFailed = false; buyersErrorMsg = '';
     openItemFolders.clear();
     autoOpenSingle = true;
     openPrint = sellerPrint(seller);
@@ -291,9 +306,11 @@
         if (!still) $('sellerDialog').close();
         else {
           const print = sellerPrint(still);
-          /* Only worth asking who ordered again if this seller's own figures moved. */
-          if (print !== openPrint) { openPrint = print; openItems = null; loadBuyers(openSeller) }
-          paintDialog(still, openItems);
+          /* Only worth asking who ordered again if this seller's own figures moved —
+             or if the last buyer load failed, in which case the next poll retries it
+             so a passing blip clears itself. */
+          if (print !== openPrint || buyersFailed) { openPrint = print; openItems = null; buyersFailed = false; loadBuyers(openSeller) }
+          paintDialog(still, openItems, buyersFailed ? buyersErrorMsg : '');
         }
       }
     }
