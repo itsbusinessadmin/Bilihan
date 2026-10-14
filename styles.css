@@ -186,13 +186,13 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .menu-controls{display:flex;align-items:center;gap:var(--space-sm);margin-bottom:var(--space-md);min-width:0;flex-wrap:wrap}
 /* Product search sits next to the category filter and the view switch. */
 .menu-search{flex:1 1 160px;min-width:0;max-width:280px}
-.menu-search input{width:100%;min-height:40px;padding:0 16px;border:1px solid var(--line);border-radius:var(--radius-pill);background:var(--card);color:var(--text);font-size:var(--text-secondary)}
+.menu-search input{width:100%;min-height:40px;padding:0 16px;border:1px solid var(--line);border-radius:var(--radius-pill);background:var(--card);color:var(--text);font-size:1rem}
 .menu-search input::placeholder{color:var(--muted)}
 /* Category filter. A dropdown rather than a row of pills: the owner controls the
    category list and it grows, and a native select brings the platform's own
    picker on phones instead of a strip that scrolls sideways. */
 .category-select{position:relative;display:inline-flex;align-items:center;min-width:0;margin-inline-end:auto}
-.category-select select{appearance:none;-webkit-appearance:none;max-width:100%;min-height:40px;padding:0 42px 0 16px;border:1px solid var(--line);border-radius:var(--radius-pill);background:var(--card);color:var(--text);font-size:var(--text-secondary);font-weight:600;text-overflow:ellipsis;transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease)}
+.category-select select{appearance:none;-webkit-appearance:none;max-width:100%;min-height:40px;padding:0 42px 0 16px;border:1px solid var(--line);border-radius:var(--radius-pill);background:var(--card);color:var(--text);font-size:1rem;font-weight:600;text-overflow:ellipsis;transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease)}
 .category-select select:hover{border-color:var(--line-strong)}
 /* The popup itself is drawn by the OS; these keep it readable in dark mode. */
 .category-select select option{background:var(--bg-elevated);color:var(--text)}
@@ -206,7 +206,7 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 /* The card is a flex column so the meta row can be pinned to the bottom. Without
    this, a two-line product name pushed its stock label and cart button lower than
    the neighbouring one-line card, and the row never lined up across the grid. */
-.product-card{--card-action:40px;--card-action-gap:12px;contain:layout paint style;position:relative;display:flex;flex-direction:column;cursor:pointer;-webkit-tap-highlight-color:transparent;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);transition:transform var(--med) var(--ease),box-shadow var(--med) var(--ease),border-color var(--fast) var(--ease)}
+.product-card{--card-action:var(--touch);--card-action-gap:12px;contain:layout paint style;position:relative;display:flex;flex-direction:column;cursor:pointer;-webkit-tap-highlight-color:transparent;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);transition:transform var(--med) var(--ease),box-shadow var(--med) var(--ease),border-color var(--fast) var(--ease)}
 .product-card:hover{box-shadow:var(--shadow);border-color:var(--line-strong)}
 .product-card:active{transform:scale(.985)}
 .product-card-image{display:block;flex:0 0 auto;width:100%;aspect-ratio:1/1;object-fit:cover;background:var(--card-soft)}
@@ -214,7 +214,7 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .product-row{display:flex;align-items:flex-start;gap:10px}
 /* Reserve two lines for every name, clamped at two. One-line and two-line names
    then occupy identical height, so the price and everything under it agree. */
-.product-row strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-width:0;min-height:calc(2 * 1.3em);overflow-wrap:anywhere;font-size:var(--text-body);font-weight:600;line-height:1.3}
+.product-row strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-width:0;min-height:calc(2 * 1.3em);overflow-wrap:break-word;font-size:var(--text-body);font-weight:600;line-height:1.3}
 .price{white-space:nowrap;margin-left:auto;color:var(--accent-2);font-size:var(--text-secondary);font-weight:700;font-variant-numeric:tabular-nums;line-height:1.3}
 [data-theme="dark"] .price{color:var(--accent-3)}
 .stock{display:inline-flex;align-items:center;margin:0;color:var(--muted);font-size:var(--text-caption);font-weight:600;line-height:1.2}
@@ -244,7 +244,7 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .product-grid.list-view .product-info{display:flex;flex-direction:column;justify-content:center;padding:12px 15px}
 .product-grid.list-view .product-row strong{-webkit-line-clamp:1;min-height:0}
 .product-grid.list-view .product-card-bottom{margin-top:6px;padding-top:0}
-.product-grid.list-view .product-card{--card-action:38px;--card-action-gap:0px}
+.product-grid.list-view .product-card{--card-action:var(--touch);--card-action-gap:0px}
 
 .empty-state{grid-column:1/-1;padding:var(--space-2xl) var(--space-md);text-align:center;border:1px dashed var(--line-strong);border-radius:var(--radius);background:var(--card-soft)}
 .empty-state h3{margin:0 0 6px}
@@ -281,7 +281,7 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .cart-controls .qty-btn:active,.qty button:active{transform:scale(.9)}
 .cart-controls .qty-value{min-width:24px;line-height:var(--touch);text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
 .cart-controls .remove-btn,.link-btn{margin-left:auto;padding:0 10px;min-height:36px;border:0;border-radius:12px;background:transparent;color:var(--danger);font-weight:700;white-space:nowrap}
-.cart-controls .remove-btn,.icon-remove-btn{width:40px;height:40px;min-height:40px;flex:0 0 40px;margin-left:auto;padding:9px;display:grid;place-items:center;border:0;border-radius:12px;background:transparent;color:var(--danger);transition:background var(--fast) var(--ease)}
+.cart-controls .remove-btn,.icon-remove-btn{width:var(--touch);height:var(--touch);min-height:var(--touch);flex:0 0 var(--touch);margin-left:auto;padding:9px;display:grid;place-items:center;border:0;border-radius:12px;background:transparent;color:var(--danger);transition:background var(--fast) var(--ease)}
 .icon-remove-btn:hover{background:var(--danger-tint)}
 .qty{display:flex;align-items:center;gap:10px;margin-top:12px}
 
@@ -343,6 +343,8 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .error{color:var(--danger);font-size:var(--text-caption)}
 .summary{border:1px solid var(--line);padding:var(--space-md);border-radius:var(--radius-sm);background:var(--card-soft)}
 .summary-row{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:8px 0;border-bottom:1px solid color-mix(in srgb,var(--line) 65%,transparent)}
+/* Keep "× N" glued to the number — a dangling × on its own line looks broken. */
+.summary-row .qty-nowrap{white-space:nowrap}
 .summary-row:last-child{border-bottom:0}
 .summary-row>*{min-width:0;overflow-wrap:anywhere}
 
@@ -484,7 +486,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .hero-copy .primary-btn{width:100%;min-height:52px}
   #menu{padding-top:var(--space-xl)}
   .section-heading{margin-bottom:var(--space-md)}
-  .category-select select{min-height:38px;padding-inline:14px 38px;font-size:.83rem}
+  .category-select select{min-height:38px;padding-inline:14px 38px}
   .menu-controls{gap:var(--space-sm);margin-bottom:var(--space-md);align-items:flex-end}
   .view-switch{border-radius:12px}
   .view-btn{width:36px;height:36px}
@@ -496,7 +498,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .price{display:block;margin:4px 0 0;font-size:.84rem}
   .stock{font-size:.68rem}
 
-  .product-card{--card-action:38px;--card-action-gap:var(--space-sm)}
+  .product-card{--card-action:var(--touch);--card-action-gap:var(--space-sm)}
   .product-card-add{border-radius:12px}
   .product-grid.list-view .product-card{grid-template-columns:88px minmax(0,1fr);min-height:88px}
   .product-grid.list-view .product-card-image{width:88px;height:88px}
@@ -517,7 +519,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .cart-item{grid-template-columns:62px minmax(0,1fr);gap:10px;padding:12px 0}
   .cart-item img{width:62px;height:62px;border-radius:12px}
   .cart-controls{flex-wrap:nowrap;gap:4px}
-  .cart-controls .qty-btn,.cart-controls .remove-btn{width:40px;height:40px;min-height:40px;flex-basis:40px}
+  .cart-controls .qty-btn,.cart-controls .remove-btn{width:var(--touch);height:var(--touch);min-height:var(--touch);flex-basis:var(--touch)}
   .cart-controls .qty-value{line-height:40px}
   .drawer-header #closeCart{right:12px}
 
@@ -727,7 +729,12 @@ body.store-closed{overflow:hidden}
 .support-root{position:fixed;z-index:var(--z-toast);right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none}
 .support-root>*{pointer-events:auto}
 
-.support-fab{position:relative;display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border:1px solid var(--accent-2);border-radius:50%;background:var(--accent-2);color:#fff;box-shadow:var(--shadow-brand);cursor:pointer;transition:transform var(--fast) var(--ease-spring),box-shadow var(--med) var(--ease)}
+.support-fab{position:relative;display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border:1px solid var(--accent-2);border-radius:50%;background:var(--accent-2);color:#fff;box-shadow:var(--shadow-brand);cursor:pointer;transition:transform var(--fast) var(--ease-spring),box-shadow var(--med) var(--ease),opacity var(--fast) var(--ease)}
+/* The bubble renders above the cart drawer (its z-index is deliberate — the
+   closed-store curtain sits under it). While the cart is open it would cover
+   the Checkout button, so tuck just the bubble away; an open chat panel is
+   untouched and stays where it is. */
+body:has(#cartDrawer.open) .support-fab{opacity:0;pointer-events:none;transform:scale(.5)}
 [data-theme="dark"] .support-fab{color:#0d100e}
 .support-fab:hover{box-shadow:var(--shadow-lg)}
 .support-fab:active{transform:scale(.93)}
@@ -763,7 +770,7 @@ body.store-closed{overflow:hidden}
 .support-msg-admin{align-self:flex-start;border:1px solid var(--line);border-bottom-left-radius:5px;background:var(--card);color:var(--text)}
 
 .support-compose{display:flex;align-items:flex-end;gap:8px;padding:10px;border-top:1px solid var(--line);background:var(--card-soft)}
-.support-compose textarea{flex:1;min-width:0;height:44px;max-height:110px;padding:11px 13px;border:1px solid var(--line-strong);border-radius:12px;background:var(--card);color:var(--text);font:inherit;font-size:var(--text-secondary);line-height:1.4;resize:none}
+.support-compose textarea{flex:1;min-width:0;height:44px;max-height:110px;padding:11px 13px;border:1px solid var(--line-strong);border-radius:12px;background:var(--card);color:var(--text);font:inherit;font-size:1rem;line-height:1.4;resize:none}
 .support-compose textarea:focus{border-color:var(--accent-2);outline:0;box-shadow:0 0 0 3px color-mix(in srgb,var(--accent-2) 12%,transparent)}
 .support-compose .primary-btn{min-height:44px;padding-inline:16px}
 
