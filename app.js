@@ -66,7 +66,10 @@ function applySkin(name){
   if(document.documentElement.dataset.skin!==skin){document.documentElement.dataset.skin=skin;syncThemeColor()}
   try{localStorage.setItem(LS.skin,skin)}catch(e){}
 }
-function renderAll(){renderClosed();renderSettings();renderCategories();renderViewSwitch();renderProducts();renderCart();renderLatestOrderButton();renderConnection()}
+function renderAll(){renderClosed();renderSettings();renderCategories();renderViewSwitch();renderProducts();renderCart();renderLatestOrderButton();renderConnection();closeDialogForDeletedProduct()}
+/* If the product under the open popup was deleted, close it on the spot —
+   otherwise its Add button keeps working on a product that no longer exists. */
+function closeDialogForDeletedProduct(){const d=$('productDialog');if(!d||!d.open||!d.dataset.productId)return;if(!state.data.products.some(p=>String(p.id)===String(d.dataset.productId))){d.close();toast('This product is no longer available.')}}
 function renderConnection(){
   const b=$('connectionBanner');
   if(!window.BILIHAN_SUPABASE_CONFIGURED){b.textContent=window.BILIHAN_SUPABASE_LIB_MISSING?'We could not reach our ordering system. You are browsing a saved copy of the menu, and checkout is disabled until the connection returns.':'Store database is not connected yet. Browsing demo/cache only; checkout is disabled.';b.classList.remove('hidden');return}
@@ -488,7 +491,7 @@ function renderCart(){
   settleProductImages($('cartItems'));
   $('cartItems').querySelectorAll('button').forEach(b=>b.onclick=()=>cartAction(b.dataset.a,+b.dataset.i));$('checkoutBtn').onclick=openCheckout;
 }
-async function cartAction(a,i){const item=state.cart[i];if(!item)return;if(a==='minus')item.qty=Math.max(1,item.qty-1);if(a==='plus'){const p=state.data.products.find(p=>p.id===item.productId);if(cartQtyFor(item.productId)<(p?.stock||0))item.qty++;else toast('Maximum available stock reached')}if(a==='remove'&&confirm('Remove this item from your cart?'))state.cart.splice(i,1);saveCart()}
+async function cartAction(a,i){const item=state.cart[i];if(!item)return;if(a==='minus')item.qty=Math.max(1,item.qty-1);if(a==='plus'){const p=state.data.products.find(p=>p.id===item.productId);if(!p||p.is_available===false){toast('This item is no longer available');return}if(cartQtyFor(item.productId)<(p?.stock||0))item.qty++;else toast('Maximum available stock reached')}if(a==='remove'&&confirm('Remove this item from your cart?'))state.cart.splice(i,1);saveCart()}
 function openCart(){const d=$('cartDrawer');d.classList.add('open');d.setAttribute('aria-hidden','false');d.removeAttribute('inert');$('backdrop').classList.remove('hidden');$('closeCart').focus()}
 function closeCart(){const d=$('cartDrawer');d.classList.remove('open');d.setAttribute('aria-hidden','true');d.setAttribute('inert','');$('backdrop').classList.add('hidden')}
 $('cartBtn').onclick=openCart;$('closeCart').onclick=closeCart;$('backdrop').onclick=closeCart;

@@ -34,7 +34,7 @@
   const state = {
     session: read(LS_KEY, null),      /* {threadId, token, name, orderCode} */
     messages: read(LS_MSGS, []),
-    open: false, busy: false, unread: 0, timer: null, lastError: '',
+    open: false, busy: false, sending: false, unread: 0, timer: null, lastError: '',
     adminLastReadAt: null,      /* when the store last had this conversation open */
     /* What the chime has already accounted for. customer_unread only ever rises
        when the store replies, and the panel shows replies directly, so each has its
@@ -107,7 +107,7 @@
   }
 
   function bubbleHtml(m) {
-    const when = new Date(m.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const when = new Date(m.created_at).toLocaleString([], { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     return `<div class="support-msg support-msg-${m.sender === 'admin' ? 'admin' : 'me'}">
       <p>${esc(m.body)}</p><time>${esc(when)}</time></div>`;
   }
@@ -150,7 +150,7 @@
        have been read yet. */
     const sent = last && !String(last.id).startsWith('local-') ? new Date(last.created_at) : null;
     if (!last || last.sender !== 'customer' || !seenAt || !sent || seenAt < sent) return '';
-    const when = seenAt.toLocaleString([], { hour: 'numeric', minute: '2-digit' });
+    const when = seenAt.toLocaleString([], { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' });
     return `<div class="support-seen">Seen ${esc(when)}</div>`;
   }
 
@@ -159,8 +159,12 @@
     if (!log) return;
     /* The compose box is a sibling of the log, not inside it, so repainting here
        never costs anyone a half-typed message. */
+    /* Only yank the view to the bottom when the reader was already there — a
+       repaint fired by a read receipt must not interrupt someone reading
+       older messages. */
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
     log.innerHTML = greetingHtml() + state.messages.map(bubbleHtml).join('') + seenHtml();
-    log.scrollTop = log.scrollHeight;
+    if (atBottom) log.scrollTop = log.scrollHeight;
   }
 
   /* ---------- data ---------- */
@@ -217,7 +221,10 @@
 
   async function refresh(force) {
     const client = db();
-    if (!client || !state.session || state.busy) return;
+    /* A poll that lands mid-send would paint the server copy (which does not
+       have the just-sent message yet) over the optimistic one, blinking it
+       out and back — send() holds the line until it reconciles itself. */
+    if (!client || !state.session || state.busy || state.sending) return;
     state.busy = true;
     try {
       const { data, error } = await client.rpc('support_fetch', {
@@ -283,6 +290,7 @@
     const optimistic = { id: 'local-' + Date.now(), sender: 'customer', body: text, created_at: new Date().toISOString() };
     state.messages = [...state.messages, optimistic];
     paintMessages();
+    state.sending = true;
     try {
       const { data, error } = await client.rpc('support_send', {
         p_thread_id: state.session.threadId, p_token: state.session.token, p_body: text
@@ -295,8 +303,6 @@
         if (log) log.insertAdjacentHTML('beforeend', `<div class="support-error" role="alert">${esc(data?.error || 'Message not sent.')}</div>`);
         return false;
       }
-      await refresh(true);
-      return true;
     } catch (err) {
       console.error('Bilihan support: send failed', err);
       state.messages = state.messages.filter(m => m.id !== optimistic.id);
@@ -304,7 +310,11 @@
       const log = root.querySelector('#supportLog');
       if (log) log.insertAdjacentHTML('beforeend', `<div class="support-error" role="alert">${esc(describeError(err))}</div>`);
       return false;
+    } finally {
+      state.sending = false;
     }
+    await refresh(true);
+    return true;
   }
 
   function clearSession() {

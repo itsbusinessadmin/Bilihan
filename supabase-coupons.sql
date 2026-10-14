@@ -110,6 +110,9 @@ grant execute on function public.validate_coupon(text) to anon, authenticated;
 -- p_coupon_code is optional (defaults to null), so older callers that pass
 -- nine arguments keep working unchanged.
 -- ===================================================================
+-- Audit batch 8: the sold-out auto-hide flag must exist wherever place_order
+-- is redefined, so re-running this file can never silently downgrade it.
+alter table public.products add column if not exists auto_hidden boolean not null default false;
 -- A new signature, so the old nine-argument version is dropped first.
 drop function if exists public.place_order(text,text,text,text,text,date,text,text,jsonb);
 
@@ -382,7 +385,14 @@ begin
            nullif(v_item->>'seller_name',''));
     update public.products
       set stock = stock - (v_item->>'qty')::integer,
-          is_available = case when stock - (v_item->>'qty')::integer > 0 then is_available else false end
+          is_available = case when stock - (v_item->>'qty')::integer > 0 then is_available else false end,
+          /* Remember who switched the product off. When checkout itself hides a
+             product that just sold out, auto_hidden is set; a product the owner
+             hid on purpose keeps whatever it had. Cancelling later uses this to
+             decide whether the product may come back on the shelf by itself. */
+          auto_hidden = case when stock - (v_item->>'qty')::integer > 0 then auto_hidden
+                             when is_available then true
+                             else auto_hidden end
       where id=(v_item->>'product_id')::uuid;
   end loop;
 
