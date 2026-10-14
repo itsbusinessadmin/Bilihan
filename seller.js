@@ -51,6 +51,9 @@
     $('sellerError').textContent = message;
     $('sellerError').classList.remove('hidden');
     $('sellerAsOf').textContent = '';
+    /* Stale figures must not sit underneath the error looking current. */
+    $('sellerTotals').classList.add('hidden');
+    $('sellerBody').innerHTML = '';
   }
 
   /* The same three states the admin sets in Orders, in the same three colours, so

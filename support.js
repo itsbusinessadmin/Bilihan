@@ -125,7 +125,9 @@
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
     });
-    form.onsubmit = async e => { e.preventDefault(); await send(input.value); input.value = ''; grow(); input.focus(); };
+    /* The box clears only when the message actually sent: on a failed send the
+       text stays put so it can be retried instead of retyped. */
+    form.onsubmit = async e => { e.preventDefault(); if(await send(input.value)){ input.value=''; grow(); } input.focus(); };
     input.focus();
   }
 
@@ -288,15 +290,17 @@
         paintMessages();
         const log = root.querySelector('#supportLog');
         if (log) log.insertAdjacentHTML('beforeend', `<div class="support-error" role="alert">${esc(data?.error || 'Message not sent.')}</div>`);
-        return;
+        return false;
       }
       await refresh(true);
+      return true;
     } catch (err) {
       console.error('Bilihan support: send failed', err);
       state.messages = state.messages.filter(m => m.id !== optimistic.id);
       paintMessages();
       const log = root.querySelector('#supportLog');
       if (log) log.insertAdjacentHTML('beforeend', `<div class="support-error" role="alert">${esc(describeError(err))}</div>`);
+      return false;
     }
   }
 

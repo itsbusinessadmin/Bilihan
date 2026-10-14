@@ -332,6 +332,12 @@ function patchProductDialog(p){
   if(addBtn){
     if(sold){addBtn.disabled=true;addBtn.textContent='Sold Out'}
     else if(addBtn.disabled&&addBtn.textContent==='Sold Out'){addBtn.disabled=false;addBtn.textContent='Add to Cart'}
+  }else if(open.dataset.maxed==='1'&&!sold&&left>0){
+    /* The dialog opened with "you already have the maximum in your cart" and
+       no picker at all. Stock has since come back, so rebuild it with a working
+       picker. Nothing is lost: there were no variant picks or quantity to keep,
+       because that layout has neither. */
+    openProduct(p.id);
   }
 }
 
@@ -456,6 +462,9 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
   }
   refreshVariants();
   $('productDialog').dataset.max=max;
+  /* Remember whether the picker exists at all: patchProductDialog needs to know
+     if a restock should bring the picker back. */
+  $('productDialog').dataset.maxed=max<=0&&!sold?'1':'';
   if($('qMinus')){$('qMinus').onclick=()=>{q=Math.max(1,q-1);$('qVal').textContent=q};$('qPlus').onclick=()=>{const limit=Number($('productDialog').dataset.max);q=Math.min(Number.isFinite(limit)?limit:max,q+1);$('qVal').textContent=q};$('addToCart').onclick=()=>{
     if(missingRequired(groups,chosen).length)return;
     /* The picker cap is live, but stock may have moved since the dialog opened,
@@ -664,6 +673,10 @@ async function uploadReceiptToGoogleDrive(order,file,cachedBase64){
   if(!file)throw new Error('Please upload your payment receipt.');
   const file_base64=cachedBase64||await fileToBase64(file);
   const payload={action:'upload_receipt',order_code:order.order_code,file_name:file.name,mime_type:file.type,file_base64};
+  /* The script rejects calls without the shared secret. Without this line every
+     first-attempt upload was answered "Unauthorized" — invisibly, because
+     mode:'no-cors' hides the rejection — so receipts silently never arrived. */
+  const tok=scriptToken();if(tok)payload.token=tok;
   return fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),cache:'no-store'});
 }
 

@@ -24,6 +24,9 @@ async function retryAdminGoogleOps(){
 const A={section:'dashboard',session:null,orderFilter:'all',orderSearch:'',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 /* Order dates always read in Philippine time, wherever the device is. */
 const phDateTime=d=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(d));
+/* Compact variants for the chat UI, same timezone. */
+const phShort=d=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(d));
+const phClock=d=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',hour:'numeric',minute:'2-digit'}).format(new Date(d));
 
 /* ========================================================================
    Setting up, signing in, and keeping the session
@@ -826,7 +829,7 @@ function orders(m){
 }
 async function syncAdminOrderToGoogleSheet(order){if(!GOOGLE_SHEETS_WEB_APP_URL||!order)return;/* Same shape the storefront writes. Without the choices, marking an order Paid
      would rewrite its Sheet row and quietly drop what the customer picked. */
-  const items=(order.order_items||order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||''};if(!(await postToScript(payload))){queueAdminGoogleOp(payload);alert('Order updated, but the Google Sheet sync failed. It will retry automatically on your next visit.')}}
+  const items=(order.order_items||order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',coupon_code:order.coupon_code||'',coupon_discount:Number(order.coupon_discount||0)};if(!(await postToScript(payload))){queueAdminGoogleOp(payload);alert('Order updated, but the Google Sheet sync failed. It will retry automatically on your next visit.')}}
 window.updatePaymentStatus=async(id,status)=>{const {error}=await db.from('orders').update({payment_status:status}).eq('id',id);if(error)return alert(error.message);const o=A.data.orders.find(x=>x.id===id);if(o){o.payment_status=status;await syncAdminOrderToGoogleSheet(o)}orders(document.getElementById('adminMain'))};
 async function deleteOrderFromGoogleSheet(orderCode){if(!GOOGLE_SHEETS_WEB_APP_URL||!orderCode)return;const payload={action:'delete_order',order_code:orderCode};if(!(await postToScript(payload)))queueAdminGoogleOp(payload)}
 async function deleteAllOrdersFromGoogleServices(){if(!GOOGLE_SHEETS_WEB_APP_URL)return;const payload={action:'delete_all_orders'};if(!(await postToScript(payload)))queueAdminGoogleOp(payload)}
@@ -925,7 +928,7 @@ function paintNavBadge(){
 }
 
 function threadRowHtml(t){
-  const when=new Date(t.last_message_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  const when=phShort(t.last_message_at);
   /* The checkbox sits beside the row button rather than inside it: a button may
      not contain another interactive control. */
   return `<div class="thread-item${MSG.openId===t.id?' active':''}">${bulkCheckboxHtml(t.id)}<button type="button" class="thread-row" data-thread="${esc(t.id)}">
@@ -967,7 +970,7 @@ function paintSeen(){
      it cannot have been read yet. */
   const sent=last&&!String(last.id).startsWith('local-')?new Date(last.created_at):null;
   if(!last||last.sender!=='admin'||!seenAt||!sent||seenAt<sent){el.hidden=true;el.textContent='';return}
-  el.textContent=`Seen ${seenAt.toLocaleString([],{hour:'numeric',minute:'2-digit'})}`;
+  el.textContent=`Seen ${phClock(seenAt)}`;
   el.hidden=false;
 }
 
@@ -979,7 +982,7 @@ function paintThread(){
   const log=MSG.loading&&!MSG.messages.length
     ?'<p class="muted" style="padding:14px">Loading…</p>'
     :(MSG.messages.length?MSG.messages.map(m=>{
-        const when=new Date(m.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+        const when=phShort(m.created_at);
         return `<div class="admin-msg admin-msg-${m.sender==='admin'?'out':'in'}"><p>${esc(m.body)}</p><time>${esc(when)}</time></div>`;
       }).join(''):'<p class="muted" style="padding:14px">No messages in this conversation yet.</p>');
   const atBottom=(()=>{const l=host.querySelector('.thread-log');return !l||l.scrollHeight-l.scrollTop-l.clientHeight<40})();

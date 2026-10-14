@@ -179,8 +179,19 @@ function doPost(e) {
       payload.order_status || '',
       payload.cancellation_reason || '',
       new Date(),
-      payload.email || ''
+      payload.email || '',
+      payload.coupon_code || '',
+      Number(payload.coupon_discount || 0)
     ];
+
+    /* Coupon columns 21-22. The header is set on first use so existing
+       sheets keep whatever header row they already have. */
+    if (!sheet.getRange(1, 21).getValue()) {
+      sheet.getRange(1, 21).setValue('Coupon Code');
+    }
+    if (!sheet.getRange(1, 22).getValue()) {
+      sheet.getRange(1, 22).setValue('Coupon Discount');
+    }
 
     const lastRow = sheet.getLastRow();
     let existingRow = 0;
