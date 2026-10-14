@@ -36,6 +36,11 @@
 -- coupon" keeps working for coupons that already have order history (the
 -- order keeps its coupon_code text for display; only the id link is cleared).
 alter table public.orders add column if not exists coupon_id uuid;
+-- Batch #11 (idempotency): backfilled here so this file stays self-contained —
+-- the place_order below reads and writes orders.idempotency_key.
+alter table public.orders add column if not exists idempotency_key text;
+create unique index if not exists orders_idempotency_key_ux
+  on public.orders(idempotency_key) where idempotency_key is not null;
 alter table public.orders drop constraint if exists orders_coupon_id_fkey;
 alter table public.orders
   add constraint orders_coupon_id_fkey
@@ -214,12 +219,25 @@ begin
   if v_idem_key is not null then
     select * into v_existing from public.orders where idempotency_key = v_idem_key;
     if found then
+      /* A retry must get the same full order shape as the original call, so the
+         confirmation, local order history, and sheet row all render correctly. */
       return jsonb_build_object('ok',true,'duplicate',true,'order',jsonb_build_object(
         'id',v_existing.id,'order_code',v_existing.order_code,
         'cancel_token',v_existing.cancel_token,
         'customer_name',v_existing.customer_name,'phone',v_existing.phone,
-        'email',v_existing.email,'total',v_existing.total,
-        'status',v_existing.status));
+        'email',v_existing.email,
+        'fulfillment',v_existing.fulfillment,'address',v_existing.address,
+        'preferred_date',v_existing.preferred_date,
+        'payment_method',v_existing.payment_method,'note',v_existing.note,
+        'total',v_existing.total,'status',v_existing.status,
+        'coupon_code',v_existing.coupon_code,'coupon_discount',v_existing.coupon_discount,
+        'coupon_kind',v_existing.coupon_kind,'created_at',v_existing.created_at,
+        'items',(select coalesce(jsonb_agg(jsonb_build_object(
+            'product_id',oi.product_id,'product_name',oi.product_name,
+            'unit_price',oi.unit_price,'qty',oi.qty,'variants',oi.variants,
+            'unit_original_price',oi.unit_original_price,'unit_interest',oi.unit_interest,
+            'seller_name',oi.seller_name) order by oi.id),'[]'::jsonb)
+          from public.order_items oi where oi.order_id = v_existing.id)));
     end if;
   end if;
   -- Read the shop's checkout rules here rather than trusting what the page sent:
@@ -464,8 +482,36 @@ begin
     'coupon_code',v_coupon_code,'coupon_discount',v_coupon_discount,'coupon_kind',v_coupon_kind,
     'created_at',now(),'items',v_items_out
   ));
-exception when others then
-  raise;
+exception
+  when unique_violation then
+    /* Two submissions carrying the same idempotency key overlapped in flight:
+       the loser hit the unique index. Hand it the already-created order instead
+       of a raw database error. */
+    if v_idem_key is not null then
+      select * into v_existing from public.orders where idempotency_key = v_idem_key;
+      if found then
+        return jsonb_build_object('ok',true,'duplicate',true,'order',jsonb_build_object(
+          'id',v_existing.id,'order_code',v_existing.order_code,
+          'cancel_token',v_existing.cancel_token,
+          'customer_name',v_existing.customer_name,'phone',v_existing.phone,
+          'email',v_existing.email,
+          'fulfillment',v_existing.fulfillment,'address',v_existing.address,
+          'preferred_date',v_existing.preferred_date,
+          'payment_method',v_existing.payment_method,'note',v_existing.note,
+          'total',v_existing.total,'status',v_existing.status,
+          'coupon_code',v_existing.coupon_code,'coupon_discount',v_existing.coupon_discount,
+          'coupon_kind',v_existing.coupon_kind,'created_at',v_existing.created_at,
+          'items',(select coalesce(jsonb_agg(jsonb_build_object(
+              'product_id',oi.product_id,'product_name',oi.product_name,
+              'unit_price',oi.unit_price,'qty',oi.qty,'variants',oi.variants,
+              'unit_original_price',oi.unit_original_price,'unit_interest',oi.unit_interest,
+              'seller_name',oi.seller_name) order by oi.id),'[]'::jsonb)
+            from public.order_items oi where oi.order_id = v_existing.id)));
+      end if;
+    end if;
+    raise;
+  when others then
+    raise;
 end;
 $$;
 

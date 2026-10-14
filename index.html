@@ -30,6 +30,11 @@
     try {
       var k = localStorage.getItem('bilihan_skin_v1');
       document.documentElement.dataset.skin = k === 'storefront' ? 'storefront' : 'original';
+      /* Skin users get the theme stylesheet render-blocking so first paint already
+         matches their design (no flash of the original). Everyone else skips it:
+         the non-blocking link later in <head> covers them without slowing paint.
+         document.write is safe here — this inline script runs during parsing. */
+      if (k === 'storefront') document.write('<link rel="stylesheet" href="theme-storefront.css">');
     } catch (e) { document.documentElement.dataset.skin = 'original'; }
   </script>
 

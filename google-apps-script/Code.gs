@@ -51,6 +51,48 @@ const SHEET_NAME = 'Orders';
    closed, never open. */
 const SCRIPT_TOKEN = '';
 
+/* Optional Supabase write-back, so the storefront can VERIFY a receipt landed.
+   The browser posts with mode:'no-cors', which makes the script's own answer
+   unreadable -- without this, a rejection looks identical to a success and the
+   site can never tell the customer the truth.
+
+   Set both in Project Settings > Script properties (NOT in this file):
+     SUPABASE_URL               e.g. https://xyzcompany.supabase.co
+     SUPABASE_SERVICE_ROLE_KEY  the service_role key (bypasses RLS, so it only
+                                ever lives in the script's own properties)
+   Leave either unset to keep today's Drive-only behavior; the upload itself is
+   never gated on this. */
+function supabaseProp_(key) {
+  try { return PropertiesService.getScriptProperties().getProperty(key) || ''; }
+  catch (e) { return ''; }
+}
+/* Records the Drive link on the order row. A failure here must never fail the
+   upload: the receipt is already safe in Drive, this is only the copy the
+   site can read back. */
+function markReceiptInSupabase_(orderCode, fileUrl) {
+  var url = supabaseProp_('SUPABASE_URL');
+  var key = supabaseProp_('SUPABASE_SERVICE_ROLE_KEY');
+  if (!url || !key || !orderCode || !fileUrl) return;
+  try {
+    UrlFetchApp.fetch(
+      url.replace(/\/$/, '') + '/rest/v1/orders?order_code=eq.' + encodeURIComponent(orderCode),
+      {
+        method: 'PATCH',
+        headers: {
+          'apikey': key,
+          'Authorization': 'Bearer ' + key,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        payload: JSON.stringify({ receipt_drive_url: fileUrl }),
+        muteHttpExceptions: true
+      }
+    );
+  } catch (e) {
+    console.log('Supabase receipt write-back failed: ' + e);
+  }
+}
+
 /* Closing note on the order confirmation email. Edit the text here; set it to an
    empty string to leave it off entirely. The shop's name comes from Store Settings,
    not from this file. */
@@ -140,6 +182,11 @@ function doPost(e) {
         receipt.file_url,
         receipt.file_name
       );
+
+      /* The readable channel: the browser can't read this response (no-cors),
+         but it CAN ask Supabase whether the link landed. Never throws. */
+      try { markReceiptInSupabase_(payload.order_code, receipt.file_url); }
+      catch (e) { console.log('Receipt write-back skipped: ' + e); }
 
       return jsonResponse({
         ok: true,

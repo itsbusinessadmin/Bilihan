@@ -318,19 +318,29 @@
     $('sellerAsOf').textContent = `Updated ${when.toLocaleTimeString([], { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit', second: '2-digit' })}`;
     /* Per-seller links scope the page to one seller; say so plainly. */
     const scoped = data.scoped_seller;
-    $('sellerScope').textContent = scoped ? `Showing ${scoped}'s figures only` : '';
-    $('sellerScope').classList.toggle('hidden', !scoped);
+    /* The token is valid but the name it carries matches zero sales lines while
+       the shop has sales: the admin renamed the seller after sharing the link.
+       Showing just ₱0.00 would read as "no sales", so say the link looks stale. */
+    const stale = !!data.stale_scope;
+    $('sellerScope').textContent = stale
+      ? `This link looks outdated — no sales found under "${scoped}". Ask the store owner for a fresh link.`
+      : (scoped ? `Showing ${scoped}'s figures only` : '');
+    $('sellerScope').classList.toggle('hidden', !(scoped || stale));
     $('sellerError').classList.add('hidden');
   }
 
   /* ---------- the poll ---------- */
+  /* A revoked/rotated link can never become valid again, so a terminal !ok
+     stops the 3s poll for good. Transient network errors keep retrying. */
+  let linkDead = false;
   async function load() {
-    if (busy || document.hidden) return;      /* a background tab spends quota for nothing */
+    if (busy || document.hidden || linkDead) return;      /* a background tab spends quota for nothing */
     busy = true;
     try {
       const { data, error } = await window.db.rpc('seller_sales', { p_token: token });
       if (error) throw error;
-      if (!data?.ok) { fail(data?.error || 'This link is no longer valid.'); return; }
+      if (!data?.ok) { linkDead = true; fail(data?.error || 'This link is no longer valid.'); return; }
+      linkDead = false;
       paint(data);
     } catch (err) {
       console.warn('Sales refresh failed', err);

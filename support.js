@@ -11,13 +11,12 @@
   const LS_KEY = 'bilihan_support_v1';
   const LS_MSGS = 'bilihan_support_msgs_v1';
   const LS_ORDER = 'bilihan_latest_order_v3';
-  /* Three seconds: fast enough that a reply lands while the customer is looking,
-     slow enough that an open chat no longer fires ~120 RPC requests a minute.
-     Two things keep that from being as heavy as it sounds: a hidden tab polls
-     nothing, and pollUnread returns immediately when there is no conversation yet,
-     so a visitor who never opened the chat makes no requests at all. */
+  /* Three seconds while the panel is open, so a reply lands while the customer is
+     looking. The badge poll while it is shut runs every fifteen seconds instead:
+     the unread badge is the least time-critical part of the widget, and the 3s
+     idle poll was the steadiest background load in the app. */
   const POLL_OPEN = 3000;      /* while the panel is open        */
-  const POLL_IDLE = 3000;      /* badge refresh while it is shut */
+  const POLL_IDLE = 15000;     /* badge refresh while it is shut */
   /* A background tab used to poll nothing at all, so a reply arriving while the
      customer was on another tab made no sound -- the one moment a chime is for.
      It now checks the unread count every ten seconds. support_unread has no side
@@ -328,6 +327,9 @@
 
   function clearSession() {
     state.session = null; state.messages = [];
+    /* The chime baselines belong to the old thread: without resetting them, a
+       re-identified customer can chime for messages that were never new to them. */
+    state.heardUnread = null; state.heardAdminAt = null; state.adminLastReadAt = null;
     try { localStorage.removeItem(LS_KEY); localStorage.removeItem(LS_MSGS); } catch {}
     setUnread(0);
   }

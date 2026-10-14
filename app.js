@@ -380,6 +380,9 @@ function quickAddToCart(id,event,button){event?.stopPropagation();const p=state.
      ask which size or flavour, and guessing one on the customer's behalf is worse
      than opening the product. */
   if(variantGroupsFor(id).length)return openProduct(id);
+  /* Its required choices are all switched off: adding it anyway would skip a
+     choice the shop meant to force. */
+  if(deadRequiredGroups(id).length){toast('Sorry, this item is not available right now.');return}
   const ex=state.cart.find(x=>x.productId===id&&!(x.optionIds||[]).length);const current=cartQtyFor(id);if(current>=p.stock){toast('Maximum available stock reached');return}if(ex)ex.qty+=1;else state.cart.push({productId:id,qty:1,price:+p.price,name:p.name,image:p.image_url});saveCart();const btn=button||event?.currentTarget;if(btn?.classList){btn.classList.add('added');setTimeout(()=>btn.classList.remove('added'),350)}toast('Added to cart ✓')}
 /* What a product asks the customer, in the order the shop arranged it. */
 function variantGroupsFor(productId){
@@ -428,10 +431,15 @@ function priceWithVariants(product,groups,chosenIds){
 function missingRequired(groups,chosenIds){
   return groups.filter(g=>g.is_required&&!g.options.some(o=>chosenIds.includes(o.id)));
 }
+/* A required choice whose every option the owner disabled: variantGroupsFor()
+   drops the whole group, which would silently evaporate the requirement. */
+const deadRequiredGroups=productId=>(state.data?.variantGroups||[])
+  .filter(g=>g.product_id===productId&&g.is_required)
+  .filter(g=>!(state.data?.variantOptions||[]).some(o=>o.group_id===g.id&&o.is_available!==false));
 /* Two of the same product with different choices are two different cart lines. */
 const cartKey=(productId,ids)=>productId+'|'+[...ids].sort().join(',');
 
-function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=cartQtyFor(id);const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').dataset.productId=id;$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${max<=5?`Only ${max} left!`:`${max} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));/* patchProductDialog rebuilds this dialog while it is already open when stock comes back; showModal on an open dialog throws and would leave the picker and buttons unwired. */if(!$('productDialog').open)$('productDialog').showModal();let q=1;
+function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=cartQtyFor(id);const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const deadReq=deadRequiredGroups(id);const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').dataset.productId=id;$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${max<=5?`Only ${max} left!`:`${max} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':deadReq.length?'<p class="muted">One of this item\u2019s required options is unavailable right now, so it can\u2019t be ordered yet. Please check back later.</p>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));/* patchProductDialog rebuilds this dialog while it is already open when stock comes back; showModal on an open dialog throws and would leave the picker and buttons unwired. */if(!$('productDialog').open)$('productDialog').showModal();let q=1;
   const groups=variantGroupsFor(id);
   let chosen=[];
   const priceEl=$('productDialog').querySelector('.product-modal-grid h3');
@@ -609,10 +617,13 @@ function livePriceForLine(item,live){
   return gone?null:pesos(Math.max(0,base+add));
 }
 /* Failed Google uploads are queued in localStorage and retried on the next
-   visit. The Apps Script endpoint answers with mode:'no-cors', so only a
-   network-level failure can be detected — but that is exactly the case where
-   a retry helps, and the customer is told instead of left guessing. */
+   visit. The Apps Script endpoint answers with mode:'no-cors', so its reply is
+   unreadable — but the script writes the Drive link back to the order row, and
+   customer_order_status() lets the page VERIFY the receipt landed through that
+   readable channel. A queued entry is only dropped once the receipt is
+   confirmed, so a rejection (e.g. a token mismatch) can never silently vanish. */
 const MAX_QUEUED_RECEIPT_B64=1200000;
+const RECEIPT_QUEUE_TTL_MS=7*24*3600*1000;
 function readQueue(key){const q=safeJsonParse(localStorage.getItem(key),null);return Array.isArray(q)?q:[]}
 function writeQueue(key,list){try{localStorage.setItem(key,JSON.stringify(list))}catch(e){/* storage full or blocked: the session still works */}}
 function scriptToken(){const t=(window.BILIHAN_CONFIG||{}).GOOGLE_APPS_SCRIPT_TOKEN||'';return t}
@@ -621,23 +632,59 @@ async function queuePendingReceipt(order,file,cachedBase64){
     const b64=cachedBase64||await fileToBase64(file);
     if(!b64||b64.length>MAX_QUEUED_RECEIPT_B64){toast('Order placed. Please send your payment receipt to the store directly.');return}
     const q=readQueue(LS.pendingReceipts).filter(r=>r.order_code!==order.order_code);
-    q.push({order_code:order.order_code,file_name:file.name,mime_type:file.type,file_base64:b64,ts:Date.now()});
+    q.push({order_code:order.order_code,cancel_token:order.cancel_token||null,file_name:file.name,mime_type:file.type,file_base64:b64,ts:Date.now()});
     writeQueue(LS.pendingReceipts,q);
   }catch(e){console.warn('Could not queue receipt:',e)}
 }
+/* The readable channel the Apps Script write-back feeds: true only when the
+   Drive link made it onto the order row. Needs the cancel_token the customer
+   got with the order, so nobody can probe other people's receipts. */
+async function receiptConfirmed(r){
+  if(!r||!r.order_code||!r.cancel_token||!window.db)return false;
+  try{
+    const {data,error}=await db.rpc('customer_order_status',{p_order_code:r.order_code,p_cancel_token:r.cancel_token});
+    if(error||!data?.ok)return false;
+    return !!data.receipt_url;
+  }catch(e){return false}
+}
 async function retryPendingReceipts(){
-  if(!GOOGLE_SHEETS_WEB_APP_URL)return;
-  const q=readQueue(LS.pendingReceipts);if(!q.length)return;
+  if(!GOOGLE_SHEETS_WEB_APP_URL)return 0;
+  const q=readQueue(LS.pendingReceipts);if(!q.length)return 0;
   const rest=[];
   for(const r of q){
+    /* A receipt that couldn't land in a week is stale; the customer was already
+       told to message the store directly. */
+    if(Date.now()-(r.ts||0)>RECEIPT_QUEUE_TTL_MS)continue;
     try{
       const payload={action:'upload_receipt',order_code:r.order_code,file_name:r.file_name,mime_type:r.mime_type,file_base64:r.file_base64};
       const tok=scriptToken();if(tok)payload.token=tok;
       await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),cache:'no-store'});
+      /* The response is opaque: only drop the entry once the receipt is
+         confirmed on the order row. A rejected upload stays queued and keeps
+         retrying instead of burning silently. */
+      if(!(await receiptConfirmed(r)))rest.push(r);
     }catch(e){rest.push(r)}
   }
   writeQueue(LS.pendingReceipts,rest);
   return q.length-rest.length;
+}
+/* After a fresh order, watch the readable channel for up to a minute: the
+   moment the Drive link lands, the queue entry goes away and the "still
+   uploading" banner clears. */
+function verifyReceiptUpload(order){
+  if(!order?.order_code||!order?.cancel_token||!window.db)return;
+  let n=0;
+  const t=setInterval(async()=>{
+    n++;
+    let ok=false;
+    try{ok=await receiptConfirmed({order_code:order.order_code,cancel_token:order.cancel_token})}catch(e){}
+    if(ok){
+      clearInterval(t);
+      writeQueue(LS.pendingReceipts,readQueue(LS.pendingReceipts).filter(r=>r.order_code!==order.order_code));
+      if($('orderDialog')?.open)showOrder(order);
+      toast('Receipt received ✓');
+    }else if(n>=12)clearInterval(t);
+  },5000);
 }
 function hasPendingReceipt(orderCode){return readQueue(LS.pendingReceipts).some(r=>r.order_code===orderCode)}
 function queueSheetSync(order){
@@ -880,9 +927,16 @@ async function placeOrder(e){
     if(!data?.ok)throw new Error(data?.error||'Order could not be placed.');const order=data.order;
     /* The order is in the database now. Everything below is bookkeeping the
        customer has no reason to wait behind, so none of it blocks the receipt.
-       The upload was awaited before, even though mode:'no-cors' makes its
-       response unreadable — the wait bought nothing but a slower checkout. */
-    if(isQr&&receiptFile)uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>{console.warn('Receipt upload failed:',err);queuePendingReceipt(order,receiptFile,f._receiptBase64);toast('Order placed, but the receipt upload failed. We will keep trying in the background.')});
+       The receipt is queued BEFORE the upload attempt: if the tab closes or
+       the phone sleeps mid-upload, the entry is already on disk and retries
+       on the next visit instead of vanishing. Confirmation arrives through
+       the readable channel (customer_order_status), not the opaque no-cors
+       response. */
+    if(isQr&&receiptFile){
+      await queuePendingReceipt(order,receiptFile,f._receiptBase64);
+      uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>{console.warn('Receipt upload failed:',err);toast('Order placed, but the receipt upload failed. We will keep trying in the background.')});
+      verifyReceiptUpload(order);
+    }
     queueSheetSync(order);
     rememberOrder(order);localStorage.setItem(LS.lastOrderAt,String(Date.now()));
     delete f.dataset.idempotencyKey;
@@ -959,6 +1013,23 @@ function showOrder(order,opts){
   if(retryReceiptBtn)retryReceiptBtn.onclick=async()=>{retryReceiptBtn.disabled=true;const n=await retryPendingReceipts();if(!hasPendingReceipt(order.order_code)){toast('Receipt uploaded ✓');showOrder(order,opts)}else{retryReceiptBtn.disabled=false;toast(n?'Still trying. Please check your connection.':'The receipt is still queued and will retry automatically.')}};
   /* Cancelling is no longer self-service: the customer talks to the store instead. */
   $('messageUsBtn').onclick=()=>{$('orderDialog').close();if(window.BilihanSupport?.open)window.BilihanSupport.open();else toast('Chat is loading. Please try again in a moment.')};
+  refreshOrderStatus(order,opts);
+}
+/* The stored copy is a snapshot: if the store later cancelled the order, the
+   customer's page would otherwise say "Order confirmed" forever. RLS blocks
+   customer re-reads of orders, so this goes through the token-checked RPC. */
+async function refreshOrderStatus(order,opts){
+  if(!order?.order_code||!order?.cancel_token||!window.db)return;
+  try{
+    const {data,error}=await db.rpc('customer_order_status',{p_order_code:order.order_code,p_cancel_token:order.cancel_token});
+    if(error||!data?.ok)return;
+    const patch={};
+    if(data.status&&data.status!==order.status)patch.status=data.status;
+    if(!Object.keys(patch).length)return;
+    updateStoredOrder(order.order_code,patch);
+    /* Only re-render if the dialog is still showing this order. */
+    if($('orderDialog')?.open)showOrder({...order,...patch},opts);
+  }catch(e){/* offline or failed: the snapshot stays */}
 }
 async function retryPendingCancel(){if(!window.BILIHAN_SUPABASE_CONFIGURED)return;const raw=localStorage.getItem(LS.pendingCancel);if(!raw)return;const p=safeJsonParse(raw,null);if(!p?.order?.order_code){localStorage.removeItem(LS.pendingCancel);return}try{const {data,error}=await db.rpc('cancel_order',{p_order_code:p.order.order_code,p_cancel_token:p.order.cancel_token,p_reason:p.reason,p_requested_at:p.requestedAt});if(error)throw error;if(data?.ok){localStorage.removeItem(LS.pendingCancel);updateStoredOrder(p.order.order_code,{status:'Cancelled',cancellation_reason:p.reason})}}catch(e){console.warn('Pending cancellation still waiting',e)}}
 function renderLatestOrderButton(){

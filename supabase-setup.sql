@@ -716,6 +716,19 @@ create table if not exists public.seller_links (
 );
 insert into public.seller_links(id) values (1) on conflict (id) do nothing;
 
+-- Per-seller links. One row per seller; the token in the URL decides whose
+-- figures the seller page may show. (Backfilled from supabase-fix-audit-2.sql
+-- so the seller page works from the base setup files.)
+create table if not exists public.seller_tokens(
+  seller_name text primary key,
+  token uuid not null default gen_random_uuid() unique,
+  created_at timestamptz not null default now()
+);
+alter table public.seller_tokens enable row level security;
+drop policy if exists "admins manage seller tokens" on public.seller_tokens;
+create policy "admins manage seller tokens" on public.seller_tokens
+  for all using (public.is_admin()) with check (public.is_admin());
+
 alter table public.seller_links enable row level security;
 drop policy if exists "admins manage seller link" on public.seller_links;
 create policy "admins manage seller link" on public.seller_links for all using (public.is_admin()) with check (public.is_admin());
@@ -1331,6 +1344,14 @@ begin
                             'overall', v_total + v_interest,
                             'unpaid_qty', v_unpaid_qty, 'unpaid', v_unpaid,
                             'scoped_seller', v_scope,
+                            /* A seller-scoped token that matches nothing while the shop
+                               does have paid lines is stale (the seller was renamed
+                               since the link was minted) — flag it so the page can
+                               say so instead of silently showing ₱0. */
+                            'stale_scope', (select case
+                               when v_scope is not null and coalesce(v_qty,0) = 0
+                                    and exists (select 1 from public.seller_order_lines where is_paid)
+                               then true else false end),
                             'as_of', now());
 end;
 $$;
