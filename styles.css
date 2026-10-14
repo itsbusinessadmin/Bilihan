@@ -214,7 +214,7 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .product-row{display:flex;align-items:flex-start;gap:10px}
 /* Reserve two lines for every name, clamped at two. One-line and two-line names
    then occupy identical height, so the price and everything under it agree. */
-.product-row strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-width:0;min-height:calc(2 * 1.3em);overflow-wrap:break-word;font-size:var(--text-body);font-weight:600;line-height:1.3}
+.product-row strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-width:0;min-height:calc(2 * 1.3em);font-size:var(--text-body);font-weight:600;line-height:1.3}
 .price{white-space:nowrap;margin-left:auto;color:var(--accent-2);font-size:var(--text-secondary);font-weight:700;font-variant-numeric:tabular-nums;line-height:1.3}
 [data-theme="dark"] .price{color:var(--accent-3)}
 .stock{display:inline-flex;align-items:center;margin:0;color:var(--muted);font-size:var(--text-caption);font-weight:600;line-height:1.2}
@@ -371,12 +371,9 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 /* A cancelled order in the success colour reads as a confirmation at a glance. */
 .order-status.is-cancelled{color:var(--danger)}
 [data-theme="dark"] .order-status{color:var(--accent-3)}
-.cancel-form{margin-top:var(--space-md);padding:var(--space-sm);border:1px solid color-mix(in srgb,var(--danger) 24%,var(--line));border-radius:var(--radius-sm);background:var(--danger-tint)}
-.cancel-form textarea{width:100%;min-height:88px;margin:8px 0 10px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);font-size:1rem;resize:vertical}
-.cancel-form-actions{display:flex;gap:8px;flex-wrap:wrap}
 
 /* =========================== Toast =========================== */
-.toast{position:fixed;z-index:var(--z-toast);left:50%;transform:translateX(-50%);max-width:calc(100vw - 28px);background:color-mix(in srgb,var(--text) 94%,transparent);color:var(--bg);text-align:center;bottom:max(24px,env(safe-area-inset-bottom));padding:12px 18px;border-radius:var(--radius-pill);box-shadow:var(--shadow-lg);font-size:.92rem;font-weight:600;backdrop-filter:blur(8px);animation:toastIn .28s var(--ease-spring)}
+.toast{position:fixed;z-index:var(--z-toast);left:50%;transform:translateX(-50%);background:color-mix(in srgb,var(--text) 94%,transparent);color:var(--bg);text-align:center;bottom:max(24px,env(safe-area-inset-bottom));padding:12px 18px;border-radius:var(--radius-pill);box-shadow:var(--shadow-lg);font-size:.92rem;font-weight:600;backdrop-filter:blur(8px);animation:toastIn .28s var(--ease-spring)}
 @keyframes toastIn{from{transform:translate(-50%,10px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
 
 /* =========================== Icons =========================== */
@@ -410,7 +407,6 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .product-card-add{color:#fff}
 .product-card-add::before{width:18px;height:18px;-webkit-mask-image:url(ios-icons/add-to-cart.svg);mask-image:url(ios-icons/add-to-cart.svg)}
 
-.desktop-nav .nav-icon{display:none!important}
 [data-theme="dark"] .brand-lockup img,[data-theme="dark"] .footer-brand img{background:#fff}
 
 /* =========================== Focus / a11y baseline =========================== */
@@ -534,8 +530,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .checkout-heading h2{font-size:1.5rem}
   .checkout-group{padding:var(--space-sm);border-radius:16px}
   .checkout-group .form-grid{grid-template-columns:1fr}
-  .cancel-form-actions{display:grid;grid-template-columns:1fr}
-  .cancel-form-actions>*{width:100%}
 
 
   h1{font-size:1.95rem;letter-spacing:-.032em}
@@ -619,8 +613,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 
 /* ---- Inline form validation ---- */
 .field-error{display:block;margin-top:2px;color:var(--danger);font-size:var(--text-caption);font-weight:600;line-height:var(--leading-ui)}
-.checkout-form input.invalid,.checkout-form textarea.invalid,.checkout-form select.invalid,
-.cancel-form textarea.invalid{border-color:var(--danger);background:var(--danger-tint)}
+.checkout-form input.invalid,.checkout-form textarea.invalid,.checkout-form select.invalid{border-color:var(--danger);background:var(--danger-tint)}
 .checkout-confirm input.invalid{outline:2px solid var(--danger);outline-offset:2px}
 /* Honeypot: off-screen for bots to fill in, never shown or focusable for people. */
 .hp-field{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;opacity:0}
@@ -752,12 +745,9 @@ body:has(#cartDrawer.open) .support-fab{opacity:0;pointer-events:none;transform:
 
 .support-identify{display:flex;flex-direction:column;gap:10px;padding:14px;overflow-y:auto}
 .support-intro{margin:0;color:var(--muted);font-size:var(--text-secondary);line-height:var(--leading-ui)}
-.support-or{display:flex;align-items:center;gap:10px;margin:2px 0;color:var(--muted-2);font-size:var(--text-caption);text-transform:uppercase;letter-spacing:.06em}
-.support-or::before,.support-or::after{content:"";flex:1;height:1px;background:var(--line)}
 .support-error{padding:9px 11px;border:1px solid color-mix(in srgb,var(--danger) 34%,var(--line));border-radius:var(--radius-sm);background:var(--danger-tint);color:var(--danger);font-size:var(--text-caption);font-weight:600}
 
 .support-log{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:8px;padding:14px}
-.support-empty{margin:auto;color:var(--muted);font-size:var(--text-secondary);text-align:center}
 .support-msg{max-width:82%;padding:9px 12px;border-radius:16px;font-size:var(--text-secondary);line-height:var(--leading-ui)}
 /* color:inherit matters. The bare p{color:var(--muted)} rule near the top of this
    file targets the element directly, which beats the colour the bubble passes down,

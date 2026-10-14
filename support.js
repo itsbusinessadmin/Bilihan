@@ -11,12 +11,13 @@
   const LS_KEY = 'bilihan_support_v1';
   const LS_MSGS = 'bilihan_support_msgs_v1';
   const LS_ORDER = 'bilihan_latest_order_v3';
-  /* Half a second, so a reply lands and a read receipt goes back near-instantly.
+  /* Three seconds: fast enough that a reply lands while the customer is looking,
+     slow enough that an open chat no longer fires ~120 RPC requests a minute.
      Two things keep that from being as heavy as it sounds: a hidden tab polls
      nothing, and pollUnread returns immediately when there is no conversation yet,
      so a visitor who never opened the chat makes no requests at all. */
-  const POLL_OPEN = 500;       /* while the panel is open        */
-  const POLL_IDLE = 500;       /* badge refresh while it is shut */
+  const POLL_OPEN = 3000;      /* while the panel is open        */
+  const POLL_IDLE = 3000;      /* badge refresh while it is shut */
   /* A background tab used to poll nothing at all, so a reply arriving while the
      customer was on another tab made no sound -- the one moment a chime is for.
      It now checks the unread count every ten seconds. support_unread has no side
@@ -245,7 +246,11 @@
       const seenMoved = (data.admin_last_read_at || null) !== state.adminLastReadAt;
       state.adminLastReadAt = data.admin_last_read_at || null;
       const changed = force || next.length !== state.messages.length || seenMoved;
-      state.messages = next; write(LS_MSGS, next);
+      state.messages = next;
+      /* Only write when something actually changed — the poll runs every few
+         seconds, and rewriting the whole conversation to disk on every tick
+         for zero benefit was pure churn. */
+      if (changed) write(LS_MSGS, next);
       if (data.customer_name && state.session.name !== data.customer_name) {
         state.session.name = data.customer_name; write(LS_KEY, state.session); setTitle();
       }

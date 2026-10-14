@@ -429,8 +429,7 @@ html[data-skin="storefront"] .choice-value {
   background: var(--bg-elevated);
   box-shadow: var(--shadow-xs);
 }
-html[data-skin="storefront"] .field textarea,
-html[data-skin="storefront"] .cancel-form textarea { border-radius: var(--radius); }
+html[data-skin="storefront"] .field textarea { border-radius: var(--radius); }
 html[data-skin="storefront"] .field select {
   -webkit-appearance: none;
   appearance: none;
