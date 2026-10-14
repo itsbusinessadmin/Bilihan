@@ -590,19 +590,22 @@ begin
 
     if v_coupon_id is not null then
       if coalesce(v_coupon_kind, '') = 'credit' then
+        -- The pesos are back, so the coupon must be spendable again, in one
+        -- statement so a checkout cannot land in between and see an active
+        -- coupon with no credit left.
         update public.coupons
            set remaining_credit = least(credit_amount,
                                         coalesce(remaining_credit, 0)
-                                        + coalesce(v_coupon_discount, 0))
-         where id = v_coupon_id
-         returning remaining_credit into v_remaining;
-        -- The pesos are back, so the coupon must be spendable again.
-        if coalesce(v_remaining, 0) > 0 then
-          update public.coupons
-             set status = 'active'
-           where id = v_coupon_id
-             and status = 'used';
-        end if;
+                                        + coalesce(v_coupon_discount, 0)),
+               status = case
+                          when status = 'used'
+                               and least(credit_amount,
+                                         coalesce(remaining_credit, 0)
+                                         + coalesce(v_coupon_discount, 0)) > 0
+                          then 'active'
+                          else status
+                        end
+         where id = v_coupon_id;
       else
         -- One-time percent coupon: only reactivated when it has not expired.
         update public.coupons
@@ -1344,12 +1347,15 @@ begin
                             'overall', v_total + v_interest,
                             'unpaid_qty', v_unpaid_qty, 'unpaid', v_unpaid,
                             'scoped_seller', v_scope,
-                            /* A seller-scoped token that matches nothing while the shop
-                               does have paid lines is stale (the seller was renamed
-                               since the link was minted) — flag it so the page can
-                               say so instead of silently showing ₱0. */
+                            /* A seller-scoped token that matches no lines at all —
+                               paid or unpaid — while the shop does have paid lines
+                               is stale (the seller was renamed since the link was
+                               minted) — flag it so the page can say so instead of
+                               silently showing ₱0. A seller with only unpaid orders
+                               is not stale. */
                             'stale_scope', (select case
                                when v_scope is not null and coalesce(v_qty,0) = 0
+                                    and coalesce(v_unpaid_qty,0) = 0
                                     and exists (select 1 from public.seller_order_lines where is_paid)
                                then true else false end),
                             'as_of', now());

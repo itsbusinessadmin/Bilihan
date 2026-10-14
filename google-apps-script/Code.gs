@@ -66,17 +66,19 @@ function supabaseProp_(key) {
   try { return PropertiesService.getScriptProperties().getProperty(key) || ''; }
   catch (e) { return ''; }
 }
-/* Records the Drive link on the order row. A failure here must never fail the
-   upload: the receipt is already safe in Drive, this is only the copy the
-   site can read back. */
-function markReceiptInSupabase_(orderCode, fileUrl) {
+/* PATCHes fields on the order row via the Supabase REST API. This is the
+   readable channel back to the browser: the script's own response is
+   unreadable under mode:'no-cors', so anything the site must VERIFY goes
+   through here. A failure must never fail the caller -- the Drive/Sheet work
+   is already done; this is only the copy the site can read back. */
+function supabasePatchOrder_(orderCode, fields) {
   var url = supabaseProp_('SUPABASE_URL');
   var key = supabaseProp_('SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !key || !orderCode || !fileUrl) {
+  if (!url || !key || !orderCode || !fields) {
     /* Loud on purpose: without these properties every receipt upload
        succeeds in Drive but the storefront can never verify it, so customers
        see 'still uploading' forever. Visible in Executions. */
-    console.log('RECEIPT WRITE-BACK SKIPPED: set SUPABASE_URL and ' +
+    console.log('SUPABASE WRITE-BACK SKIPPED: set SUPABASE_URL and ' +
       'SUPABASE_SERVICE_ROLE_KEY in Project Settings > Script properties.');
     return;
   }
@@ -91,7 +93,7 @@ function markReceiptInSupabase_(orderCode, fileUrl) {
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal'
         },
-        payload: JSON.stringify({ receipt_drive_url: fileUrl }),
+        payload: JSON.stringify(fields),
         muteHttpExceptions: true
       }
     );
@@ -99,11 +101,24 @@ function markReceiptInSupabase_(orderCode, fileUrl) {
     /* muteHttpExceptions hides HTTP errors: a wrong key or URL would otherwise
        fail with nothing in the logs. */
     if (code < 200 || code >= 300) {
-      console.log('Supabase receipt write-back HTTP ' + code + ': ' + res.getContentText().slice(0, 200));
+      console.log('Supabase write-back HTTP ' + code + ': ' + res.getContentText().slice(0, 200));
     }
   } catch (e) {
-    console.log('Supabase receipt write-back failed: ' + e);
+    console.log('Supabase write-back failed: ' + e);
   }
+}
+
+/* Records the Drive link on the order row. Never throws. */
+function markReceiptInSupabase_(orderCode, fileUrl) {
+  if (!fileUrl) return;
+  try { supabasePatchOrder_(orderCode, { receipt_drive_url: fileUrl }); }
+  catch (e) { console.log('Receipt write-back skipped: ' + e); }
+}
+
+/* Records when the Sheet last accepted this order's row. Never throws. */
+function markSheetSyncedInSupabase_(orderCode) {
+  try { supabasePatchOrder_(orderCode, { sheet_synced_at: new Date().toISOString() }); }
+  catch (e) { console.log('Sheet-sync write-back skipped: ' + e); }
 }
 
 /* Closing note on the order confirmation email. Edit the text here; set it to an
@@ -190,11 +205,18 @@ function doPost(e) {
     if (payload.action === 'upload_receipt') {
       const receipt = saveReceiptToDrive(payload);
 
-      updateReceiptInSheet(
-        payload.order_code,
-        receipt.file_url,
-        receipt.file_name
-      );
+      /* The Sheet link must never hide a successful upload: if the sheet is
+         missing or renamed and this throws, the write-back below still runs,
+         so the client can verify the receipt that is safe in Drive. */
+      try {
+        updateReceiptInSheet(
+          payload.order_code,
+          receipt.file_url,
+          receipt.file_name
+        );
+      } catch (e) {
+        console.log('Receipt sheet link failed (upload itself succeeded): ' + e);
+      }
 
       /* The readable channel: the browser can't read this response (no-cors),
          but it CAN ask Supabase whether the link landed. Never throws. */
@@ -305,6 +327,9 @@ function doPost(e) {
     if (!existingRow && payload.email) {
       emailed = sendOrderConfirmation(payload);
     }
+
+    /* Readable channel for sheet-sync verification (see supabasePatchOrder_). */
+    markSheetSyncedInSupabase_(payload.order_code);
 
     return jsonResponse({
       ok: true,

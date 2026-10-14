@@ -349,7 +349,13 @@
          stop the poll with a message that says what's actually wrong. */
       const code = err?.code || '';
       const text = `${err?.message || ''} ${err?.hint || ''} ${err?.details || ''}`.toLowerCase();
-      if (code === 'PGRST202' || text.includes('could not find the function') || text.includes('does not exist')) {
+      /* Only a missing seller function is diagnosed as "not set up": matching
+         any loose "does not exist" text would misdiagnose other backend
+         errors as a migrations problem. Everything else keeps retrying. */
+      const missingFn = code === 'PGRST202'
+        || text.includes('could not find the function')
+        || text.includes('seller_sales') || text.includes('seller_buyers') || text.includes('seller_tokens');
+      if (missingFn) {
         linkDead = true;
         fail('The seller dashboard is not set up yet — the store owner needs to run the database migrations.');
       } else if (text.includes('invalid input syntax for type uuid')) {

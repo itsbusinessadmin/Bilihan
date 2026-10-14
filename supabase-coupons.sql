@@ -251,11 +251,25 @@ begin
   if not coalesce(v_cfg.checkout_show_phone,true) then v_phone := null; end if;
   if not coalesce(v_cfg.checkout_show_email,true) then v_email := null; end if;
 
+  -- Mirror the storefront's allow-lists server-side: anything the browser hides can
+  -- still be posted straight to this function, so the shop's configuration is
+  -- enforced here too.
   if p_fulfillment not in ('Delivery','Pickup') then return jsonb_build_object('ok',false,'error','Invalid fulfillment method.'); end if;
+  if p_fulfillment='Delivery' and coalesce(v_cfg.show_delivery_address,false) is not true then return jsonb_build_object('ok',false,'error','Delivery is not available right now.'); end if;
   if p_fulfillment='Delivery' and coalesce(trim(p_address),'')='' then return jsonb_build_object('ok',false,'error','Delivery address is required.'); end if;
   if p_preferred_date < current_date then return jsonb_build_object('ok',false,'error','Preferred date cannot be in the past.'); end if;
+  if coalesce(v_cfg.show_preferred_date,true) and coalesce(v_cfg.preferred_date_mode,'calendar')='calendar'
+     and v_cfg.order_available_from is not null and p_preferred_date < v_cfg.order_available_from then
+    return jsonb_build_object('ok',false,'error','Please select a date on or after the available-from date.');
+  end if;
   if p_payment_method not in ('QR Payment','Cash on Delivery / Pickup','Paid Already') then return jsonb_build_object('ok',false,'error','Invalid payment method.'); end if;
-  if p_payment_method = 'Paid Already' and not coalesce(v_cfg.show_paid_already,false) then
+  if p_payment_method = 'QR Payment' and (not coalesce(v_cfg.show_qr_payment,false) or coalesce(btrim(v_cfg.qr_image_url),'')='') then
+    return jsonb_build_object('ok',false,'error','QR payment is not available right now.');
+  end if;
+  if p_payment_method = 'Cash on Delivery / Pickup' and not coalesce(v_cfg.show_cash_payment,false) then
+    return jsonb_build_object('ok',false,'error','Cash payment is not available right now.');
+  end if;
+  if p_payment_method = 'Paid Already' and (not coalesce(v_cfg.show_paid_already,false) or coalesce(btrim(v_cfg.qr_image_url),'')='') then
     return jsonb_build_object('ok',false,'error','That payment method is not available right now. Please choose another one.');
   end if;
   if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items)=0 then return jsonb_build_object('ok',false,'error','Cart is empty.'); end if;
