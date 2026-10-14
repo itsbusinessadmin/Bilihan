@@ -31,7 +31,11 @@
      then says when this is worth asking for again: if a seller's totals have not
      moved, neither has anything inside their window. */
   let openPrint = '';
-  let buyersBusy = false;
+  /* Every buyer-list load gets a fresh number. A slow reply for a seller the reader
+     has already moved on from carries a stale number and is thrown away, so the
+     window on screen can never be overwritten by, or left waiting on, someone else's
+     reply. */
+  let buyersGen = 0;
   /* Which item folders are open inside the seller's window, by item name. The window
      is redrawn whenever that seller's figures move, and a folder the reader opened
      must still be open afterwards. Emptied when the window closes. */
@@ -185,25 +189,29 @@
   }
 
   async function loadBuyers(name) {
-    if (buyersBusy) return;
-    buyersBusy = true;
+    /* The number this load started with: only the latest load may paint, so a reply
+       that arrives late for a seller the reader has already left is discarded instead
+       of overwriting the window on screen or leaving it waiting on a reply that will
+       never come. */
+    const gen = ++buyersGen;
     try {
       const { data, error } = await window.db.rpc('seller_buyers', { p_token: token, p_seller: name });
       if (error) throw error;
       if (!data?.ok) throw new Error(data.error || 'This link is no longer valid.');
-      /* Only paint if this is still the window on screen: a slow reply for one seller
-         must not overwrite the one the reader has already moved on to. */
-      if (openSeller !== name) return;
+      if (gen !== buyersGen || openSeller !== name) return;
       openItems = data.items || [];
       const seller = (lastSellers || []).find(s => s.name === name);
       if (seller) paintDialog(seller, openItems);
     } catch (err) {
       console.warn('Buyers lookup failed', err);
-      if (openSeller === name && !openItems) {
-        $('sellerDialog').innerHTML = dialogMarkup(name, `<p class="seller-item-empty">${esc(err.message || 'We could not load who ordered just now.')}</p>`);
-        wireDialogClose();
-      }
-    } finally { buyersBusy = false }
+      /* A stale failure must not overwrite the window the reader has since moved on
+         to, but a failure for the window still on screen should say so rather than
+         sit on "Loading…". The poll retries the load whenever this seller's figures
+         move, so the window recovers on its own. */
+      if (gen !== buyersGen || openSeller !== name || openItems) return;
+      $('sellerDialog').innerHTML = dialogMarkup(name, `<p class="seller-item-empty">${esc(err.message || 'We could not load who ordered just now.')}</p>`);
+      wireDialogClose();
+    }
   }
 
   /* A seller's own figures, as the cheap poll last reported them. When this is

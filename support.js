@@ -199,15 +199,15 @@
     }
   }
 
-  /* A new order from this browser may belong to a different thread (a different
-     name or phone), so re-identify whenever the stored order number changes. */
+  /* A customer who already has a conversation keeps it. Re-identifying against
+     this browser's latest order number on every open could silently move someone
+     who identified with a mobile number into a different thread, so the latest
+     order is only used when there is no established identity yet. */
   async function syncLatestOrder() {
+    if (state.session) return;
     const order = latestOrder();
     if (!order?.order_code) return;
-    if (state.session && state.session.orderCode === order.order_code) return;
-    const had = !!state.session;
-    const ok = await identify(order.order_code, '');
-    if (ok && had) { state.messages = read(LS_MSGS, []); }
+    await identify(order.order_code, '');
   }
 
   async function refresh(force) {

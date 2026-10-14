@@ -3,6 +3,9 @@
 
   const KEY = 'bilihan_fast_entry_preferences_v1';
   let pendingAddAnother = false;
+  /* Set by the "Save & Add Another" button click; only turned into pendingAddAnother
+     once the form has passed validation and the save has actually gone through. */
+  let addAnotherWanted = false;
   let lastModal = null;
 
   const readPrefs = () => {
@@ -134,9 +137,16 @@
     another.id = 'saveAndAddAnother';
     another.textContent = 'Save & Add Another';
     another.addEventListener('click', () => {
-      pendingAddAnother = true;
+      /* Arming pendingAddAnother here would also reopen the form after a save that
+         failed validation or failed on the server and was then cancelled, wrongly
+         claiming "Product saved". The intent is only armed once the save has
+         actually succeeded (see enhanceModal). */
+      addAnotherWanted = true;
       form.requestSubmit(save);
     });
+    /* Plain "Save Product" is a fresh decision: it must not inherit a stale
+       "add another" intent left over from an earlier attempt that did not save. */
+    save.addEventListener('click', () => { addAnotherWanted = false; }, true);
 
     actions.insertBefore(note, cancel || actions.firstChild);
     actions.insertBefore(another, save);
@@ -191,10 +201,25 @@
     if (name) setTimeout(() => name.focus(), 30);
 
     form.addEventListener('submit', () => rememberPrefs(form), true);
+    /* The submit event only fires after native validation has passed, so this is
+       where the "add another" intent becomes safe to arm: from here on, a removed
+       form means the save went through (the save keeps the form open on failure),
+       unless the form was closed without saving — which is disarmed below. */
+    form.addEventListener('submit', () => {
+      if (addAnotherWanted) { addAnotherWanted = false; pendingAddAnother = true; }
+    }, true);
+    /* Every way of closing the form without saving disarms the reopen, so a
+       cancelled attempt never comes back claiming "Product saved". */
+    const disarmAddAnother = () => { pendingAddAnother = false; addAnotherWanted = false; };
+    form.querySelector('#cancelAddProduct')?.addEventListener('click', disarmAddAnother, true);
+    modal.querySelector('#closeAddProduct')?.addEventListener('click', disarmAddAnother, true);
+    modal.addEventListener('click', e => { if (e.target === modal) disarmAddAnother(); }, true);
+    modal.addEventListener('keydown', e => { if (e.key === 'Escape') disarmAddAnother(); }, true);
     form.addEventListener('keydown', e => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         pendingAddAnother = false;
+        addAnotherWanted = false;
         const save = form.querySelector('#saveAddProduct');
         form.requestSubmit(save || undefined);
       }

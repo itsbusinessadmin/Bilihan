@@ -459,7 +459,7 @@ function deleteOrderRowFromSheet(orderCode) {
    DELETE RECEIPT FOR ONE ORDER
    ========================================================= */
 
-function deleteReceiptForOrder(orderCode) {
+function deleteReceiptForOrder(orderCode, keepFileId) {
   const folder = DriveApp.getFolderById(RECEIPT_FOLDER_ID);
   const safeOrderCode = safeOrderCodeFor(orderCode);
 
@@ -474,7 +474,7 @@ function deleteReceiptForOrder(orderCode) {
       Examples: BIL-ABC123.jpg, BIL-ABC123.png, BIL-ABC123.pdf
       These match the order number while unrelated files stay untouched.
     */
-    if (receiptNameMatches(fileName, safeOrderCode)) {
+    if (receiptNameMatches(fileName, safeOrderCode) && file.getId() !== keepFileId) {
       file.setTrashed(true);
       deleted++;
 
@@ -587,12 +587,17 @@ function saveReceiptToDrive(payload) {
 
   const blob = Utilities.newBlob(bytes, mimeType, finalName);
 
-  /* Replace any old receipt for the same order. */
-  deleteReceiptForOrder(payload.order_code);
-
+  /* Save the new receipt FIRST. Only once it is safely stored in Drive are any
+     older receipts for the same order trashed, and the new file's own id is
+     passed so it is never caught by that sweep. Trashing first and saving
+     second - the old order here - left orders with no receipt at all whenever
+     the upload failed midway. */
   const file = folder.createFile(blob);
 
   console.log('Drive file created:', file.getId());
+
+  /* Replace any old receipt for the same order. */
+  deleteReceiptForOrder(payload.order_code, file.getId());
 
   return {
     file_id: file.getId(),
@@ -637,8 +642,17 @@ function updateReceiptInSheet(orderCode, receiptUrl, receiptName) {
 
   const row = index + 2;
 
+  /* The receipt link lives in its own column 20, headed "Receipt". Earlier
+     versions wrote the link into column 18, which is the customer's email -
+     every receipt upload permanently deleted that email from the sheet row.
+     The header is set on first use so new sheets carry it; existing sheets
+     keep whatever header row they already have, and columns 1-19 are untouched. */
+  if (!sheet.getRange(1, 20).getValue()) {
+    sheet.getRange(1, 20).setValue('Receipt');
+  }
+
   sheet
-    .getRange(row, 18)
+    .getRange(row, 20)
     .setFormula(`=HYPERLINK("${receiptUrl}","View Receipt")`);
 
   sheet
