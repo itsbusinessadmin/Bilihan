@@ -73,18 +73,19 @@
   const $ = id => root.querySelector('#' + id);
 
   /* ---------- views ---------- */
-  function renderIdentify(message) {
+  function renderIdentify(message, prev) {
+    const keep = prev || {};
     $('supportBody').innerHTML = `
       <form class="support-identify" id="supportIdentify" novalidate>
         <p class="support-intro">To open your conversation, enter your order number. If you add the mobile number you ordered with, it must match the order.</p>
         ${message ? `<div class="support-error" role="alert">${esc(message)}</div>` : ''}
         <label class="field">
           <span class="field-label">Order number *</span>
-          <input name="order" autocomplete="off" spellcheck="false" placeholder="e.g. BIL-A2BA14" required>
+          <input name="order" autocomplete="off" spellcheck="false" placeholder="e.g. BIL-A2BA14" value="${esc(keep.order || '')}" required>
         </label>
         <label class="field">
           <span class="field-label">Mobile number used on the order <span class="muted">(optional)</span></span>
-          <input name="phone" inputmode="tel" autocomplete="tel" placeholder="09XXXXXXXXX">
+          <input name="phone" inputmode="tel" autocomplete="tel" placeholder="09XXXXXXXXX" value="${esc(keep.phone || '')}">
         </label>
         <button class="primary-btn" type="submit" id="supportIdentifyBtn">Open my chat</button>
       </form>`;
@@ -97,7 +98,9 @@
       if (!order) { renderIdentify('Enter your order number. You will find it on your order confirmation.'); return; }
       btn.disabled = true; btn.textContent = 'Opening…';
       const ok = await identify(order, phone);
-      if (!ok) { renderIdentify(state.lastError); return; }
+      /* A failed attempt keeps what was typed: the form is rebuilt to show the
+         error, not to make the customer type the order number twice. */
+      if (!ok) { renderIdentify(state.lastError, { order, phone }); return; }
       renderChat(); refresh(true);
     };
     root.querySelector('#supportIdentify input')?.focus();
@@ -350,11 +353,11 @@
     }
     await syncLatestOrder();
     if (state.session) { renderChat(); refresh(true); }
-    else {
-      const order = latestOrder();
-      if (order?.order_code && await identify(order.order_code, '')) { renderChat(); refresh(true); }
-      else renderIdentify('');
-    }
+    /* syncLatestOrder already tried the stored order number when there is one;
+       calling identify again here would just repeat the same failed request.
+       Show the real error (and the order number, already filled in) instead of
+       a blank form. */
+    else renderIdentify(state.lastError, { order: latestOrder()?.order_code || '', phone: '' });
     schedule();
   }
   function closePanel() {

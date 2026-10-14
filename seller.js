@@ -54,6 +54,9 @@
     /* Stale figures must not sit underneath the error looking current. */
     $('sellerTotals').classList.add('hidden');
     $('sellerBody').innerHTML = '';
+    /* A detail window left open on a dead link would keep showing its old
+       figures as if they were current. */
+    const dlg=$('sellerDialog');if(dlg&&dlg.open)dlg.close();
   }
 
   /* The same three states the admin sets in Orders, in the same three colours, so

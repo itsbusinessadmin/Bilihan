@@ -275,20 +275,14 @@ grant execute on function public.is_admin() to anon, authenticated;
 -- Customer order placement. Security definer lets customers call one safe transaction
 -- without direct INSERT/UPDATE permission on order or product tables.
 -- NOTE: phone number is OPTIONAL. Only customer_name is required.
--- Adding a parameter makes a NEW signature rather than replacing the old one, so
--- older versions are dropped first. Without this several versions would exist at
--- once: after the coupons migration added the ten-argument place_order, re-running
--- this file left both the nine- and ten-argument versions in place, and every
--- nine-argument checkout call was rejected with "function is not unique".
---
--- IMPORTANT: this file recreates only the nine-argument place_order. The live
--- checkout always passes the tenth argument (p_coupon_code), so after
--- re-running this file on a coupon-enabled database you MUST also re-run
--- supabase-coupons.sql and supabase-fix-audit-3.sql, in that order, or every
--- checkout will fail until you do.
+-- Adding a parameter makes a NEW signature rather than replacing the old one,
+-- so superseded signatures are dropped first. The ten-argument coupon version
+-- is deliberately NOT dropped here: re-running this file on a coupon-enabled
+-- database must leave the live checkout's place_order alone. (An earlier
+-- version of this file dropped it, and every checkout failed until the coupon
+-- migrations were re-run.)
 drop function if exists public.place_order(text,text,text,text,date,text,text,jsonb);
 drop function if exists public.place_order(text,text,text,text,text,date,text,text,jsonb);
-drop function if exists public.place_order(text,text,text,text,text,date,text,text,jsonb,text);
 
 create or replace function public.place_order(
   p_customer_name text,
@@ -1034,6 +1028,13 @@ begin
     (select md5(coalesce(string_agg(t, ','), '')) from (select th::text t from public.support_threads th order by th.id) q),
     (select md5(coalesce(string_agg(t, ','), '')) from (select g::text t from public.product_variant_groups g order by g.id) q),
     (select md5(coalesce(string_agg(t, ','), '')) from (select vo::text t from public.product_variant_options vo order by vo.id) q),
+    -- The coupons table only exists after the coupons migration. Re-running
+    -- this file on a coupon-enabled database must keep watching it, or coupon
+    -- changes would stop refreshing the admin page. to_regclass returns null
+    -- on a fresh database and the branch is simply skipped.
+    case when to_regclass('public.coupons') is not null
+      then (select md5(coalesce(string_agg(t, ','), '')) from (select cp::text t from public.coupons cp order by cp.id) q)
+      else '' end,
     (select count(*)::text from public.support_messages)
   )) into v;
   return v;

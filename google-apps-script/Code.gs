@@ -179,19 +179,26 @@ function doPost(e) {
       payload.order_status || '',
       payload.cancellation_reason || '',
       new Date(),
-      payload.email || '',
-      payload.coupon_code || '',
-      Number(payload.coupon_discount || 0)
+      payload.email || ''
     ];
 
-    /* Coupon columns 21-22. The header is set on first use so existing
-       sheets keep whatever header row they already have. */
-    if (!sheet.getRange(1, 21).getValue()) {
-      sheet.getRange(1, 21).setValue('Coupon Code');
+    /* Coupon data lives in columns 21-22, written with dedicated cell
+       writes. Columns 19-20 belong to the receipt upload (upload date
+       and the "View Receipt" link): folding coupons into the row array
+       overwrote the receipt link on every order sync, and every receipt
+       upload overwrote the coupon data. The header is set on first use
+       so existing sheets keep whatever header row they already have. */
+    var COUPON_CODE_COL = 21, COUPON_DISCOUNT_COL = 22;
+    if (!sheet.getRange(1, COUPON_CODE_COL).getValue()) {
+      sheet.getRange(1, COUPON_CODE_COL).setValue('Coupon Code');
     }
-    if (!sheet.getRange(1, 22).getValue()) {
-      sheet.getRange(1, 22).setValue('Coupon Discount');
+    if (!sheet.getRange(1, COUPON_DISCOUNT_COL).getValue()) {
+      sheet.getRange(1, COUPON_DISCOUNT_COL).setValue('Coupon Discount');
     }
+    var writeCouponCells = function (row) {
+      sheet.getRange(row, COUPON_CODE_COL).setValue(payload.coupon_code || '');
+      sheet.getRange(row, COUPON_DISCOUNT_COL).setValue(Number(payload.coupon_discount || 0));
+    };
 
     const lastRow = sheet.getLastRow();
     let existingRow = 0;
@@ -215,8 +222,10 @@ function doPost(e) {
       sheet
         .getRange(existingRow, 1, 1, rowData.length)
         .setValues([rowData]);
+      writeCouponCells(existingRow);
     } else {
       sheet.appendRow(rowData);
+      writeCouponCells(sheet.getLastRow());
     }
 
     /* Confirmation email, only the first time this order is seen. The admin page
