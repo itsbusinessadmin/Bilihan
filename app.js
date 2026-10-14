@@ -673,6 +673,10 @@ async function compressReceiptImage(file){
 async function uploadReceiptToGoogleDrive(order,file,cachedBase64){
   if(!order?.order_code)throw new Error('Order number is missing.');
   if(!file)throw new Error('Please upload your payment receipt.');
+  /* Without the script URL the post goes nowhere, yet under mode:'no-cors' even
+     a blank address answers without an error — so the failure handler would
+     never run and the receipt would vanish instead of queueing for retry. */
+  if(!GOOGLE_SHEETS_WEB_APP_URL)throw new Error('Receipt uploads are not set up yet.');
   const file_base64=cachedBase64||await fileToBase64(file);
   const payload={action:'upload_receipt',order_code:order.order_code,file_name:file.name,mime_type:file.type,file_base64};
   /* The script rejects calls without the shared secret. Without this line every

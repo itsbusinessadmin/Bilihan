@@ -363,7 +363,7 @@ function openSellersModal(){
   const figures=(r,labels)=>`<td data-label="${labels[0]}">${r.qty}</td><td data-label="${labels[1]}">${money(r.original)}</td><td data-label="${labels[2]}">${money(r.interest)}</td><td data-label="${labels[3]}"><strong>${money(r.overall)}</strong></td>`;
   const SELLER_LABELS=['Qty sold','Seller price total','Interest total','Overall'];
   const ITEM_LABELS=['Qty','Seller price','Interest','Overall'];
-  const sellerRow=(r,i)=>`<tr class="seller-row"><td class="seller-cell"><button type="button" class="seller-toggle" aria-expanded="false" aria-controls="sellerItems${i}"><span class="seller-caret" aria-hidden="true">›</span><strong>${esc(r.name)}</strong></button><small class="seller-row-sub">${r.items.length} item${r.items.length===1?'':'s'}</small>${owedSub(r)}<br><button type="button" class="link-btn" data-seller-link="${esc(r.name)}" title="Copy a link that shows only this seller's figures">Copy seller link</button></td>${figures(r,SELLER_LABELS)}</tr>
+  const sellerRow=(r,i)=>`<tr class="seller-row"><td class="seller-cell"><button type="button" class="seller-toggle" aria-expanded="false" aria-controls="sellerItems${i}"><span class="seller-caret" aria-hidden="true">›</span><strong>${esc(r.name)}</strong></button><small class="seller-row-sub">${r.items.length} item${r.items.length===1?'':'s'}</small>${owedSub(r)}<br><button type="button" class="link-btn" data-seller-link="${esc(r.name)}" title="Copy a link that shows only this seller's figures">Copy seller link</button> <button type="button" class="link-btn" data-seller-revoke="${esc(r.name)}" title="Revoke this seller's link immediately">Revoke link</button></td>${figures(r,SELLER_LABELS)}</tr>
     <tr class="seller-items-row" id="sellerItems${i}" hidden><td colspan="5"><table class="table seller-subtable"><thead><tr><th>Item</th><th>Qty</th><th>Seller price</th><th>Interest</th><th>Overall</th></tr></thead><tbody>${r.items.map(it=>`<tr><td class="seller-cell">${esc(it.name)}${owedSub(it)}</td>${figures(it,ITEM_LABELS)}</tr>`).join('')}</tbody></table></td></tr>`;
   const body=rows.length?`<div class="table-wrap"><table class="table sales-table sellers-table"><thead><tr><th>Seller</th><th>Qty Sold</th><th>Seller Price Total</th><th>Interest Total</th><th>Overall</th></tr></thead><tbody>${rows.map(sellerRow).join('')}</tbody><tfoot><tr><td class="seller-cell"><strong>All sellers</strong></td>${figures(t,SELLER_LABELS)}</tr></tfoot></table></div>`
     :`<p class="muted" style="padding:20px 0">No sales yet. Put a seller name on each product and their totals will appear here as orders come in.</p>`;
@@ -389,6 +389,21 @@ function openSellersModal(){
       catch(_){prompt('Copy this seller link:',url);b.textContent='Copy seller link'}
       setTimeout(()=>{b.textContent='Copy seller link'},2000);
     }catch(err){alert(err?.message||'Could not make the seller link.')}
+    b.disabled=false;
+  });
+  /* A leaked per-seller link can be cut off on its own: deleting the token
+     makes the old link stop working on the seller's next poll, and "Copy seller
+     link" afterwards mints them a fresh one. */
+  modal.querySelectorAll('[data-seller-revoke]').forEach(b=>b.onclick=async()=>{
+    const name=b.dataset.sellerRevoke;
+    if(!confirm(`Revoke ${name}'s seller link?\n\nThe current link stops working immediately. Use "Copy seller link" afterwards to make them a fresh one.`))return;
+    b.disabled=true;
+    try{
+      const {error}=await db.from('seller_tokens').delete().eq('seller_name',name);
+      if(error)throw error;
+      b.textContent='Revoked ✓';
+      setTimeout(()=>{b.textContent='Revoke link'},2000);
+    }catch(err){alert(err?.message||'Could not revoke the seller link.')}
     b.disabled=false;
   });
 }
@@ -914,6 +929,10 @@ async function loadThreadMessages(id,{silent}={}){
   if(!id)return;
   if(!silent)MSG.loading=true;
   const {data,error}=await db.from('support_messages').select('*').eq('thread_id',id).order('created_at');
+  /* The admin may have opened another thread while this fetch was in flight.
+     Painting now would put this thread's messages under the other thread's
+     header — and a reply typed against them would go to the wrong customer. */
+  if(MSG.openId!==id){MSG.loading=false;return}
   if(error){console.warn('Bilihan admin: could not load messages',error);MSG.loading=false;return}
   MSG.messages=data||[];MSG.loading=false;
   paintThread();
@@ -1032,19 +1051,24 @@ function paintThread(){
   input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();form.requestSubmit()}});
   form.onsubmit=async e=>{
     e.preventDefault();
+    /* Captured now: the admin may open another thread while the send is in
+       flight, and the reply must go to the thread it was typed in. */
+    const threadId=MSG.openId;
     const body=input.value.trim();
-    if(!body)return;
+    if(!body||!threadId)return;
     input.value='';grow();
     MSG.messages=[...MSG.messages,{id:'local-'+Date.now(),sender:'admin',body,created_at:new Date().toISOString()}];
     paintThread();
-    const {data,error}=await db.rpc('support_admin_reply',{p_thread_id:MSG.openId,p_body:body});
+    const {data,error}=await db.rpc('support_admin_reply',{p_thread_id:threadId,p_body:body});
     if(error||!data?.ok){
       /* The reply never landed: put the text back so it can be retried instead
-         of retyped. paintThread's draft carry-over keeps it across the reload. */
-      const box=document.getElementById('threadInput');if(box){box.value=body;box.dispatchEvent(new Event('input'));}
+         of retyped — but only when this thread is still open, so the text can
+         never leak into another customer's box. paintThread's draft carry-over
+         keeps it across the reload. */
+      if(MSG.openId===threadId){const box=document.getElementById('threadInput');if(box){box.value=body;box.dispatchEvent(new Event('input'));}}
       alert(error?.message||data?.error||'Reply not sent.');
     }
-    await loadThreadMessages(MSG.openId,{silent:true});
+    await loadThreadMessages(threadId,{silent:true});
   };
   /* A repaint while the admin is reading (an incoming message, the poll) must
      not yank focus into the reply box — on phones it would pop the keyboard
@@ -1825,8 +1849,11 @@ function openCouponSettings(id){
       const rem=Number(document.getElementById('csRemaining').value);
       if(!(rem>=0))return alert('Remaining credit cannot be negative.');
       patch.remaining_credit=rem;
-      /* Topping a spent coupon back up returns it to service. */
-      if(rem>0&&patch.status==='used')patch.status='active';
+      /* Topping a spent coupon back up returns it to service — but only an
+         actual balance increase revives it. Without this, saving any unrelated
+         change (like the expiry date) on a coupon the owner deliberately marked
+         Used would silently flip it back to Active. */
+      if(rem>Number(c.remaining_credit||0)&&patch.status==='used')patch.status='active';
       /* A coupon with nothing left cannot stay Active. */
       if(rem<=0&&patch.status==='active')patch.status='used';
       /* Topping above the original amount moves the original too, so the "left of" display stays sane. */

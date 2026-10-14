@@ -508,7 +508,13 @@ begin
            nullif(v_item->>'seller_name',''));
     update public.products
       set stock = stock - (v_item->>'qty')::integer,
-          is_available = case when stock - (v_item->>'qty')::integer > 0 then is_available else false end
+          is_available = case when stock - (v_item->>'qty')::integer > 0 then is_available else false end,
+          /* Same auto-hide contract as the ten-argument version: checkout marks
+             the products it hides on sell-out, so a later cancellation can put
+             them back on the shelf. */
+          auto_hidden = case when stock - (v_item->>'qty')::integer > 0 then auto_hidden
+                             when is_available then true
+                             else auto_hidden end
       where id=(v_item->>'product_id')::uuid;
   end loop;
 
