@@ -652,6 +652,11 @@ function updateReceiptInSheet(orderCode, receiptUrl, receiptName) {
   const lastRow = sheet.getLastRow();
 
   if (lastRow < 2) {
+    /* Brand-new sheet, header row only: there is no row to link yet, but
+       the link must still be parked so the later order sync can pick it
+       up. */
+    console.log('Sheet is empty; parking receipt link:', orderCode);
+    parkPendingReceipt(orderCode, receiptUrl, receiptName);
     return;
   }
 

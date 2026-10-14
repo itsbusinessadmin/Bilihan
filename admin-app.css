@@ -257,10 +257,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   #orderList .table td{display:grid;grid-template-columns:minmax(104px,.42fr) minmax(0,1fr);gap:var(--admin-space-sm);max-width:none;padding:7px 0;border:0;border-bottom:1px dashed var(--admin-line);font-size:.8rem}
   #orderList .table td:last-child{border-bottom:0;padding-top:var(--admin-space-md)}
   #orderList .table td::before{color:var(--admin-muted);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
-  /* The orders list is Order / Payment / Customer / delete. */
+  /* The orders list is Order / Payment / Customer / Coupon / delete. */
   #orderList .table td:nth-child(1)::before{content:"Order"}
   #orderList .table td:nth-child(2)::before{content:"Payment"}
   #orderList .table td:nth-child(3)::before{content:"Customer"}
+  #orderList .table td:nth-child(4)::before{content:"Coupon"}
   /* width:1% keeps the delete column tight in the desktop table; on mobile the row
      is a stacked card, so the cell has to take the full width to right-align. */
   #orderList .table td:last-child{display:flex;justify-content:flex-end;width:auto;padding-top:var(--admin-space-md)}
