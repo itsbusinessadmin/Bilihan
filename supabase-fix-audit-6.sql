@@ -17,4 +17,16 @@
 --
 -- Safe to re-run. Run this in the Supabase SQL Editor.
 -- ===================================================================
-revoke execute on function public.restore_order_inventory(uuid) from public;
+-- PostgreSQL has no REVOKE ... IF EXISTS, so on a database where the earlier
+-- fix files never ran the bare revoke fails loudly. Guard it: the function
+-- either gets locked down or does not exist yet, and neither case errors.
+do $$
+begin
+  if exists (select 1 from pg_proc p
+              join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public'
+               and p.proname = 'restore_order_inventory') then
+    revoke execute on function public.restore_order_inventory(uuid) from public;
+  end if;
+end
+$$;

@@ -328,6 +328,14 @@ begin
                             'overall', v_total + v_interest,
                             'unpaid_qty', v_unpaid_qty, 'unpaid', v_unpaid,
                             'scoped_seller', v_scope,
+                            /* A seller-scoped token that matches nothing while the shop
+                               does have paid lines is stale (the seller was renamed
+                               since the link was minted) — flag it so the page can
+                               say so instead of silently showing ₱0. */
+                            'stale_scope', (select case
+                               when v_scope is not null and coalesce(v_qty,0) = 0
+                                    and exists (select 1 from public.seller_order_lines where is_paid)
+                               then true else false end),
                             'as_of', now());
 end;
 $$;
