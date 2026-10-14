@@ -1,7 +1,6 @@
 const GOOGLE_SHEETS_WEB_APP_URL = (window.BILIHAN_CONFIG||{}).GOOGLE_SHEETS_WEB_APP_URL || '';
 /* Shared secret for the Google Apps Script. Sent with every call; the script
-   must be patched to require it (see apps-script/AUTH-PATCH.md). Until both
-   sides are updated the token is simply omitted and the old behaviour holds. */
+   (google-apps-script/Code.gs) requires it. */
 function scriptToken(){return (window.BILIHAN_CONFIG||{}).GOOGLE_APPS_SCRIPT_TOKEN||''}
 async function postToScript(payload){
   if(!GOOGLE_SHEETS_WEB_APP_URL)return true;
@@ -829,9 +828,10 @@ function orders(m){
     });
     const list=document.getElementById('orderList');
     list.innerHTML=rows.length?`<table class="table orders-table"><thead><tr><th>Order #</th><th>Payment Status</th><th>Customer</th><th>Coupon</th><th><span class="sr-only">Delete</span></th></tr></thead><tbody>${rows.map(o=>`<tr><td>${bulkCheckboxHtml(o.id)}<button type="button" class="order-code-btn" data-order="${esc(o.id)}" title="View full order details">#${esc(o.order_code)}</button>${o.status==='Cancelled'?'<span class="order-cancelled-tag">Cancelled</span>':''}</td><td>${paySelectHtml(o)}</td><td>${esc(o.customer_name)}</td><td>${o.coupon_code?`<button type="button" class="coupon-yes-btn" data-coupon="${esc(o.id)}" title="View coupon breakdown">Yes</button>`:'<span class="muted">No</span>'}</td><td><button type="button" class="icon-delete-btn" data-delete="${esc(o.id)}" title="Delete order" aria-label="Delete order #${esc(o.order_code)}"></button></td></tr>`).join('')}</tbody></table>`:'<p style="padding:20px">No orders match this filter.</p>';
-    list.querySelectorAll('[data-order]').forEach(b=>b.onclick=()=>openOrderDetails(b.dataset.order));
-    list.querySelectorAll('[data-coupon]').forEach(b=>b.onclick=()=>openCouponBreakdown(b.dataset.coupon));
-    list.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>deleteOrder(b.dataset.delete));
+    /* One delegated listener instead of three per-row binding passes: attaching
+       an onclick to every row made each redraw cost O(orders), which grows with
+       the shop's full history. */
+    if(!list.dataset.delegated){list.dataset.delegated='1';list.addEventListener('click',e=>{const b=e.target.closest('[data-order],[data-coupon],[data-delete]');if(!b||!list.contains(b))return;if(b.dataset.order)openOrderDetails(b.dataset.order);else if(b.dataset.coupon)openCouponBreakdown(b.dataset.coupon);else if(b.dataset.delete)deleteOrder(b.dataset.delete)});}
   };
   const syncBulk=wireBulk('orders',document.getElementById('orderList'),'order',async ids=>{
     const codeById=new Map(ids.map(id=>[id,A.data.orders.find(o=>o.id===id)?.order_code]));
@@ -853,7 +853,7 @@ function orders(m){
   });
   /* Held in state rather than only in the box: this page is redrawn whenever the
      orders change underneath, and the search term has to survive that. */
-  document.getElementById('orderSearch').oninput=e=>{A.orderSearch=e.target.value;draw();syncBulk()};
+  document.getElementById('orderSearch').oninput=e=>{A.orderSearch=e.target.value;/* Debounced: draw() rebuilds every order row, which gets expensive as history grows. */clearTimeout(A._orderSearchT);A._orderSearchT=setTimeout(()=>{draw();syncBulk()},200)};
   draw();syncBulk();
 }
 async function syncAdminOrderToGoogleSheet(order){if(!GOOGLE_SHEETS_WEB_APP_URL||!order)return;/* Same shape the storefront writes. Without the choices, marking an order Paid

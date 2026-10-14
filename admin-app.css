@@ -44,7 +44,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .admin-brand{display:flex;align-items:center;gap:11px;min-height:58px;padding:0 var(--admin-space-sm) var(--admin-space-md);margin-bottom:var(--admin-space-sm);border-bottom:1px solid var(--admin-line)}
 .admin-brand img{width:40px;height:40px;flex:0 0 40px;object-fit:cover;border-radius:12px;border:1px solid var(--admin-line);background:#fff;box-shadow:var(--admin-shadow)}
 .admin-brand strong{display:block;font-size:var(--admin-text-body);line-height:1.2;color:var(--admin-text);font-weight:700;letter-spacing:-.016em}
-.admin-brand small{display:block;margin-top:3px;color:var(--admin-muted);font-size:.64rem!important;font-weight:700;letter-spacing:.09em}
+.admin-brand small{display:block;margin-top:3px;color:var(--admin-muted);font-size:.64rem;font-weight:700;letter-spacing:.09em}
 .side-nav{display:flex;flex-direction:column;gap:3px;margin-top:var(--admin-space-sm)}
 .side-nav button{position:relative;width:100%;min-height:44px;padding:0 14px;border:0;border-radius:12px;background:transparent;color:var(--admin-muted);text-align:left;font-size:var(--admin-text-secondary);font-weight:600;cursor:pointer;transition:background var(--admin-ease-out) .16s,color var(--admin-ease-out) .16s}
 .side-nav button:hover{background:var(--admin-soft);color:var(--admin-text)}
@@ -141,8 +141,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .modal-secondary-btn{min-height:var(--admin-touch);padding:0 16px;border:1px solid var(--admin-line);background:var(--admin-card);color:var(--admin-text);border-radius:12px}
 .modal-secondary-btn:hover{background:var(--admin-soft)}
 .admin-modal-actions .primary-btn{min-width:140px;padding-inline:18px}
-
-.admin-empty{padding:var(--admin-space-xl);text-align:center;border:1px solid var(--admin-line);border-radius:var(--admin-radius);background:var(--admin-card);color:var(--admin-muted)}
 
 /* =========================================================
    FAST ENTRY — UI-only enhancement layer
@@ -687,15 +685,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .theme-option-flag{color:var(--admin-gold);font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 
 /* ---- Checkout contact-field toggles (Settings tab) ---- */
-.form-subhead{margin:var(--admin-space-lg) 0 2px;font-size:var(--admin-text-body);font-weight:700;color:var(--admin-text)}
 .field-toggle-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--admin-space-md);padding:2px 0}
 .field-toggle-row .check-row{margin:0}
 .field-toggle-row .check-row:last-child{margin-left:auto}
 /* A "Required" box that cannot apply reads as off, not merely unticked. */
 .check-row.is-disabled{opacity:.45;cursor:not-allowed}
-
-/* ---- Seller link (Dashboard) ---- */
-.seller-link-hint{margin:var(--admin-space-sm) 0 0;font-size:var(--admin-text-caption);line-height:1.5;overflow-wrap:anywhere}
 
 /* ---- Sidebar brand ---- */
 .admin-brand strong{display:block;overflow-wrap:anywhere;line-height:1.25}

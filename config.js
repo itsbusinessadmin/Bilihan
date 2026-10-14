@@ -6,9 +6,6 @@
    API secret, a database password, or an admin credential in this file or in any
    other file in this repository. */
 window.BILIHAN_CONFIG = {
-  /* Canonical site origin, used for links shared outside the browser. */
-  SITE_URL: 'https://bilihan.shop',
-
   /* Supabase project URL + anon/publishable key (public by design, guarded by RLS). */
   SUPABASE_URL: 'https://nrwiblxfqfovmnoofiii.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_jCK3L5lQUejcSYQ4yau8sw_xLqUXanu',
@@ -18,11 +15,9 @@ window.BILIHAN_CONFIG = {
      Script itself must validate every request. Leave empty to turn the sync off. */
   GOOGLE_SHEETS_WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbwDiNU-R9HQDL79QlO6kObtnpS7XCxc2_xoHL3Dk1becwEEjPtAx43WZcUpNWDW3L35/exec',
 
-  /* Shared secret for the Google Apps Script (audit fix #4). The site sends this
-     with every call to the script above; the script must be patched to require it
-     (see apps-script/AUTH-PATCH.md). Pick a long random string and keep it the
-     same in both places. Until both sides are set, the site simply omits it and
-     the script keeps its current behaviour. */
+  /* Shared secret for the Google Apps Script. The site sends this with every
+     call to the script above; the script (google-apps-script/Code.gs) requires
+     it. Pick a long random string and keep it the same in both places. */
   GOOGLE_APPS_SCRIPT_TOKEN: '1445d1df-1fdf-4e0d-bcdf-bc237dfe1621',
 
   /* Privacy-first analytics. Disabled until you fill this in.

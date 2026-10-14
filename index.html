@@ -69,8 +69,9 @@
   <link rel="preconnect" href="https://nrwiblxfqfovmnoofiii.supabase.co" crossorigin />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="styles.css" />
-  <!-- Alternate storefront design. Inert unless <html data-skin="storefront">. -->
-  <link rel="stylesheet" href="theme-storefront.css" />
+  <!-- Alternate storefront design. Inert unless <html data-skin="storefront">, so it
+       loads without blocking first paint; the skin switch (JS) applies it. -->
+  <link rel="stylesheet" href="theme-storefront.css" media="print" onload="this.media='all'" />
 
   <script type="application/ld+json">
   {
@@ -110,7 +111,7 @@
         <a class="primary-btn" href="#menu">Shop Now</a>
       </div>
       <div class="hero-carousel" aria-label="Featured food">
-        <img id="heroImage" src="bilihan-logo.png" width="800" height="600" fetchpriority="high" decoding="async" alt="Featured food from Bilihan" />
+        <img id="heroImage" src="hero-placeholder.webp" width="800" height="600" decoding="async" alt="Featured food from Bilihan" />
         <div id="heroDots" class="hero-dots"></div>
       </div>
     </section>

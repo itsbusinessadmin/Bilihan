@@ -241,7 +241,7 @@ function renderCategories(){
   if(!sel.value){state.category='all';sel.value='all'}
   bindCategorySelect();
 }
-function bindCategorySelect(){const sel=$('categorySelect');if(!sel||sel.dataset.bound)return;sel.dataset.bound='1';sel.addEventListener('change',()=>{state.category=sel.value;renderProducts()});const search=$('productSearch');if(search&&!search.dataset.bound){search.dataset.bound='1';search.addEventListener('input',()=>{state.search=search.value;renderProducts()})}}
+function bindCategorySelect(){const sel=$('categorySelect');if(!sel||sel.dataset.bound)return;sel.dataset.bound='1';sel.addEventListener('change',()=>{state.category=sel.value;renderProducts()});const search=$('productSearch');if(search&&!search.dataset.bound){search.dataset.bound='1';/* Debounced: rebuilding the whole product grid on every keystroke janks fast typing. */let t=0;search.addEventListener('input',()=>{state.search=search.value;clearTimeout(t);t=setTimeout(renderProducts,180)})}}
 function renderViewSwitch(){const grid=$('gridViewBtn'),list=$('listViewBtn'),menu=$('menuGrid');if(!grid||!list||!menu)return;const isList=state.productView==='list';menu.classList.toggle('list-view',isList);grid.classList.toggle('active',!isList);list.classList.toggle('active',isList);grid.setAttribute('aria-pressed',String(!isList));list.setAttribute('aria-pressed',String(isList));grid.onclick=()=>setProductView('grid');list.onclick=()=>setProductView('list')}
 function setProductView(view){state.productView=view==='list'?'list':'grid';localStorage.setItem(LS.productView,state.productView);renderViewSwitch()}
 /* A product picture that shows its own loading state. Until the file arrives the
