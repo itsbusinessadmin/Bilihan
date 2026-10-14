@@ -134,7 +134,8 @@ create or replace function public.place_order(
   p_payment_method text,
   p_note text,
   p_items jsonb,
-  p_coupon_code text default null
+  p_coupon_code text default null,
+  p_idempotency_key text default null
 )
 returns jsonb
 language plpgsql
@@ -172,7 +173,25 @@ declare
   v_coupon_kind text := null;
   v_coupon_id uuid := null;
   v_new_remaining numeric(12,2);
+  v_existing public.orders%rowtype;
+  v_idem_key text;
 begin
+  -- Idempotency: if the customer's network dropped the response after the
+  -- order already committed, the retry carries the same key and gets the
+  -- already-created order back instead of a duplicate (which would decrement
+  -- stock twice and consume a coupon twice for one intended purchase).
+  v_idem_key := nullif(btrim(coalesce(p_idempotency_key,'')),'');
+  if v_idem_key is not null then
+    select * into v_existing from public.orders where idempotency_key = v_idem_key;
+    if found then
+      return jsonb_build_object('ok',true,'duplicate',true,'order',jsonb_build_object(
+        'id',v_existing.id,'order_code',v_existing.order_code,
+        'cancel_token',v_existing.cancel_token,
+        'customer_name',v_existing.customer_name,'phone',v_existing.phone,
+        'email',v_existing.email,'total',v_existing.total,
+        'status',v_existing.status));
+    end if;
+  end if;
   -- Read the shop's checkout rules here rather than trusting what the page sent:
   -- anything the browser enforces can be skipped by posting straight to this function.
   select * into v_cfg from public.store_settings where id = 1;
@@ -386,8 +405,8 @@ begin
     v_coupon_id := v_coupon.id;
   end if;
 
-  insert into public.orders(id,order_code,cancel_token,customer_name,phone,email,fulfillment,address,preferred_date,payment_method,note,total,status,coupon_code,coupon_discount,coupon_kind,coupon_id)
-  values(v_order_id,v_code,v_token,trim(p_customer_name),v_phone,v_email,p_fulfillment,case when p_fulfillment='Delivery' then trim(p_address) else null end,p_preferred_date,p_payment_method,nullif(trim(p_note),''),v_total,'New',v_coupon_code,v_coupon_discount,v_coupon_kind,v_coupon_id);
+  insert into public.orders(id,order_code,cancel_token,customer_name,phone,email,fulfillment,address,preferred_date,payment_method,note,total,status,coupon_code,coupon_discount,coupon_kind,coupon_id,idempotency_key)
+  values(v_order_id,v_code,v_token,trim(p_customer_name),v_phone,v_email,p_fulfillment,case when p_fulfillment='Delivery' then trim(p_address) else null end,p_preferred_date,p_payment_method,nullif(trim(p_note),''),v_total,'New',v_coupon_code,v_coupon_discount,v_coupon_kind,v_coupon_id,v_idem_key);
 
   for v_item in select * from jsonb_array_elements(v_items_out)
   loop
@@ -420,7 +439,7 @@ exception when others then
 end;
 $$;
 
-grant execute on function public.place_order(text,text,text,text,text,date,text,text,jsonb,text) to anon, authenticated;
+grant execute on function public.place_order(text,text,text,text,text,date,text,text,jsonb,text,text) to anon, authenticated;
 
 -- The admin's change digest now watches coupons too.
 create or replace function public.admin_data_version()
