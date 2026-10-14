@@ -1,4 +1,4 @@
-# Google Apps Script auth patch (audit fix #4)
+# Google Apps Script auth setup (audit fix #4)
 
 ## Why
 
@@ -11,81 +11,47 @@ The Bilihan web app calls your Apps Script web app directly from the browser for
 - viewing a receipt (`?action=receipt&order_code=...`)
 
 The script's URL is public (it ships inside `config.js`, which every visitor
-downloads). Before this patch, **anyone with the URL could POST fake orders,
-delete Sheet rows, delete Drive receipts, or wipe everything** — no login, no
-secret.
+downloads). Without the token check, **anyone with the URL could POST fake
+orders, delete Sheet rows, delete Drive receipts, or wipe everything** — no
+login, no secret. The file `google-apps-script/Code.gs` in this repo already
+contains the token check; you just need to switch it on.
 
 ## What changed on the site side
 
 `config.js` has a new `GOOGLE_APPS_SCRIPT_TOKEN` setting. `app.js` and
-`admin.js` now send `token` with every POST to the script, and append
-`&token=...` to the receipt-view URL — but only when the setting is non-empty.
+`admin.js` send `token` with every POST to the script, and append `&token=...`
+to the receipt-view URL — but only when the setting is non-empty.
 
 ## What you must do (about 10 minutes)
 
-1. **Pick a secret.** A long random string, e.g. from
-   https://www.uuidgenerator.net/ — any UUID works. Example:
-   `9f3b1c2a-7d4e-4f8a-b1c2-3d4e5f6a7b8c` (use your own).
+1. **Pick a secret.** A long random string, e.g. a UUID from
+   https://www.uuidgenerator.net/. Example:
+   `9f3b1c2a-7d4e-4f8a-b1c2-3d4e5f6a7b8c` (use your own — don't reuse this one).
 
-2. **Put it in `config.js`:**
+2. **Put it in the Apps Script.** Open https://script.google.com → your Bilihan
+   project → `Code.gs`. Select everything, delete it, and paste in
+   `google-apps-script/Code.gs` from this repo. Then set the secret at the top:
+   ```js
+   const SCRIPT_TOKEN = 'paste-your-secret-here';
+   ```
+
+3. **Put the same secret in `config.js`:**
    ```js
    GOOGLE_APPS_SCRIPT_TOKEN: 'paste-your-secret-here',
    ```
    Commit + push (GitHub Pages redeploys automatically).
 
-3. **Patch the Apps Script.** Open
-   https://script.google.com → your Bilihan project → `Code.gs`, and add this
-   at the very top of both `doPost(e)` and `doGet(e)`:
-
-   ```js
-   // --- Bilihan auth patch: reject calls without the shared secret ---
-   var BILIHAN_SCRIPT_TOKEN = 'paste-the-same-secret-here';
-
-   function bilihanAuthorized(e) {
-     var params = (e && e.parameter) || {};
-     var body = {};
-     try { body = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
-     catch (_) {}
-     var token = params.token || body.token || '';
-     return token === BILIHAN_SCRIPT_TOKEN;
-   }
-   ```
-
-   Then, as the **first lines** inside `doPost(e)`:
-   ```js
-   function doPost(e) {
-     if (!bilihanAuthorized(e)) {
-       return ContentService.createTextOutput(
-         JSON.stringify({ ok: false, error: 'Unauthorized' })
-       ).setMimeType(ContentService.MimeType.JSON);
-     }
-     // ... your existing doPost code continues here
-   ```
-
-   And as the **first lines** inside `doGet(e)` (this guards `?action=receipt`):
-   ```js
-   function doGet(e) {
-     if (!bilihanAuthorized(e)) {
-       return ContentService.createTextOutput('Unauthorized')
-         .setMimeType(ContentService.MimeType.TEXT);
-     }
-     // ... your existing doGet code continues here
-   ```
-
-4. **Deploy → New version** (Deploy → Manage deployments → New version), so the
-   live `/exec` URL picks up the change.
+4. **Deploy the script:** Deploy → Manage deployments → pencil icon on the
+   active deployment → Version: **New version** → Deploy. The `/exec` URL does
+   not change.
 
 ## Order matters
 
-- If you set the token in `config.js` but have **not** patched the script yet:
-  the site sends `token`, the old script ignores the extra field, everything
-  keeps working (still unauthenticated — patch soon).
-- If you patch the script but have **not** set the token in `config.js` yet:
-  the site sends no token and the script rejects every call — Sheet sync,
-  receipt uploads, and receipt viewing stop until you set the token.
-
-So: set the token in `config.js` first, deploy the site, then patch + redeploy
-the script.
+The script **fails closed**: with `SCRIPT_TOKEN` empty it rejects every
+request, and the site only sends a token when `GOOGLE_APPS_SCRIPT_TOKEN` is
+set. So set the same secret in **both** places before deploying the new script
+version — otherwise Sheet sync, receipt uploads, and receipt viewing stop
+until both sides match.
 
 ## After the patch
 
