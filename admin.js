@@ -816,11 +816,22 @@ function orders(m){
     list.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>deleteOrder(b.dataset.delete));
   };
   const syncBulk=wireBulk('orders',document.getElementById('orderList'),'order',async ids=>{
-    const codes=ids.map(id=>A.data.orders.find(o=>o.id===id)?.order_code).filter(Boolean);
-    /* Restore stock + coupon credit before deleting, one order at a time. A
-       failed RPC throws so the bulk handler stops and shows the error. */
-    for(const id of ids){const {error}=await db.rpc('admin_delete_order',{p_order_id:id});if(error)throw new Error(error.message||'Could not delete the selected orders.')}
-    for(const code of codes)await deleteOrderFromGoogleSheet(code);
+    const codeById=new Map(ids.map(id=>[id,A.data.orders.find(o=>o.id===id)?.order_code]));
+    const deletedCodes=[];
+    try{
+      /* Restore stock + coupon credit before deleting, one order at a time. A
+         failed RPC throws so the bulk handler stops and shows the error. */
+      for(const id of ids){
+        const {error}=await db.rpc('admin_delete_order',{p_order_id:id});
+        if(error)throw new Error(error.message||'Could not delete the selected orders.');
+        const code=codeById.get(id);if(code)deletedCodes.push(code);
+      }
+    }finally{
+      /* Even when a delete fails part-way, the orders that did go must leave
+         the Sheet too — otherwise their rows haunt it as ghosts. Each delete
+         queues a retry when the script can't be reached. */
+      for(const code of deletedCodes)await deleteOrderFromGoogleSheet(code);
+    }
   });
   /* Held in state rather than only in the box: this page is redrawn whenever the
      orders change underneath, and the search term has to survive that. */
@@ -837,7 +848,16 @@ async function deleteAllOrdersFromGoogleServices(){if(!GOOGLE_SHEETS_WEB_APP_URL
    admin_delete_order() does the restore server-side (skipped when the order is
    already cancelled) and then deletes the order. */
 window.deleteOrder=async id=>{const o=A.data.orders.find(x=>x.id===id);if(!o)return alert('Order not found.');if(!confirm(`Delete Order #${o.order_code} permanently? This will also delete its Google Sheet row and matching payment receipt from Google Drive.`))return;const {error}=await db.rpc('admin_delete_order',{p_order_id:id});if(error)return alert(error.message);await deleteOrderFromGoogleSheet(o.order_code);await loadAll();renderShell()};
-async function deleteAllOrders(){if(!A.data.orders.length)return alert('There are no orders to delete.');if(!confirm(`Delete ALL ${A.data.orders.length} customer orders? This cannot be undone. It will also remove all matching Google Sheet rows and payment receipt files from Google Drive.`))return;if(prompt('Type DELETE ALL ORDERS to confirm:')!=='DELETE ALL ORDERS')return alert('Delete All cancelled.');const ids=A.data.orders.map(o=>o.id);for(const id of ids){const {error}=await db.rpc('admin_delete_order',{p_order_id:id});if(error)return alert(error.message||'Could not delete all orders.')}await deleteAllOrdersFromGoogleServices();A.orderFilter='all';await loadAll();renderShell();alert('All customer orders, matching Google Sheet rows, and matching Google Drive receipts have been deleted.');}
+async function deleteAllOrders(){if(!A.data.orders.length)return alert('There are no orders to delete.');if(!confirm(`Delete ALL ${A.data.orders.length} customer orders? This cannot be undone. It will also remove all matching Google Sheet rows and payment receipt files from Google Drive.`))return;if(prompt('Type DELETE ALL ORDERS to confirm:')!=='DELETE ALL ORDERS')return alert('Delete All cancelled.');const ids=A.data.orders.map(o=>o.id);const codeById=new Map(A.data.orders.map(o=>[o.id,o.order_code]));const deleted=[];let failed=null;for(const id of ids){const {error}=await db.rpc('admin_delete_order',{p_order_id:id});if(error){failed=error;break;}deleted.push(id);}
+  if(failed){
+    /* Part-way failure: the whole-sheet wipe must not run (orders remain in the
+       database), so the orders that did go are removed from the Sheet one by one
+       instead — each queues a retry when the script can't be reached. */
+    for(const id of deleted){const code=codeById.get(id);if(code)await deleteOrderFromGoogleSheet(code);}
+    await loadAll();renderShell();
+    return alert((failed.message||'Could not delete all orders.')+' The orders deleted so far were also removed from the Google Sheet.');
+  }
+  await deleteAllOrdersFromGoogleServices();A.orderFilter='all';await loadAll();renderShell();alert('All customer orders, matching Google Sheet rows, and matching Google Drive receipts have been deleted.');}
 /* ========================================================================
    Customer messages
 
@@ -1015,7 +1035,12 @@ function paintThread(){
     MSG.messages=[...MSG.messages,{id:'local-'+Date.now(),sender:'admin',body,created_at:new Date().toISOString()}];
     paintThread();
     const {data,error}=await db.rpc('support_admin_reply',{p_thread_id:MSG.openId,p_body:body});
-    if(error||!data?.ok){alert(error?.message||data?.error||'Reply not sent.');}
+    if(error||!data?.ok){
+      /* The reply never landed: put the text back so it can be retried instead
+         of retyped. paintThread's draft carry-over keeps it across the reload. */
+      const box=document.getElementById('threadInput');if(box){box.value=body;box.dispatchEvent(new Event('input'));}
+      alert(error?.message||data?.error||'Reply not sent.');
+    }
     await loadThreadMessages(MSG.openId,{silent:true});
   };
   input.focus();

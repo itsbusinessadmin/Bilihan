@@ -145,8 +145,11 @@
       form.requestSubmit(save);
     });
     /* Plain "Save Product" is a fresh decision: it must not inherit a stale
-       "add another" intent left over from an earlier attempt that did not save. */
-    save.addEventListener('click', () => { addAnotherWanted = false; }, true);
+       "add another" intent left over from an earlier attempt that did not save.
+       Both flags are cleared: the armed one too, because a "Save & Add Another"
+       whose server save failed leaves it armed, and the next plain Save would
+       otherwise reopen the form unasked. */
+    save.addEventListener('click', () => { addAnotherWanted = false; pendingAddAnother = false; }, true);
 
     actions.insertBefore(note, cancel || actions.firstChild);
     actions.insertBefore(another, save);
