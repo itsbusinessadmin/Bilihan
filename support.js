@@ -275,6 +275,10 @@
       });
       if (seq < state.pollApplied) return;
       state.pollApplied = seq;
+      /* An invalidated token must not leave a stale badge behind: same
+         handling as refresh() — clear the session so the re-identify prompt
+         is ready when the panel opens. */
+      if (!data?.ok) { clearSession(); renderIdentify('Please identify yourself again to continue.'); return; }
       if (data?.ok) {
         const n = data.unread || 0;
         if (state.heardUnread !== null && n > state.heardUnread) chime();

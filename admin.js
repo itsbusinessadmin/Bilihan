@@ -427,7 +427,9 @@ function openSellersModal(){
       ?`<h3 style="margin:6px 0 8px">Active seller links</h3><div class="table-wrap"><table class="table"><thead><tr><th>Seller</th><th>Created</th><th></th><th></th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.seller_name||'')}</td><td>${r.created_at?esc(phDateTime(r.created_at)):'—'}</td><td><button type="button" class="link-btn" data-tcopy="${esc(r.token)}">Copy link</button></td><td><button type="button" class="link-btn" data-trevoke="${esc(r.token)}" data-tname="${esc(r.seller_name||'')}">Revoke</button></td></tr>`).join('')}</tbody></table></div>`
       :'<p class="muted">No active seller links. Use “Copy seller link” on a seller row above to make one.</p>';
     linksHost.querySelectorAll('[data-tcopy]').forEach(b=>b.onclick=async()=>{
-      const url=location.origin+'/seller.html?t='+encodeURIComponent(b.dataset.tcopy);
+      /* Pathname-aware, exactly like the per-row button: admin pages may be
+         hosted under a subdirectory, and '/seller.html' would 404 there. */
+      const url=`${location.origin}${location.pathname.replace(/[^/]*$/,'')}seller.html?t=${encodeURIComponent(b.dataset.tcopy)}`;
       b.disabled=true;
       try{await navigator.clipboard.writeText(url);b.textContent='Copied ✓'}
       catch(_){prompt('Copy this seller link:',url);b.textContent='Copy link'}
@@ -822,7 +824,8 @@ function openOrderDetails(id){
     ${o.note?field('Customer note',o.note):''}
   </dl>
   ${receiptHref?`<p class="order-receipt-row"><a class="modal-secondary-btn" id="viewReceipt" href="${esc(receiptHref)}" target="_blank" rel="noopener noreferrer">View payment receipt</a><span class="muted">Opens the customer's uploaded receipt in a new tab.</span></p>`:''}
-  ${o.payment_method==='QR Payment'&&!o.receipt_drive_url?'<p class="muted" style="margin:6px 0 0">No receipt confirmed in Drive yet.</p>':''}
+  ${/* receipt_drive_url only exists since the Apps Script write-back: older QR orders' receipts may be safely in Drive without it, so the note only applies to recent ones. */''}
+  ${o.payment_method==='QR Payment'&&!o.receipt_drive_url&&Date.now()-new Date(o.created_at).getTime()<30*24*3600*1000?'<p class="muted" style="margin:6px 0 0">No receipt confirmed in Drive yet.</p>':''}
   ${items.length?`<div class="table-wrap" style="margin-top:18px"><table class="table orders-items-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>${itemRows}</tbody><tfoot><tr><td><strong>Total</strong></td><td><strong>${items.reduce((n,i)=>n+Number(i.qty||0),0)}</strong></td><td></td><td><strong>${money(o.total)}</strong></td></tr></tfoot></table></div>`:'<p class="muted" style="margin-top:18px">This order has no line items recorded.</p>'}
   </div></div>`);
   document.body.classList.add('modal-open');
@@ -909,7 +912,7 @@ async function syncAdminOrderToGoogleSheet(order){if(!GOOGLE_SHEETS_WEB_APP_URL|
    Paid → Not Paid quickly used to let the two writes land out of order, moving
    money between the Paid/Unpaid figures. Scroll is preserved across the rebuild,
    the way the auto-refresh path does it. */
-window.updatePaymentStatus=async(id,status,sel)=>{if(sel)sel.disabled=true;try{const {error}=await db.from('orders').update({payment_status:status}).eq('id',id);if(error){alert(error.message);return}const o=A.data.orders.find(x=>x.id===id);if(o){o.payment_status=status;await syncAdminOrderToGoogleSheet(o)}}finally{if(sel)sel.disabled=false}const y=window.scrollY;orders(document.getElementById('adminMain'));window.scrollTo(0,y)};
+window.updatePaymentStatus=async(id,status,sel)=>{if(sel)sel.disabled=true;try{const {error}=await db.from('orders').update({payment_status:status}).eq('id',id);if(error){alert(error.message);/* The rejected value must not linger: snap the select back to what is actually stored. */if(sel)sel.value=(A.data.orders.find(x=>x.id===id)||{}).payment_status||'Pending';return}const o=A.data.orders.find(x=>x.id===id);if(o){o.payment_status=status;await syncAdminOrderToGoogleSheet(o)}}finally{if(sel)sel.disabled=false}/* The admin may have switched tabs mid-save: rebuilding orders here would clobber the new section. */if(A.section!=='orders')return;const y=window.scrollY;orders(document.getElementById('adminMain'));window.scrollTo(0,y)};
 async function deleteOrderFromGoogleSheet(orderCode){if(!GOOGLE_SHEETS_WEB_APP_URL||!orderCode)return;const payload={action:'delete_order',order_code:orderCode};if(!(await postToScript(payload)))queueAdminGoogleOp(payload)}
 async function deleteAllOrdersFromGoogleServices(){if(!GOOGLE_SHEETS_WEB_APP_URL)return;const payload={action:'delete_all_orders'};if(!(await postToScript(payload)))queueAdminGoogleOp(payload)}
 /* Deleting restores stock and coupon credit first, exactly like cancelling does.

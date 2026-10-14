@@ -626,15 +626,22 @@ const MAX_QUEUED_RECEIPT_B64=1200000;
 const RECEIPT_QUEUE_TTL_MS=7*24*3600*1000;
 function readQueue(key){const q=safeJsonParse(localStorage.getItem(key),null);return Array.isArray(q)?q:[]}
 function writeQueue(key,list){try{localStorage.setItem(key,JSON.stringify(list))}catch(e){/* storage full or blocked: the session still works */}}
+/* Synchronous read-apply-write: localStorage ops are atomic, so unlike the old
+   read→await→write pattern no async flow can clobber another's queue entry. */
+function modifyReceiptQueue(fn){const q=readQueue(LS.pendingReceipts);const next=fn(q)||q;writeQueue(LS.pendingReceipts,next);return next}
+/* Order codes with an upload in flight: the verify loop and the retry loop skip
+   each other's codes so the same receipt is never POSTed twice at once. */
+const receiptInflight=new Set();
 function scriptToken(){const t=(window.BILIHAN_CONFIG||{}).GOOGLE_APPS_SCRIPT_TOKEN||'';return t}
 async function queuePendingReceipt(order,file,cachedBase64){
   try{
     const b64=cachedBase64||await fileToBase64(file);
-    if(!b64||b64.length>MAX_QUEUED_RECEIPT_B64){toast('Order placed. Please send your payment receipt to the store directly.');return}
-    const q=readQueue(LS.pendingReceipts).filter(r=>r.order_code!==order.order_code);
-    q.push({order_code:order.order_code,cancel_token:order.cancel_token||null,file_name:file.name,mime_type:file.type,file_base64:b64,ts:Date.now()});
-    writeQueue(LS.pendingReceipts,q);
-  }catch(e){console.warn('Could not queue receipt:',e)}
+    if(!b64||b64.length>MAX_QUEUED_RECEIPT_B64){toast('Order placed. Please send your payment receipt to the store directly.');return false}
+    modifyReceiptQueue(q=>{const next=q.filter(r=>r.order_code!==order.order_code);
+      next.push({order_code:order.order_code,cancel_token:order.cancel_token||null,file_name:file.name,mime_type:file.type,file_base64:b64,ts:Date.now()});
+      return next});
+    return true;
+  }catch(e){console.warn('Could not queue receipt:',e);return false}
 }
 /* The readable channel the Apps Script write-back feeds: true only when the
    Drive link made it onto the order row. Needs the cancel_token the customer
@@ -649,12 +656,17 @@ async function receiptConfirmed(r){
 }
 async function retryPendingReceipts(){
   if(!GOOGLE_SHEETS_WEB_APP_URL)return 0;
+  /* Entries queued before the cancel_token existed can never confirm: backfill
+     from local order history so they clear instead of re-uploading for 7 days. */
+  modifyReceiptQueue(q=>{for(const r of q){if(!r.cancel_token){const t=readOrders().find(o=>o.order_code===r.order_code)?.cancel_token;if(t)r.cancel_token=t}}return q});
   const q=readQueue(LS.pendingReceipts);if(!q.length)return 0;
-  const rest=[];
+  const confirmed=[];
   for(const r of q){
     /* A receipt that couldn't land in a week is stale; the customer was already
        told to message the store directly. */
     if(Date.now()-(r.ts||0)>RECEIPT_QUEUE_TTL_MS)continue;
+    if(receiptInflight.has(r.order_code))continue;
+    receiptInflight.add(r.order_code);
     try{
       const payload={action:'upload_receipt',order_code:r.order_code,file_name:r.file_name,mime_type:r.mime_type,file_base64:r.file_base64};
       const tok=scriptToken();if(tok)payload.token=tok;
@@ -662,28 +674,41 @@ async function retryPendingReceipts(){
       /* The response is opaque: only drop the entry once the receipt is
          confirmed on the order row. A rejected upload stays queued and keeps
          retrying instead of burning silently. */
-      if(!(await receiptConfirmed(r)))rest.push(r);
-    }catch(e){rest.push(r)}
+      if(await receiptConfirmed(r))confirmed.push(r.order_code);
+    }catch(e){/* kept for the next run */}
+    finally{receiptInflight.delete(r.order_code)}
   }
-  writeQueue(LS.pendingReceipts,rest);
-  return q.length-rest.length;
+  /* One write at the end: drops confirmed codes and TTL-expired entries.
+     Failed, unconfirmed, and in-flight-skipped entries are simply kept. */
+  const now=Date.now();
+  modifyReceiptQueue(cur=>cur.filter(r=>!confirmed.includes(r.order_code)&&(now-(r.ts||0)<=RECEIPT_QUEUE_TTL_MS)));
+  return confirmed.length;
 }
-/* After a fresh order, watch the readable channel for up to a minute: the
-   moment the Drive link lands, the queue entry goes away and the "still
-   uploading" banner clears. */
+/* After a fresh order, watch the readable channel: the moment the Drive link
+   lands, the queue entry goes away and the "still uploading" banner clears.
+   Gives up after a minute once the dialog is closed; while it stays open the
+   watch runs up to five minutes for slow uploads. */
 function verifyReceiptUpload(order){
   if(!order?.order_code||!order?.cancel_token||!window.db)return;
   let n=0;
   const t=setInterval(async()=>{
     n++;
+    if(receiptInflight.has(order.order_code))return;
+    receiptInflight.add(order.order_code);
     let ok=false;
     try{ok=await receiptConfirmed({order_code:order.order_code,cancel_token:order.cancel_token})}catch(e){}
+    finally{receiptInflight.delete(order.order_code)}
     if(ok){
       clearInterval(t);
-      writeQueue(LS.pendingReceipts,readQueue(LS.pendingReceipts).filter(r=>r.order_code!==order.order_code));
-      if($('orderDialog')?.open)showOrder(order);
+      modifyReceiptQueue(q=>q.filter(r=>r.order_code!==order.order_code));
+      /* Keep the "All orders" back button when the dialog came from the list. */
+      const opts=$('backToOrders')?{fromList:true}:undefined;
+      if($('orderDialog')?.open)showOrder(order,opts);
       toast('Receipt received ✓');
-    }else if(n>=12)clearInterval(t);
+      return;
+    }
+    const open=$('orderDialog')?.open;
+    if(n>=60||(n>=12&&!open))clearInterval(t);
   },5000);
 }
 function hasPendingReceipt(orderCode){return readQueue(LS.pendingReceipts).some(r=>r.order_code===orderCode)}
@@ -933,8 +958,8 @@ async function placeOrder(e){
        the readable channel (customer_order_status), not the opaque no-cors
        response. */
     if(isQr&&receiptFile){
-      await queuePendingReceipt(order,receiptFile,f._receiptBase64);
-      uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>{console.warn('Receipt upload failed:',err);toast('Order placed, but the receipt upload failed. We will keep trying in the background.')});
+      const queued=await queuePendingReceipt(order,receiptFile,f._receiptBase64);
+      uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>{console.warn('Receipt upload failed:',err);toast(queued?'Order placed, but the receipt upload failed. We will keep trying in the background.':'Order placed. Please send your payment receipt to the store directly.')});
       verifyReceiptUpload(order);
     }
     queueSheetSync(order);
@@ -1025,6 +1050,7 @@ async function refreshOrderStatus(order,opts){
     if(error||!data?.ok)return;
     const patch={};
     if(data.status&&data.status!==order.status)patch.status=data.status;
+    if(data.cancellation_reason&&data.cancellation_reason!==order.cancellation_reason)patch.cancellation_reason=data.cancellation_reason;
     if(!Object.keys(patch).length)return;
     updateStoredOrder(order.order_code,patch);
     /* Only re-render if the dialog is still showing this order. */

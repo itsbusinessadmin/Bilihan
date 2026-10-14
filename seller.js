@@ -344,8 +344,21 @@
       paint(data);
     } catch (err) {
       console.warn('Sales refresh failed', err);
-      /* A blip leaves the last figures on screen rather than blanking them. */
-      if (!lastSignature) fail('We could not load the sales just now. This page will keep trying.');
+      /* Two thrown errors are permanent, not blips — retrying forever just
+         spins. (A revoked link is already handled above via linkDead.) These
+         stop the poll with a message that says what's actually wrong. */
+      const code = err?.code || '';
+      const text = `${err?.message || ''} ${err?.hint || ''} ${err?.details || ''}`.toLowerCase();
+      if (code === 'PGRST202' || text.includes('could not find the function') || text.includes('does not exist')) {
+        linkDead = true;
+        fail('The seller dashboard is not set up yet — the store owner needs to run the database migrations.');
+      } else if (text.includes('invalid input syntax for type uuid')) {
+        linkDead = true;
+        fail('This seller link looks wrong. Please ask the store owner for a fresh link.');
+      } else if (!lastSignature) {
+        /* A blip leaves the last figures on screen rather than blanking them. */
+        fail('We could not load the sales just now. This page will keep trying.');
+      }
     } finally { busy = false; }
   }
 
