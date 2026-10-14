@@ -25,6 +25,9 @@
 -- Shared restore routine: stock + coupon credit for a cancelled order.
 -- Called by cancel_order (customer) and admin_set_order_status (admin).
 -- ===================================================================
+-- Audit batch 8: the sold-out auto-hide flag must exist wherever this routine
+-- is redefined, so re-running this file can never silently downgrade it.
+alter table public.products add column if not exists auto_hidden boolean not null default false;
 create or replace function public.restore_order_inventory(p_order_id uuid)
 returns void
 language plpgsql
@@ -39,13 +42,18 @@ begin
   select * into v_order from public.orders where id = p_order_id;
   if not found then return; end if;
 
-  -- Stock comes back. is_available is deliberately left alone: a product the
-  -- owner disabled stays disabled.
+  -- Stock comes back. A product checkout itself hid when it sold out
+  -- (auto_hidden) goes back on the shelf once it has stock again; a product
+  -- the owner hid on purpose is left alone.
   for v_item in select * from public.order_items where order_id = v_order.id
   loop
     if v_item.product_id is not null then
       update public.products
-         set stock = stock + v_item.qty
+         set stock = stock + v_item.qty,
+             is_available = case when auto_hidden and stock + v_item.qty > 0
+                                 then true else is_available end,
+             auto_hidden = case when auto_hidden and stock + v_item.qty > 0
+                                then false else auto_hidden end
        where id = v_item.product_id;
     end if;
   end loop;
