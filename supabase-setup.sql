@@ -617,6 +617,14 @@ begin
 end;
 $$;
 
+/* This is the shared "give the stock and coupon value back" routine, meant to
+   run only inside a cancellation. Functions are executable by PUBLIC by
+   default, so without this revoke any anonymous caller could refund their own
+   order's stock and coupon credit without cancelling — infinite coupon credit
+   and unbounded stock inflation. The security-definer cancel/admin functions
+   that call it are unaffected by the revoke. */
+revoke execute on function public.restore_order_inventory(uuid) from public;
+
 -- NOTE: this is the fixed version (see supabase-fix-audit-4.sql); do not revert.
 create or replace function public.cancel_order(
   p_order_code text,

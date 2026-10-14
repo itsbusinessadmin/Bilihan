@@ -921,7 +921,7 @@ setInterval(async()=>{
 },CHIME_WATCH_MS);
 
 function adminUnreadTotal(){return (A.data.threads||[]).reduce((n,t)=>n+Number(t.admin_unread||0),0)}
-const MSG={openId:null,messages:[],timer:null,loading:false,sync:null,sending:false};
+const MSG={openId:null,messages:[],timer:null,loading:false,sync:null,sending:false,sendingThread:null};
 
 function stopMessagePolling(){clearInterval(MSG.timer);MSG.timer=null;MSG.sync=null}
 
@@ -929,8 +929,11 @@ async function loadThreadMessages(id,{silent}={}){
   if(!id)return;
   /* A poll that lands mid-send would paint the server copy (which does not
      have the just-sent reply yet) over the optimistic one, blinking it out
-     and back — the submit holds the line until it reconciles itself. */
-  if(MSG.sending)return;
+     and back — the submit holds the line until it reconciles itself. Only the
+     thread with the in-flight reply is guarded: opening a different thread
+     must still load its messages, otherwise its read stamp would fire on an
+     empty view. */
+  if(MSG.sending&&MSG.sendingThread===id)return;
   if(!silent)MSG.loading=true;
   const {data,error}=await db.from('support_messages').select('*').eq('thread_id',id).order('created_at');
   /* The admin may have opened another thread while this fetch was in flight.
@@ -1066,7 +1069,7 @@ function paintThread(){
     input.value='';grow();
     MSG.messages=[...MSG.messages,{id:'local-'+Date.now(),sender:'admin',body,created_at:new Date().toISOString()}];
     paintThread();
-    MSG.sending=true;
+    MSG.sending=true;MSG.sendingThread=threadId;
     try{
       const {data,error}=await db.rpc('support_admin_reply',{p_thread_id:threadId,p_body:body});
       if(error||!data?.ok){
@@ -1078,7 +1081,7 @@ function paintThread(){
         alert(error?.message||data?.error||'Reply not sent.');
       }
     }finally{
-      MSG.sending=false;
+      MSG.sending=false;MSG.sendingThread=null;
     }
     await loadThreadMessages(threadId,{silent:true});
   };

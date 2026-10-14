@@ -9,6 +9,9 @@ const ORDER_COOLDOWN_MS=30*1000, MIN_CHECKOUT_DWELL_MS=3000;
 const PLACEHOLDER_SETTINGS=['+63 900 000 0000','https://m.me/','https://instagram.com/','Your pickup location here'];
 function realSetting(value){const v=String(value||'').trim();return v&&!PLACEHOLDER_SETTINGS.includes(v)?v:''}
 function telHref(phone){return 'tel:'+phone.replace(/[^\d+]/g,'')}
+/* Only real web addresses become clickable links. Anything else (javascript:,
+   data:, or a typo) returns null so the caller renders plain text instead. */
+function safeUrl(u){const s=String(u||'').trim();return /^https?:\/\//i.test(s)?s:null}
 function track(event){try{window.BilihanAnalytics?.track?.(event)}catch{/* analytics must never break checkout */}}
 const FALLBACK = {
   settings:{store_open:true,business_name:'Bilihan',phone:'+63 900 000 0000',messenger_url:'https://m.me/',instagram_url:'https://instagram.com/',pickup_location:'Your pickup location here',qr_image_url:'bilihan-logo.png',hero_title:'Good food, made easy.',hero_tagline:'From everyday favorites to satisfying cravings, find something good at Bilihan.',about_text:'Bilihan is your easy online food stop for everyday favorites, cravings, meals, snacks, and more.',about_image_url:'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1400&q=80',hero_images:['https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=80']},
@@ -169,8 +172,11 @@ function renderAdBanner(s){
   document.body.appendChild(ov);
 }
 function renderContact(s){
+  /* Saved setting links must be real web addresses: esc() neutralizes HTML
+     characters but a `javascript:` URL would pass through untouched and run
+     when clicked. Anything else is shown as plain text, never a link. */
   const methods=[];
-  const phone=realSetting(s.phone),email=realSetting(s.email),messenger=realSetting(s.messenger_url),instagram=realSetting(s.instagram_url);
+  const phone=realSetting(s.phone),email=realSetting(s.email),messenger=safeUrl(realSetting(s.messenger_url)),instagram=safeUrl(realSetting(s.instagram_url));
   if(phone)methods.push({href:telHref(phone),label:phone,icon:'phone'});
   if(email)methods.push({href:`mailto:${email}`,label:email});
   if(messenger)methods.push({href:messenger,label:'Messenger',external:true});
@@ -790,11 +796,12 @@ function openCheckout(){
     $('addressField').classList.toggle('hidden',pickup);$('pickupInfo').classList.toggle('hidden',!pickup);f.address.required=!pickup;
     f._receiptPrepared=null;f._receiptBase64=null;f._receiptPreparing=false;
     if(f.payment.value==='Paid Already'){
-      const qrUrl=String(s.qr_image_url||'').trim();
+      const qrUrl=safeUrl(s.qr_image_url);
+      if(!qrUrl){checkoutError('QR payment is no longer available. Please choose another payment method.');updatePlaceOrderButton();return}
       $('paymentInfo').innerHTML=`<div class="qr-payment-card"><div><img id="paymentQrImage" src="${esc(qrUrl)}" alt="Store payment QR code"></div><div class="qr-payment-actions"><p><strong>Pay by QR</strong><br><span class="muted">Scan the code and pay, then tick the box below. No screenshot needed.</span></p><a class="secondary-btn" href="${esc(qrUrl)}" download="Bilihan-QR-Code" target="_blank" rel="noopener">Save QR Code</a><label class="checkout-confirm paid-already-row"><input type="checkbox" id="paidAlreadyTick"><span>I have already paid this order.</span></label></div></div>`;
       $('paidAlreadyTick').onchange=updatePlaceOrderButton;
     }else if(f.payment.value==='QR Payment'){
-      const qrUrl=String(s.qr_image_url||'').trim();
+      const qrUrl=safeUrl(s.qr_image_url);
       if(!qrUrl){checkoutError('QR payment is no longer available. Please choose another payment method.');updatePlaceOrderButton();return}
       $('paymentInfo').innerHTML=`<div class="qr-payment-card"><div id="qrImageState"><img id="paymentQrImage" src="${esc(qrUrl)}" alt="Store payment QR code"></div><div class="qr-payment-actions"><p><strong>Pay by QR</strong><br><span class="muted">Scan or save the code, then upload your payment receipt.</span></p><a class="secondary-btn" href="${esc(qrUrl)}" download="Bilihan-QR-Code" target="_blank" rel="noopener">Save QR Code</a><label class="field"><strong>Payment receipt *</strong><input name="receipt" id="paymentReceipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label><p class="muted" id="receiptStatus" role="status" aria-live="polite">No receipt selected yet.</p></div></div>`;
       const qrImg=$('paymentQrImage');if(qrImg)qrImg.onerror=()=>{$('qrImageState').innerHTML='<div class="status-banner" role="alert">The payment QR code could not be loaded. Please choose another payment method.</div>'};

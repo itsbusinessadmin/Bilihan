@@ -102,6 +102,11 @@ begin
 end;
 $$;
 
+/* Lock the shared restore routine to the cancel/admin flows: executable by
+   PUBLIC by default, so without this revoke any anonymous caller could refund
+   their own order's stock and coupon credit without cancelling. */
+revoke execute on function public.restore_order_inventory(uuid) from public;
+
 -- ===================================================================
 -- cancel_order: server-clock window, coupon + stock restore.
 -- Signature is unchanged so existing clients keep working; p_requested_at is
