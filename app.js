@@ -303,10 +303,12 @@ function applyStockUpdate(row){
         line.textContent=sold?'Sold Out':left<=5?`Only ${left} left!`:`${left} available`;
         line.classList.toggle('sold',sold);
       }else if(line)line.remove();
-      /* The add button goes when it sells out and comes back when it returns. */
+      /* The add button goes when it sells out (or its required options die) and
+         comes back when it returns. */
+      const deadReq=deadRequiredGroups(p.id).length>0;
       const add=bottom.querySelector('.product-card-add');
-      if(sold&&add)add.remove();
-      if(!sold&&!add){
+      if((sold||deadReq)&&add)add.remove();
+      if(!sold&&!deadReq&&!add){
         bottom.insertAdjacentHTML('beforeend',`<button class="product-card-add" type="button" data-add-id="${esc(p.id)}" aria-label="Add ${esc(p.name)} to cart" title="Add to cart"><img class="ui-icon" src="ios-icons/add-to-cart.svg" alt="" aria-hidden="true"></button>`);
       }
     }
@@ -370,7 +372,7 @@ function watchStock(){
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!live)bootstrap()});
 }
 
-function renderProducts(){const showStock=state.data.settings?.show_stock!==false;const q=String(state.search||'').trim().toLowerCase();const ps=(state.data.products||[]).filter(p=>(state.category==='all'||p.category_id===state.category)&&(!q||`${p.name||''} ${p.description||''}`.toLowerCase().includes(q))).sort((a,b)=>a.sort_order-b.sort_order);const allSold=ps.length&&ps.every(p=>!p.is_available||p.stock<=0);const empty=!ps.length?(q?'<div class="empty-state"><h3>No matches</h3><p>Try a different search or category.</p></div>':'<div class="empty-state"><h3>No products here yet</h3><p>Try another category or check back soon.</p></div>'):'';$('menuGrid').innerHTML=empty+(allSold?'<div class="status-banner" style="grid-column:1/-1">We’re currently sold out. Please check back again soon!</div>':'')+ps.map(p=>{const sold=!p.is_available||p.stock<=0;const left=Math.max(0,p.stock-cartQtyFor(p.id));const stock=sold?'Sold Out':left<=5?`Only ${left} left!`:`${left} available`;const stockHtml=(showStock||sold)?`<div class="stock ${sold?'sold':''}">${stock}</div>`:'';const addButton=sold?'':`<button class="product-card-add" type="button" data-add-id="${p.id}" aria-label="Add ${esc(p.name)} to cart" title="Add to cart"><img class="ui-icon" src="ios-icons/add-to-cart.svg" alt="" aria-hidden="true"></button>`;return `<article class="product-card" data-id="${p.id}">${productImageHtml(p,'product-card-image','loading="lazy" decoding="async"')}<div class="product-info"><div class="product-row"><strong>${esc(p.name)}</strong><span class="price">${money(p.price)}</span></div><div class="product-card-bottom">${stockHtml}${addButton}</div></div></article>`}).join('');settleProductImages($('menuGrid'));bindMenuGrid()}
+function renderProducts(){const showStock=state.data.settings?.show_stock!==false;const q=String(state.search||'').trim().toLowerCase();const ps=(state.data.products||[]).filter(p=>(state.category==='all'||p.category_id===state.category)&&(!q||`${p.name||''} ${p.description||''}`.toLowerCase().includes(q))).sort((a,b)=>a.sort_order-b.sort_order);const allSold=ps.length&&ps.every(p=>!p.is_available||p.stock<=0);const empty=!ps.length?(q?'<div class="empty-state"><h3>No matches</h3><p>Try a different search or category.</p></div>':'<div class="empty-state"><h3>No products here yet</h3><p>Try another category or check back soon.</p></div>'):'';$('menuGrid').innerHTML=empty+(allSold?'<div class="status-banner" style="grid-column:1/-1">We’re currently sold out. Please check back again soon!</div>':'')+ps.map(p=>{const sold=!p.is_available||p.stock<=0;const unorderable=sold||deadRequiredGroups(p.id).length>0;const left=Math.max(0,p.stock-cartQtyFor(p.id));const stock=sold?'Sold Out':left<=5?`Only ${left} left!`:`${left} available`;const stockHtml=(showStock||sold)?`<div class="stock ${sold?'sold':''}">${stock}</div>`:'';const addButton=unorderable?'':`<button class="product-card-add" type="button" data-add-id="${p.id}" aria-label="Add ${esc(p.name)} to cart" title="Add to cart"><img class="ui-icon" src="ios-icons/add-to-cart.svg" alt="" aria-hidden="true"></button>`;return `<article class="product-card" data-id="${p.id}">${productImageHtml(p,'product-card-image','loading="lazy" decoding="async"')}<div class="product-info"><div class="product-row"><strong>${esc(p.name)}</strong><span class="price">${money(p.price)}</span></div><div class="product-card-bottom">${stockHtml}${addButton}</div></div></article>`}).join('');settleProductImages($('menuGrid'));bindMenuGrid()}
 /* One delegated listener for the whole grid, attached once. The previous version
    re-bound two handlers per card on every render, which got slower with the
    catalogue and left the old closures behind each time. */
@@ -712,17 +714,70 @@ function verifyReceiptUpload(order){
   },5000);
 }
 function hasPendingReceipt(orderCode){return readQueue(LS.pendingReceipts).some(r=>r.order_code===orderCode)}
+/* Synchronous read-apply-write for the sheet queue, mirroring the receipt
+   queue: no async flow can clobber another's entry. */
+function modifySheetQueue(fn){const q=readQueue(LS.pendingSheetSyncs);const next=fn(q)||q;writeQueue(LS.pendingSheetSyncs,next);return next}
+/* Order codes with a sheet sync in flight: the first attempt and the retry
+   loop skip each other's codes so the same order is never POSTed twice. */
+const sheetInflight=new Set();
+/* The readable channel for Sheet syncs: true only when the script wrote this
+   order to the Sheet on or after the order was created (tolerant of clock
+   skew). Under mode:'no-cors' a token rejection answers invisibly, so without
+   this check a drifted token would let the Sheet silently go stale. */
+const SHEET_SYNC_SKEW_MS=5*60*1000;
+async function sheetSyncConfirmed(order){
+  if(!order||!order.order_code||!order.cancel_token||!window.db)return false;
+  try{
+    const {data,error}=await db.rpc('customer_order_status',{p_order_code:order.order_code,p_cancel_token:order.cancel_token});
+    if(error||!data?.ok)return false;
+    const syncedAt=data.sheet_synced_at?new Date(data.sheet_synced_at).getTime():NaN;
+    const createdAt=order.created_at?new Date(order.created_at).getTime():NaN;
+    if(!isFinite(syncedAt)||!isFinite(createdAt))return false;
+    return syncedAt>=createdAt-SHEET_SYNC_SKEW_MS;
+  }catch(e){return false}
+}
+/* The entry goes to disk BEFORE the post (like receipts): the opaque no-cors
+   response can never confirm anything, so the entry is dropped only when
+   sheetSyncConfirmed() sees the write on the order row. */
 function queueSheetSync(order){
-  syncOrderToGoogleSheet(order).then(ok=>{if(ok)return;const q=readQueue(LS.pendingSheetSyncs);q.push({order,ts:Date.now()});writeQueue(LS.pendingSheetSyncs,q.slice(-20))});
+  if(!order?.order_code||!GOOGLE_SHEETS_WEB_APP_URL)return;
+  modifySheetQueue(q=>{const next=q.filter(e=>e.order?.order_code!==order.order_code);
+    next.push({order,ts:Date.now()});
+    return next.slice(-20)});
+  (async()=>{
+    const code=order.order_code;
+    if(sheetInflight.has(code))return;
+    sheetInflight.add(code);
+    try{
+      await postOrderToSheet(order);
+      if(await sheetSyncConfirmed(order))modifySheetQueue(q=>q.filter(e=>e.order?.order_code!==code));
+    }catch(e){console.warn('Sheet sync failed:',e)}
+    finally{sheetInflight.delete(code)}
+  })();
 }
 async function retryPendingSheetSyncs(){
   if(!GOOGLE_SHEETS_WEB_APP_URL)return;
+  /* Entries queued before the cancel_token existed can never confirm: backfill
+     from local order history so they clear instead of retrying forever. */
+  modifySheetQueue(q=>{for(const e of q){const o=e.order;if(o&&!o.cancel_token){const t=readOrders().find(x=>x.order_code===o.order_code)?.cancel_token;if(t)o.cancel_token=t}}return q});
   const q=readQueue(LS.pendingSheetSyncs);if(!q.length)return;
-  const rest=[];
-  for(const e of q){try{if(!(await syncOrderToGoogleSheet(e.order)))rest.push(e)}catch(_){rest.push(e)}}
-  writeQueue(LS.pendingSheetSyncs,rest);
+  const confirmed=[];
+  for(const e of q){
+    const order=e.order;const code=order?.order_code;
+    if(!code||sheetInflight.has(code))continue;
+    sheetInflight.add(code);
+    try{
+      await postOrderToSheet(order);
+      /* The response is opaque: only drop the entry once the Sheet write is
+         confirmed on the order row. A rejected post stays queued and keeps
+         retrying instead of burning silently. */
+      if(await sheetSyncConfirmed(order))confirmed.push(code);
+    }catch(_){/* kept for the next run */}
+    finally{sheetInflight.delete(code)}
+  }
+  if(confirmed.length)modifySheetQueue(cur=>cur.filter(e=>!confirmed.includes(e.order?.order_code)));
 }
-async function syncOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return true;const items=(order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',coupon_code:order.coupon_code||'',coupon_discount:Number(order.coupon_discount||0),store_name:realSetting(state.data.settings?.business_name)||'Bilihan',pickup_location:realSetting(state.data.settings?.pickup_location)||'',store_email:realSetting(state.data.settings?.email)||''};const tok=scriptToken();if(tok)payload.token=tok;await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});return true}catch(err){console.warn('Google Sheets sync failed:',err);return false}}
+async function postOrderToSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;const items=(order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',coupon_code:order.coupon_code||'',coupon_discount:Number(order.coupon_discount||0),store_name:realSetting(state.data.settings?.business_name)||'Bilihan',pickup_location:realSetting(state.data.settings?.pickup_location)||'',store_email:realSetting(state.data.settings?.email)||''};const tok=scriptToken();if(tok)payload.token=tok;await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(err){console.warn('Google Sheets sync failed:',err);throw err}}
 function fileToBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');reader.onerror=()=>reject(new Error('Unable to read receipt file.'));reader.readAsDataURL(file)})}
 function formatFileSize(bytes){if(bytes<1024)return `${bytes} B`;if(bytes<1024*1024)return `${(bytes/1024).toFixed(0)} KB`;return `${(bytes/1024/1024).toFixed(1)} MB`}
 /* Receipts are read, not admired: 1280px at a size budget keeps every digit
@@ -959,7 +1014,10 @@ async function placeOrder(e){
        response. */
     if(isQr&&receiptFile){
       const queued=await queuePendingReceipt(order,receiptFile,f._receiptBase64);
-      uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>{console.warn('Receipt upload failed:',err);toast(queued?'Order placed, but the receipt upload failed. We will keep trying in the background.':'Order placed. Please send your payment receipt to the store directly.')});
+      /* Tracked in receiptInflight so "Try again now" can't double-POST while
+         this first attempt is still going. */
+      receiptInflight.add(order.order_code);
+      uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).finally(()=>receiptInflight.delete(order.order_code)).catch(err=>{console.warn('Receipt upload failed:',err);toast(queued?'Order placed, but the receipt upload failed. We will keep trying in the background.':'Order placed. Please send your payment receipt to the store directly.')});
       verifyReceiptUpload(order);
     }
     queueSheetSync(order);

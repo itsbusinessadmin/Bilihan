@@ -6,6 +6,11 @@
   /* Set by the "Save & Add Another" button click; only turned into pendingAddAnother
      once the form has passed validation and the save has actually gone through. */
   let addAnotherWanted = false;
+  /* Stashed on submit, but only written to storage once the save is known to
+     have succeeded (the form is removed), so a failed save never poisons the
+     remembered defaults. */
+  let pendingPrefs = null;
+  let saveCommitted = false;
   let lastModal = null;
 
   const readPrefs = () => {
@@ -175,17 +180,17 @@
     if (available && typeof prefs.is_available === 'boolean') available.checked = prefs.is_available;
   };
 
-  const rememberPrefs = form => {
+  const snapshotPrefs = form => {
     const category = form.querySelector('[name="category_id"]');
     const stock = form.querySelector('[name="stock"]');
     const interest = form.querySelector('[name="interest"]');
     const available = form.querySelector('[name="is_available"]');
-    writePrefs({
+    return {
       category_id: category ? category.value : undefined,
       stock: stock ? stock.value : undefined,
       interest: interest ? interest.value : undefined,
       is_available: available ? available.checked : undefined
-    });
+    };
   };
 
   const enhanceModal = modal => {
@@ -205,7 +210,7 @@
     const name = form.querySelector('[name="name"]');
     if (name) setTimeout(() => name.focus(), 30);
 
-    form.addEventListener('submit', () => rememberPrefs(form), true);
+    form.addEventListener('submit', () => { pendingPrefs = snapshotPrefs(form); saveCommitted = true; }, true);
     /* The submit event only fires after native validation has passed, so this is
        where the "add another" intent becomes safe to arm: from here on, a removed
        form means the save went through (the save keeps the form open on failure),
@@ -215,7 +220,7 @@
     }, true);
     /* Every way of closing the form without saving disarms the reopen, so a
        cancelled attempt never comes back claiming "Product saved". */
-    const disarmAddAnother = () => { pendingAddAnother = false; addAnotherWanted = false; };
+    const disarmAddAnother = () => { pendingAddAnother = false; addAnotherWanted = false; saveCommitted = false; pendingPrefs = null; };
     form.querySelector('#cancelAddProduct')?.addEventListener('click', disarmAddAnother, true);
     modal.querySelector('#closeAddProduct')?.addEventListener('click', disarmAddAnother, true);
     modal.addEventListener('click', e => { if (e.target === modal) disarmAddAnother(); }, true);
@@ -234,6 +239,14 @@
   const observer = new MutationObserver(() => {
     const modal = document.getElementById('addProductModal');
     if (modal) enhanceModal(modal);
+
+    /* The save keeps the form open on failure, so a removed form means the save
+       went through (closes without saving are disarmed above): only now are the
+       stashed prefs written. The reopen below applies them via applyPrefs. */
+    if (saveCommitted && !document.getElementById('addProductModal')) {
+      saveCommitted = false;
+      if (pendingPrefs) { writePrefs(pendingPrefs); pendingPrefs = null; }
+    }
 
     if (pendingAddAnother && !document.getElementById('addProductModal')) {
       const open = document.getElementById('openAddProduct');

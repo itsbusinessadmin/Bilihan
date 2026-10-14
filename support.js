@@ -313,6 +313,14 @@
         paintMessages();
         const log = root.querySelector('#supportLog');
         if (log) log.insertAdjacentHTML('beforeend', `<div class="support-error" role="alert">${esc(data?.error || 'Message not sent.')}</div>`);
+        /* A dead thread token must not wait for the next poll to clear: same
+           handling as refresh() — drop the session now so the customer is
+           asked to re-identify immediately. Other rejections (too long,
+           sending too fast) keep the session. */
+        if (data?.error === 'This conversation is no longer available.') {
+          clearSession();
+          renderIdentify('Please identify yourself again to continue.');
+        }
         return false;
       }
     } catch (err) {

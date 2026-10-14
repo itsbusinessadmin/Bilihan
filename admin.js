@@ -561,6 +561,9 @@ function dashboard(m){const ps=A.data.products,os=A.data.orders;const salesTotal
     const {error}=await db.from('store_settings').update({store_open:wantOpen}).eq('id',1);
     if(error){alert(error.message);toggle.checked=!wantOpen;toggle.disabled=false;return}
     await loadAll();
+    /* The admin may have switched tabs mid-save: rebuilding the dashboard here
+       would clobber the new section. */
+    if(A.section!=='dashboard')return;
     dashboard(m);
   };
   const noteForm=document.getElementById('closedNoteForm');
@@ -631,8 +634,9 @@ function uploadSizeProblem(file){
               :' Please use a smaller image.');
 }
 async function compressImage(file){
-  /* SVG is rejected outright: it can carry scripts, and these buckets are public. */
-  if(file.type==='image/svg+xml')throw new Error('SVG images are not allowed. Please choose a JPG, PNG, or WEBP file.');
+  /* SVG is rejected outright: it can carry scripts, and these buckets are public.
+     The name is checked too, because a file can arrive with no honest MIME type. */
+  if(file.type==='image/svg+xml'||/\.svg$/i.test(file.name||''))throw new Error('SVG images are not allowed. Please choose a JPG, PNG, or WEBP file.');
   if(!file.type?.startsWith('image/')||file.type==='image/gif')return file;
   let bitmap;
   try{bitmap=await createImageBitmap(file)}catch{return file}
@@ -650,7 +654,10 @@ async function compressImage(file){
 }
 async function uploadImage(file,bucket='product-images'){
   if(!file)return null;
-  if(String(file.type||'').toLowerCase()==='image/svg+xml')throw new Error('SVG images are not allowed. Please choose a JPG, PNG, or WEBP file.');
+  /* As in compressImage, the name is checked because the MIME type can be empty.
+     Empty-type files are only allowed when their extension is a known image one. */
+  if(String(file.type||'').toLowerCase()==='image/svg+xml'||/\.svg$/i.test(file.name||''))throw new Error('SVG images are not allowed. Please choose a JPG, PNG, or WEBP file.');
+  if(!file.type&&!/\.(jpe?g|png|webp|gif)$/i.test(file.name||''))throw new Error('That file does not look like an image. Please choose a JPG, PNG, or WEBP file.');
   const prepared=await compressImage(file);
   /* Checked after compressing, so a big JPEG that shrinks under the cap is still
      accepted; a GIF or SVG skipped the re-encode and is measured as picked. */
@@ -907,7 +914,17 @@ function orders(m){
 }
 async function syncAdminOrderToGoogleSheet(order){if(!GOOGLE_SHEETS_WEB_APP_URL||!order)return;/* Same shape the storefront writes. Without the choices, marking an order Paid
      would rewrite its Sheet row and quietly drop what the customer picked. */
-  const items=(order.order_items||order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',coupon_code:order.coupon_code||'',coupon_discount:Number(order.coupon_discount||0)};if(!(await postToScript(payload))){queueAdminGoogleOp(payload);alert('Order updated, but the Google Sheet sync failed. It will retry automatically on your next visit.')}}
+  const orderId=order.id||order.order_id||order.order_code;const items=(order.order_items||order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:orderId,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',coupon_code:order.coupon_code||'',coupon_discount:Number(order.coupon_discount||0)};const attemptAt=Date.now();if(!(await postToScript(payload))){queueAdminGoogleOp(payload);alert('Order updated, but the Google Sheet sync failed. It will retry automatically on your next visit.');return}
+  /* One-shot verification: no-cors hides rejections, so a drifted script token
+     would silently stop Sheet updates. The script writes sheet_synced_at back to
+     the order row after the Sheet accepts it; if the row still shows an older
+     stamp 15 seconds later, the sync never landed. One check only, no loop. */
+  setTimeout(async()=>{try{
+    const {data,error}=await db.from('orders').select('sheet_synced_at').eq('id',orderId).single();
+    if(error||!data)throw error||new Error('no row');
+    if(!data.sheet_synced_at||new Date(data.sheet_synced_at).getTime()<attemptAt)
+      alert('Sheet sync not confirmed — the Apps Script token may be out of sync.');
+  }catch(e){console.warn('Sheet sync verification unavailable:',e)}},15000)}
 /* The select is disabled while its own update is in flight: flipping Pending →
    Paid → Not Paid quickly used to let the two writes land out of order, moving
    money between the Paid/Unpaid figures. Scroll is preserved across the rebuild,
@@ -1368,7 +1385,7 @@ function settings(m){
           String(fd.get('instagram_url')||'').trim(),
 
         pickup_location:
-          fd.get('pickup_location'),
+          String(fd.get('pickup_location')||'').trim(),
 
         show_delivery_address:
           fd.get('show_delivery_address')==='on',
@@ -1598,16 +1615,16 @@ function skinOptionHtml(o,current){
       </span>
     </label>`;
 }
-function appearance(m){const s=A.data.settings;const currentSkin=skinIdOrDefault(s.storefront_skin);let heroItems=(s.hero_images||[]).map(url=>({id:crypto.randomUUID(),url,file:null}));m.innerHTML=`<span class="eyebrow">Storefront content</span><h2>Appearance</h2><form id="appearanceForm" class="panel admin-form"><fieldset class="theme-choice"><legend>Storefront theme</legend><p class="muted form-hint">The design customers see. Light and dark mode still work in either one.</p><div class="theme-options">${SKIN_OPTIONS.map(o=>skinOptionHtml(o,currentSkin)).join('')}</div></fieldset><label>Store Logo${s.logo_url?` <img src="${esc(s.logo_url)}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`:` <img src="bilihan-logo.png" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`}<input name="logo_file" type="file" accept="image/*"></label><label>Hero title<input name="hero_title" value="${esc(s.hero_title||'')}"></label><label>Hero tagline<textarea name="hero_tagline">${esc(s.hero_tagline||'')}</textarea></label><label>Hero images<small class="muted" style="display:block;font-weight:400;margin:2px 0 8px">Best size 1600×1200px (4:3 ratio). Tap the + tile to add an image, tap × to remove one.</small><div id="heroSlotsWrap" class="hero-slots-grid"></div></label><label>About text<textarea name="about_text" rows="6">${esc(s.about_text||'')}</textarea></label><label>About image<input name="about_file" type="file" accept="image/*"></label><input name="about_image_url" value="${esc(s.about_image_url||'')}" placeholder="Or About image URL"><fieldset class="theme-choice"><legend>Promo banner</legend><p class="muted form-hint">Shown as a popup when customers open the website. They tap anywhere on the screen or the &times; button to close it and see the store.</p><label>Banner image${s.ad_banner_url?` <img src="${esc(s.ad_banner_url)}" alt="Promo banner preview" style="display:block;max-width:260px;border-radius:12px;margin:8px 0;border:1px solid var(--line)">`:''}<input name="banner_file" type="file" accept="image/*"></label>${s.ad_banner_url?`<button type="button" id="bannerRemoveBtn" class="danger-btn" style="margin:8px 0 0">Remove banner image</button>`:''}<label class="check-row"><input type="checkbox" name="ad_banner_enabled"${s.ad_banner_enabled?' checked':''}><span>Show banner popup on the website</span></label></fieldset><button class="primary-btn">Save Appearance</button></form>`;const wrap=document.getElementById('heroSlotsWrap');function renderHeroSlots(){wrap.innerHTML=heroItems.map((it,i)=>{/* One object URL per picked file, kept on the item: re-rendering used to mint a fresh one every time and never release it. */if(it.file&&!it._objUrl)it._objUrl=URL.createObjectURL(it.file);return `<div class="hero-slot" data-id="${it.id}"><img src="${esc(it._objUrl||it.url)}" alt="Hero image ${i+1}"><button type="button" class="hero-slot-remove" data-id="${it.id}" aria-label="Remove hero image ${i+1}" title="Remove">×</button></div>`}).join('')+`<label class="hero-add-slot" title="Add hero image"><span>+</span><input type="file" accept="image/*" id="heroAddInput"></label>`;wrap.querySelectorAll('.hero-slot-remove').forEach(btn=>btn.onclick=()=>{const gone=heroItems.find(x=>x.id===btn.dataset.id);if(gone&&gone._objUrl){try{URL.revokeObjectURL(gone._objUrl)}catch(_){}gone._objUrl=null}heroItems=heroItems.filter(x=>x.id!==btn.dataset.id);renderHeroSlots()});document.getElementById('heroAddInput').onchange=ev=>{const f=ev.target.files[0];if(!f)return;heroItems.push({id:crypto.randomUUID(),url:null,file:f});renderHeroSlots()}}renderHeroSlots();const bannerRemoveBtn=document.getElementById('bannerRemoveBtn');
+function appearance(m){const s=A.data.settings;const currentSkin=skinIdOrDefault(s.storefront_skin);let heroItems=(s.hero_images||[]).map(url=>({id:crypto.randomUUID(),url,file:null}));m.innerHTML=`<span class="eyebrow">Storefront content</span><h2>Appearance</h2><form id="appearanceForm" class="panel admin-form"><fieldset class="theme-choice"><legend>Storefront theme</legend><p class="muted form-hint">The design customers see. Light and dark mode still work in either one.</p><div class="theme-options">${SKIN_OPTIONS.map(o=>skinOptionHtml(o,currentSkin)).join('')}</div></fieldset><label>Store Logo${s.logo_url?` <img src="${esc(s.logo_url)}" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`:` <img src="bilihan-logo.png" style="width:70px;height:70px;object-fit:cover;border-radius:50%;vertical-align:middle;margin-left:10px;border:1px solid var(--line)">`}<input name="logo_file" type="file" accept="image/*"></label><label>Hero title<input name="hero_title" value="${esc(s.hero_title||'')}"></label><label>Hero tagline<textarea name="hero_tagline">${esc(s.hero_tagline||'')}</textarea></label><label>Hero images<small class="muted" style="display:block;font-weight:400;margin:2px 0 8px">Best size 1600×1200px (4:3 ratio). Tap the + tile to add an image, tap × to remove one.</small><div id="heroSlotsWrap" class="hero-slots-grid"></div></label><label>About text<textarea name="about_text" rows="6">${esc(s.about_text||'')}</textarea></label><label>About image<input name="about_file" type="file" accept="image/*"></label><input name="about_image_url" value="${esc(s.about_image_url||'')}" placeholder="Or About image URL"><fieldset class="theme-choice"><legend>Promo banner</legend><p class="muted form-hint">Shown as a popup when customers open the website. They tap anywhere on the screen or the &times; button to close it and see the store.</p><label>Banner image${s.ad_banner_url?` <img src="${esc(s.ad_banner_url)}" alt="Promo banner preview" style="display:block;max-width:260px;border-radius:12px;margin:8px 0;border:1px solid var(--line)">`:''}<input name="banner_file" type="file" accept="image/*"></label>${s.ad_banner_url?`<button type="button" id="bannerRemoveBtn" class="danger-btn" style="margin:8px 0 0">Remove banner image</button>`:''}<label class="check-row"><input type="checkbox" name="ad_banner_enabled"${s.ad_banner_enabled?' checked':''}><span>Show banner popup on the website</span></label></fieldset><button class="primary-btn">Save Appearance</button></form>`;const wrap=document.getElementById('heroSlotsWrap');function renderHeroSlots(){wrap.innerHTML=heroItems.map((it,i)=>{/* One object URL per picked file, kept on the item: re-rendering used to mint a fresh one every time and never release it. */if(it.file&&!it._objUrl)it._objUrl=URL.createObjectURL(it.file);return `<div class="hero-slot" data-id="${it.id}"><img src="${esc(it._objUrl||it.url)}" alt="Hero image ${i+1}"><button type="button" class="hero-slot-remove" data-id="${it.id}" aria-label="Remove hero image ${i+1}" title="Remove">×</button></div>`}).join('')+`<label class="hero-add-slot" title="Add hero image"><span>+</span><input type="file" accept="image/*" id="heroAddInput"></label>`;wrap.querySelectorAll('.hero-slot-remove').forEach(btn=>btn.onclick=()=>{const gone=heroItems.find(x=>x.id===btn.dataset.id);if(gone&&gone._objUrl){try{URL.revokeObjectURL(gone._objUrl)}catch(_){}gone._objUrl=null}heroItems=heroItems.filter(x=>x.id!==btn.dataset.id);renderHeroSlots()});document.getElementById('heroAddInput').onchange=ev=>{const f=ev.target.files[0];if(!f)return;heroItems.push({id:crypto.randomUUID(),url:null,file:f});/* Clear the input so picking the same file again fires change. */ev.target.value='';renderHeroSlots()}}renderHeroSlots();const bannerRemoveBtn=document.getElementById('bannerRemoveBtn');
 if(bannerRemoveBtn)bannerRemoveBtn.onclick=async()=>{
   if(!confirm('Remove the promo banner image? The popup will stop showing on the website.'))return;
   const{error}=await db.from('store_settings').update({ad_banner_url:null,ad_banner_enabled:false}).eq('id',1);
   if(error)return alert(error.message);
   await loadAll();renderShell();
 };
-const skinForm=document.getElementById('appearanceForm');skinForm.querySelectorAll('.theme-option input').forEach(r=>r.onchange=()=>{skinForm.querySelectorAll('.theme-option').forEach(l=>l.classList.toggle('is-selected',l.contains(r)&&r.checked))});skinForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const pickedSkin=skinIdOrDefault(fd.get('storefront_skin')||currentSkin);let logo=s.logo_url||null;let about=String(fd.get('about_image_url')||'');const logoFile=fd.get('logo_file');const aboutFile=fd.get('about_file');let banner=s.ad_banner_url||null;const bannerFile=fd.get('banner_file');try{if(logoFile&&logoFile.size)logo=await uploadImage(logoFile,'store-assets');if(aboutFile&&aboutFile.size)about=await uploadImage(aboutFile,'store-assets');if(bannerFile&&bannerFile.size)banner=await uploadImage(bannerFile,'store-assets');const heroUrls=[];for(const it of heroItems){if(it.file){/* Already uploaded on an earlier save of this session: reuse the URL instead of uploading a duplicate into storage. */if(it._uploadedUrl){heroUrls.push(it._uploadedUrl)}else{const _u=await uploadImage(it.file,'store-assets');it._uploadedUrl=_u;heroUrls.push(_u)}}else if(it.url){heroUrls.push(it.url)}}const row={logo_url:logo,hero_title:fd.get('hero_title'),hero_tagline:fd.get('hero_tagline'),hero_images:heroUrls,about_text:fd.get('about_text'),about_image_url:about,storefront_skin:pickedSkin,ad_banner_url:banner,ad_banner_enabled:fd.get('ad_banner_enabled')==='on'};const {error}=await db.from('store_settings').update(row).eq('id',1);if(error){/* Database predates the coupons migration: save everything except the banner. */
+const skinForm=document.getElementById('appearanceForm');skinForm.querySelectorAll('.theme-option input').forEach(r=>r.onchange=()=>{skinForm.querySelectorAll('.theme-option').forEach(l=>l.classList.toggle('is-selected',l.contains(r)&&r.checked))});skinForm.onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const pickedSkin=skinIdOrDefault(fd.get('storefront_skin')||currentSkin);let logo=s.logo_url||null;let about=String(fd.get('about_image_url')||'');const logoFile=fd.get('logo_file');const aboutFile=fd.get('about_file');let banner=s.ad_banner_url||null;const bannerFile=fd.get('banner_file');/* URLs this save uploaded: if a later step fails, they are deleted again so the bucket does not fill with orphans. */const uploadedThisSave=[];const trackUpload=async(file,bucket)=>{const url=await uploadImage(file,bucket);uploadedThisSave.push(url);return url};try{if(logoFile&&logoFile.size)logo=await trackUpload(logoFile,'store-assets');if(aboutFile&&aboutFile.size)about=await trackUpload(aboutFile,'store-assets');if(bannerFile&&bannerFile.size)banner=await trackUpload(bannerFile,'store-assets');const heroUrls=[];for(const it of heroItems){if(it.file){/* Already uploaded on an earlier save of this session: reuse the URL instead of uploading a duplicate into storage. */if(it._uploadedUrl){heroUrls.push(it._uploadedUrl)}else{const _u=await trackUpload(it.file,'store-assets');it._uploadedUrl=_u;heroUrls.push(_u)}}else if(it.url){heroUrls.push(it.url)}}const row={logo_url:logo,hero_title:String(fd.get('hero_title')||'').trim(),hero_tagline:String(fd.get('hero_tagline')||'').trim(),hero_images:heroUrls,about_text:String(fd.get('about_text')||'').trim(),about_image_url:about,storefront_skin:pickedSkin,ad_banner_url:banner,ad_banner_enabled:fd.get('ad_banner_enabled')==='on'};const {error}=await db.from('store_settings').update(row).eq('id',1);if(error){/* Database predates the coupons migration: save everything except the banner. */
   if(/ad_banner/.test(error.message||'')){delete row.ad_banner_url;delete row.ad_banner_enabled;const retry=await db.from('store_settings').update(row).eq('id',1);if(retry.error)throw retry.error;await loadAll();for(const it of heroItems){if(it._objUrl){try{URL.revokeObjectURL(it._objUrl)}catch(_){}it._objUrl=null}}alert('Appearance saved, but the promo banner needs the coupons migration (supabase-coupons.sql) to be run first.');renderShell();return}
-  throw error}await loadAll();for(const it of heroItems){if(it._objUrl){try{URL.revokeObjectURL(it._objUrl)}catch(_){}it._objUrl=null}}alert('Appearance saved.');renderShell()}catch(err){alert(err.message)}}}
+  throw error}await loadAll();for(const it of heroItems){if(it._objUrl){try{URL.revokeObjectURL(it._objUrl)}catch(_){}it._objUrl=null}}alert('Appearance saved.');renderShell()}catch(err){/* A later step failed: remove what this save already uploaded, so the bucket does not fill with orphan images. Cleanup is best-effort and never masks the original error. */for(const it of heroItems){if(it._uploadedUrl&&uploadedThisSave.includes(it._uploadedUrl))it._uploadedUrl=null}if(uploadedThisSave.length){try{const paths=uploadedThisSave.map(u=>String(u).split('/store-assets/')[1]).filter(Boolean);if(paths.length)await db.storage.from('store-assets').remove(paths)}catch(_){}}alert(err.message)}}}
 /* Say so the moment an oversized image is picked, rather than after the whole
    form has been filled in and saved. One delegated listener covers every image
    input in Admin, including the ones built later inside modals. uploadImage()
@@ -1810,7 +1827,7 @@ function couponValueHtml(c){
 function couponRowHtml(c){
   const st=couponLiveStatus(c);
   const expiry=c.expires_at?new Date(c.expires_at).toLocaleDateString('en-PH',{timeZone:'Asia/Manila',year:'numeric',month:'short',day:'numeric'}):'<span class="muted">No expiry</span>';
-  return `<tr><td><code class="coupon-code">${esc(c.code)}</code></td><td>${c.kind==='credit'?'Credit':'Discount'}</td><td>${couponValueHtml(c)}</td><td><span class="coupon-pill ${COUPON_STATUS_CLASS[st]}">${COUPON_STATUS_LABEL[st]}</span></td><td>${expiry}</td><td><div class="row-actions" style="justify-content:flex-start">${c.status==='used'?'':`<button type="button" data-cpause="${esc(c.id)}">${c.status==='paused'?'Resume':'Pause'}</button>`}<button type="button" data-csettings="${esc(c.id)}">Settings</button><button type="button" class="danger-btn" data-cdelete="${esc(c.id)}">Delete</button></div></td></tr>`;
+  return `<tr><td><code class="coupon-code">${esc(c.code)}</code></td><td>${c.kind==='credit'?'Credit':'Discount'}</td><td>${couponValueHtml(c)}</td><td><span class="coupon-pill ${COUPON_STATUS_CLASS[st]}">${COUPON_STATUS_LABEL[st]}</span></td><td>${expiry}</td><td><div class="row-actions" style="justify-content:flex-start">${(c.status==='used'||st==='expired')?'':`<button type="button" data-cpause="${esc(c.id)}">${c.status==='paused'?'Resume':'Pause'}</button>`}<button type="button" data-csettings="${esc(c.id)}">Settings</button><button type="button" class="danger-btn" data-cdelete="${esc(c.id)}">Delete</button></div></td></tr>`;
 }
 function coupons(m){
   if(A.data.couponsUnavailable){
@@ -1848,7 +1865,7 @@ function coupons(m){
   const syncKind=()=>{const isCredit=kindSel.value==='credit';valueLabel.innerHTML=isCredit?'Credit amount (&#8369;)':'Discount (%)';valueInput.placeholder=isCredit?'e.g. 100':'e.g. 10';valueInput.removeAttribute('max')};
   kindSel.onchange=syncKind;syncKind();
   document.getElementById('couponRegenBtn').onclick=()=>{codeInput.value=genCouponCode()};
-  document.getElementById('couponRefreshBtn').onclick=async()=>{await loadAll();coupons(document.getElementById('adminMain'))};
+  document.getElementById('couponRefreshBtn').onclick=async()=>{await loadAll();/* The admin may have switched tabs mid-refresh: repainting coupons here would clobber the new section. */if(A.section!=='coupons')return;coupons(document.getElementById('adminMain'))};
   document.getElementById('couponCreateBtn').onclick=async()=>{
     const code=codeInput.value.trim().toUpperCase();
     const kind=kindSel.value;
@@ -1866,7 +1883,7 @@ function coupons(m){
         status:'active',
         expires_at:expiresInput.value?manilaEndOfDay(expiresInput.value):null});
       if(error)throw error;
-      await loadAll();coupons(document.getElementById('adminMain'));
+      await loadAll();/* The admin may have switched tabs mid-save: repainting coupons here would clobber the new section. */if(A.section!=='coupons')return;coupons(document.getElementById('adminMain'));
     }catch(err){alert(err.message);btn.disabled=false}
   };
   m.querySelectorAll('[data-cpause]').forEach(b=>b.onclick=()=>togglePauseCoupon(b.dataset.cpause));
@@ -1954,9 +1971,15 @@ function openCouponSettings(id){
     const taken=new Set((A.data.coupons||[]).map(x=>String(x.code).toUpperCase()));
     let code='';do{code=genCouponCode()}while(taken.has(code));
     if(!confirm(`Give this coupon a new code?\n\nOld: ${c.code}\nNew: ${code}\n\nThe old code stops working. Everything else stays the same.`))return;
-    const {error}=await db.from('coupons').update({code}).eq('id',id);
-    if(error)return alert(error.message);
-    close();repaintCoupons();
+    /* Another admin may have grabbed the same code in between: on a unique
+       collision, pick a fresh code and retry instead of showing a raw error. */
+    for(let attempt=0;attempt<3;attempt++){
+      const {error}=await db.from('coupons').update({code}).eq('id',id);
+      if(!error){close();repaintCoupons();return}
+      if(error.code==='23505'){taken.add(code);do{code=genCouponCode()}while(taken.has(code));continue}
+      return alert(error.message);
+    }
+    alert('Could not generate a unique code. Please try again.');
   };
   document.getElementById('csDelete').onclick=()=>{close();deleteCoupon(id)};
   document.getElementById('closeCouponModal').focus();
