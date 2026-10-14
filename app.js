@@ -794,7 +794,10 @@ function openCheckout(){
     checkoutError('');
     const pickup=f.fulfillment.value==='Pickup';
     $('addressField').classList.toggle('hidden',pickup);$('pickupInfo').classList.toggle('hidden',!pickup);f.address.required=!pickup;
-    f._receiptPrepared=null;f._receiptBase64=null;f._receiptPreparing=false;
+    /* The prepared receipt survives here on purpose: switching Pickup/Delivery
+       (or the payment method and back) rebuilds this section, and wiping it
+       forced customers to upload their proof of payment twice. It is cleared
+       when the checkout dialog opens and after the order is placed. */
     if(f.payment.value==='Paid Already'){
       const qrUrl=safeUrl(s.qr_image_url);
       if(!qrUrl){checkoutError('QR payment is no longer available. Please choose another payment method.');updatePlaceOrderButton();return}
@@ -805,6 +808,11 @@ function openCheckout(){
       if(!qrUrl){checkoutError('QR payment is no longer available. Please choose another payment method.');updatePlaceOrderButton();return}
       $('paymentInfo').innerHTML=`<div class="qr-payment-card"><div id="qrImageState"><img id="paymentQrImage" src="${esc(qrUrl)}" alt="Store payment QR code"></div><div class="qr-payment-actions"><p><strong>Pay by QR</strong><br><span class="muted">Scan or save the code, then upload your payment receipt.</span></p><a class="secondary-btn" href="${esc(qrUrl)}" download="Bilihan-QR-Code" target="_blank" rel="noopener">Save QR Code</a><label class="field"><strong>Payment receipt *</strong><input name="receipt" id="paymentReceipt" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required></label><p class="muted" id="receiptStatus" role="status" aria-live="polite">No receipt selected yet.</p></div></div>`;
       const qrImg=$('paymentQrImage');if(qrImg)qrImg.onerror=()=>{$('qrImageState').innerHTML='<div class="status-banner" role="alert">The payment QR code could not be loaded. Please choose another payment method.</div>'};
+      /* The section was just rebuilt (e.g. the customer toggled Pickup/
+         Delivery): put the kept receipt's status back so it does not look
+         lost. The file input itself is new, but the prepared file is held in
+         memory and uploads with the order. */
+      if(f._receiptPrepared&&!f._receiptPreparing)$('receiptStatus').textContent=`Receipt ready: ${f._receiptPrepared.name} (${formatFileSize(f._receiptPrepared.size)})`;
       const receipt=$('paymentReceipt');receipt.onchange=async()=>{const file=receipt.files[0];f._receiptPrepared=null;f._receiptBase64=null;if(!file){$('receiptStatus').textContent='No receipt selected yet.';updatePlaceOrderButton();return}f._receiptPreparing=true;$('receiptStatus').textContent='Preparing receipt…';updatePlaceOrderButton();try{const prepared=await compressReceiptImage(file);f._receiptPrepared=prepared;f._receiptBase64=null;$('receiptStatus').textContent=`Receipt ready: ${prepared.name} (${formatFileSize(prepared.size)})`;fileToBase64(prepared).then(b64=>{if(f._receiptPrepared===prepared)f._receiptBase64=b64}).catch(()=>{})}catch(err){receipt.value='';f._receiptPrepared=null;f._receiptBase64=null;$('receiptStatus').textContent=err.message||'Unable to prepare this receipt. Please choose a JPG, PNG, WEBP, or PDF file.'}finally{f._receiptPreparing=false;updatePlaceOrderButton()}}
     }else{$('paymentInfo').innerHTML='<div class="status-banner">Please prepare the exact amount when possible.</div>'}
     updatePlaceOrderButton();
@@ -851,6 +859,11 @@ async function placeOrder(e){
   if(!f.confirm?.checked)problems.push(['confirm','Please confirm that your order and contact details are correct.']);
   if(problems.length){problems.forEach(([field,message])=>fieldError(f,field,message));checkoutError('Please fix the highlighted fields and place your order again.');f.elements[problems[0][0]]?.focus();return}
   const isQr=d.payment==='QR Payment';const receiptFile=isQr?f._receiptPrepared:null;if(isQr&&!receiptFile){checkoutError('Please upload a JPG, PNG, WEBP, or PDF payment receipt before placing the order.');return}
+  /* One key per checkout attempt, kept across retries of that attempt: if the
+     network drops the response after the order already committed, the retry
+     carries the same key and gets the already-created order back instead of a
+     duplicate. Cleared on success so the next order gets a fresh key. */
+  if(!f.dataset.idempotencyKey)f.dataset.idempotencyKey=(crypto.randomUUID?crypto.randomUUID():'idem-'+Date.now()+'-'+Math.random().toString(36).slice(2));
   f.dataset.submitting='true';btn.disabled=true;btn.textContent='Creating order…';if(progress)progress.textContent='Creating order…';
   try{
     const live=await fetchLiveProducts();const invalid=validateCartAgainstLive(live);if(invalid.length){checkoutError('Your cart changed while you were checking out. Please review it again.');$('checkoutDialog').close();openCart();toast(invalid.length===1?invalid[0]:`${invalid.length} items in your cart changed. Please review before checkout.`);return}
@@ -859,7 +872,7 @@ async function placeOrder(e){
     const showPreferredDate=isExplicitlyEnabled(s,'show_preferred_date');const preferredDateMode=s.preferred_date_mode||'calendar';const availableFrom=s.order_available_from||'';
     let preferredDate=d.preferredDate||availableFrom||phDateStr();if(showPreferredDate&&preferredDateMode==='calendar'&&availableFrom&&preferredDate<availableFrom)throw new Error('Please select a date on or after the available-from date.');
     const items=state.cart.map(i=>({product_id:i.productId,qty:i.qty,option_ids:i.optionIds||[]}));
-    const {data,error}=await db.rpc('place_order',{p_customer_name:String(d.name||'').trim(),p_phone:phone||null,p_email:email||null,p_fulfillment:fulfillment,p_address:address,p_preferred_date:preferredDate,p_payment_method:d.payment,p_note:String(d.note||'').trim()||null,p_items:items,p_coupon_code:state.coupon?.code||null});
+    const {data,error}=await db.rpc('place_order',{p_customer_name:String(d.name||'').trim(),p_phone:phone||null,p_email:email||null,p_fulfillment:fulfillment,p_address:address,p_preferred_date:preferredDate,p_payment_method:d.payment,p_note:String(d.note||'').trim()||null,p_items:items,p_coupon_code:state.coupon?.code||null,p_idempotency_key:f.dataset.idempotencyKey||null});
     if(error)throw error;
     /* The shop closed while this form was open. Raise the notice rather than only
        showing the message inside a checkout the customer can no longer complete. */
@@ -872,6 +885,7 @@ async function placeOrder(e){
     if(isQr&&receiptFile)uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>{console.warn('Receipt upload failed:',err);queuePendingReceipt(order,receiptFile,f._receiptBase64);toast('Order placed, but the receipt upload failed. We will keep trying in the background.')});
     queueSheetSync(order);
     rememberOrder(order);localStorage.setItem(LS.lastOrderAt,String(Date.now()));
+    delete f.dataset.idempotencyKey;
     state.cart=[];state.coupon=null;saveCart();$('checkoutDialog').close();
     showOrder(order);toast(`Order #${order.order_code} placed ✓`);track('order_placed');
     /* Refresh stock in the background; the confirmation is already on screen. */
