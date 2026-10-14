@@ -329,7 +329,10 @@ function patchProductDialog(p){
      the customer's choices. */
   open.dataset.max=left;
   const addBtn=open.querySelector('#addToCart');
-  if(addBtn&&sold){addBtn.disabled=true;addBtn.textContent='Sold Out'}
+  if(addBtn){
+    if(sold){addBtn.disabled=true;addBtn.textContent='Sold Out'}
+    else if(addBtn.disabled&&addBtn.textContent==='Sold Out'){addBtn.disabled=false;addBtn.textContent='Add to Cart'}
+  }
 }
 
 /* One subscription for the whole catalogue. If the socket cannot be established,

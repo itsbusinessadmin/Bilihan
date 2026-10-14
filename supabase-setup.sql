@@ -280,6 +280,12 @@ grant execute on function public.is_admin() to anon, authenticated;
 -- once: after the coupons migration added the ten-argument place_order, re-running
 -- this file left both the nine- and ten-argument versions in place, and every
 -- nine-argument checkout call was rejected with "function is not unique".
+--
+-- IMPORTANT: this file recreates only the nine-argument place_order. The live
+-- checkout always passes the tenth argument (p_coupon_code), so after
+-- re-running this file on a coupon-enabled database you MUST also re-run
+-- supabase-coupons.sql and supabase-fix-audit-3.sql, in that order, or every
+-- checkout will fail until you do.
 drop function if exists public.place_order(text,text,text,text,date,text,text,jsonb);
 drop function if exists public.place_order(text,text,text,text,text,date,text,text,jsonb);
 drop function if exists public.place_order(text,text,text,text,text,date,text,text,jsonb,text);

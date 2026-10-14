@@ -1745,11 +1745,10 @@ async function togglePauseCoupon(id){
   const c=(A.data.coupons||[]).find(x=>x.id===id);if(!c)return;
   if(c.status==='used'){alert('This coupon has already been used, so it can no longer be paused or resumed.');return}
   const next=c.status==='paused'?'active':'paused';
-  /* A spent coupon must not come back as Active through Resume. */
-  if(next==='active'){
-    if(c.kind==='credit'&&Number(c.remaining_credit||0)<=0)return alert('This coupon has no credit left. Top up its credit before reactivating.');
-    if(c.kind==='percent'&&c.status==='used')return alert('This coupon has already been used and cannot be reactivated.');
-  }
+  /* A spent coupon must not come back as Active through Resume. (Used coupons
+     already return above, so only the credit balance needs checking here.) */
+  if(next==='active'&&c.kind==='credit'&&Number(c.remaining_credit||0)<=0)
+    return alert('This coupon has no credit left. Top up its credit before reactivating.');
   const {error}=await db.from('coupons').update({status:next}).eq('id',id);
   if(error)return alert(error.message);
   repaintCoupons();
