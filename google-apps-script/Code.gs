@@ -218,14 +218,23 @@ function doPost(e) {
       }
     }
 
+    var targetRow;
     if (existingRow) {
       sheet
         .getRange(existingRow, 1, 1, rowData.length)
         .setValues([rowData]);
       writeCouponCells(existingRow);
+      targetRow = existingRow;
     } else {
       sheet.appendRow(rowData);
-      writeCouponCells(sheet.getLastRow());
+      targetRow = sheet.getLastRow();
+      writeCouponCells(targetRow);
+    }
+    /* A receipt that arrived before this row did: link it now, unless a
+       newer upload already put a link here. */
+    var pendingReceipt = takePendingReceipt(payload.order_code);
+    if (pendingReceipt && !sheet.getRange(targetRow, 20).getValue()) {
+      writeReceiptCells(sheet, targetRow, pendingReceipt.url);
     }
 
     /* Confirmation email, only the first time this order is seen. The admin page
@@ -656,30 +665,63 @@ function updateReceiptInSheet(orderCode, receiptUrl, receiptName) {
   );
 
   if (index === -1) {
-    console.log('Order not found in sheet:', orderCode);
+    /* The receipt beat its order row here: the upload succeeded but the
+       order sync is still queued on the site. Park the link and apply it
+       when the row lands, so the sheet never ends up with a photo in
+       Drive and no link. */
+    console.log('Order not found in sheet; parking receipt link:', orderCode);
+    parkPendingReceipt(orderCode, receiptUrl, receiptName);
     return;
   }
 
-  const row = index + 2;
+  writeReceiptCells(sheet, index + 2, receiptUrl);
+  console.log('Receipt link added to row:', index + 2);
+}
 
-  /* The receipt link lives in its own column 20, headed "Receipt". Earlier
-     versions wrote the link into column 18, which is the customer's email -
-     every receipt upload permanently deleted that email from the sheet row.
-     The header is set on first use so new sheets carry it; existing sheets
-     keep whatever header row they already have, and columns 1-19 are untouched. */
+/* Writes the receipt link (column 20) and upload date (column 19).
+   The header is set on first use so new sheets carry it; existing sheets
+   keep whatever header row they already have. */
+function writeReceiptCells(sheet, row, receiptUrl) {
   if (!sheet.getRange(1, 20).getValue()) {
     sheet.getRange(1, 20).setValue('Receipt');
   }
-
   sheet
     .getRange(row, 20)
     .setFormula(`=HYPERLINK("${receiptUrl}","View Receipt")`);
-
   sheet
     .getRange(row, 19)
     .setValue(new Date());
+}
 
-  console.log('Receipt link added to row:', row);
+/* A receipt that arrives before its order row is parked in script
+   properties until the row lands. Entries older than 7 days are stale
+   and dropped. */
+var PENDING_RECEIPT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function pendingReceiptKey(orderCode) {
+  return 'pending_receipt_' + String(orderCode).trim().toUpperCase();
+}
+
+function parkPendingReceipt(orderCode, receiptUrl, receiptName) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(
+      pendingReceiptKey(orderCode),
+      JSON.stringify({ url: receiptUrl, name: receiptName, at: Date.now() })
+    );
+  } catch (e) { console.error('Could not park pending receipt:', e); }
+}
+
+function takePendingReceipt(orderCode) {
+  var props = PropertiesService.getScriptProperties();
+  var key = pendingReceiptKey(orderCode);
+  var raw = props.getProperty(key);
+  if (!raw) return null;
+  props.deleteProperty(key);
+  try {
+    var p = JSON.parse(raw);
+    if (!p || !p.url || Date.now() - Number(p.at || 0) > PENDING_RECEIPT_TTL_MS) return null;
+    return p;
+  } catch (e) { return null; }
 }
 
 

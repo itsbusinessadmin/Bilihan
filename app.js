@@ -332,11 +332,12 @@ function patchProductDialog(p){
   if(addBtn){
     if(sold){addBtn.disabled=true;addBtn.textContent='Sold Out'}
     else if(addBtn.disabled&&addBtn.textContent==='Sold Out'){addBtn.disabled=false;addBtn.textContent='Add to Cart'}
-  }else if(open.dataset.maxed==='1'&&!sold&&left>0){
-    /* The dialog opened with "you already have the maximum in your cart" and
-       no picker at all. Stock has since come back, so rebuild it with a working
-       picker. Nothing is lost: there were no variant picks or quantity to keep,
-       because that layout has neither. */
+  }else if(!sold&&left>0&&(open.dataset.maxed==='1'||open.dataset.soldout==='1')){
+    /* The dialog opened with no picker at all — either "you already have the
+       maximum in your cart" or a sold-out "Sold Out" button. Stock has since
+       come back, so rebuild it with a working picker. Nothing is lost: neither
+       layout had variant picks or a quantity to keep. openProduct is safe to
+       call on the already-open dialog: it skips the redundant showModal. */
     openProduct(p.id);
   }
 }
@@ -421,7 +422,7 @@ function missingRequired(groups,chosenIds){
 /* Two of the same product with different choices are two different cart lines. */
 const cartKey=(productId,ids)=>productId+'|'+[...ids].sort().join(',');
 
-function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=cartQtyFor(id);const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').dataset.productId=id;$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${max<=5?`Only ${max} left!`:`${max} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));$('productDialog').showModal();let q=1;
+function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=cartQtyFor(id);const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').dataset.productId=id;$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${max<=5?`Only ${max} left!`:`${max} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));/* patchProductDialog rebuilds this dialog while it is already open when stock comes back; showModal on an open dialog throws and would leave the picker and buttons unwired. */if(!$('productDialog').open)$('productDialog').showModal();let q=1;
   const groups=variantGroupsFor(id);
   let chosen=[];
   const priceEl=$('productDialog').querySelector('.product-modal-grid h3');
@@ -462,9 +463,10 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
   }
   refreshVariants();
   $('productDialog').dataset.max=max;
-  /* Remember whether the picker exists at all: patchProductDialog needs to know
-     if a restock should bring the picker back. */
+  /* Remember which picker-less layout is showing, so patchProductDialog knows
+     whether a restock should bring the picker back. */
   $('productDialog').dataset.maxed=max<=0&&!sold?'1':'';
+  $('productDialog').dataset.soldout=sold?'1':'';
   if($('qMinus')){$('qMinus').onclick=()=>{q=Math.max(1,q-1);$('qVal').textContent=q};$('qPlus').onclick=()=>{const limit=Number($('productDialog').dataset.max);q=Math.min(Number.isFinite(limit)?limit:max,q+1);$('qVal').textContent=q};$('addToCart').onclick=()=>{
     if(missingRequired(groups,chosen).length)return;
     /* The picker cap is live, but stock may have moved since the dialog opened,

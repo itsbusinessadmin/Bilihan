@@ -23,6 +23,10 @@ create table if not exists public.products (
   price numeric(12,2) not null check (price >= 0),
   stock integer not null default 0 check (stock >= 0),
   is_available boolean not null default true,
+  /* Who switched the product off: checkout sets this when it hides a product
+     that just sold out, so cancelling later can put it back on the shelf.
+     The admin product form clears it whenever the owner saves. */
+  auto_hidden boolean not null default false,
   sort_order integer not null default 0,
   image_url text,
   created_at timestamptz not null default now(),
@@ -522,6 +526,92 @@ $$;
 grant execute on function public.place_order(text,text,text,text,text,date,text,text,jsonb) to anon, authenticated;
 
 -- Customer cancellation using the private token stored only in that customer's browser.
+-- Shared restore routine: stock + coupon value for a cancelled/deleted order.
+-- Called by cancel_order below (and, on a coupon-enabled database, by
+-- admin_set_order_status and admin_delete_order from the later migrations).
+-- NOTE: this is the fixed version; do not revert. The coupon block only runs
+-- where the coupons migration has run — the coupon columns are read with
+-- dynamic SQL so this function stays valid on a fresh database too.
+create or replace function public.restore_order_inventory(p_order_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_item  public.order_items%rowtype;
+  v_coupon_id uuid;
+  v_coupon_code text;
+  v_coupon_kind text;
+  v_coupon_discount numeric(12,2);
+  v_remaining numeric(12,2);
+begin
+  select * into v_order from public.orders where id = p_order_id;
+  if not found then return; end if;
+
+  -- Stock comes back. A product checkout itself hid when it sold out
+  -- (auto_hidden) goes back on the shelf once it has stock again; a product
+  -- the owner hid on purpose is left alone.
+  for v_item in select * from public.order_items where order_id = v_order.id
+  loop
+    if v_item.product_id is not null then
+      update public.products
+         set stock = stock + v_item.qty,
+             is_available = case when auto_hidden and stock + v_item.qty > 0
+                                 then true else is_available end,
+             auto_hidden = case when auto_hidden and stock + v_item.qty > 0
+                                then false else auto_hidden end
+       where id = v_item.product_id;
+    end if;
+  end loop;
+
+  -- Coupon value comes back, but only where the coupons migration has run.
+  -- Everything below only executes when the coupons table exists, so the
+  -- static references are safe there; the column reads use dynamic SQL so
+  -- this function is still valid on a fresh database.
+  if to_regclass('public.coupons') is not null then
+    execute 'select o.coupon_id, o.coupon_code, o.coupon_kind, o.coupon_discount from public.orders o where o.id = $1'
+      into v_coupon_id, v_coupon_code, v_coupon_kind, v_coupon_discount
+      using p_order_id;
+
+    if v_coupon_id is null then
+      v_coupon_code := nullif(btrim(coalesce(v_coupon_code, '')), '');
+      if v_coupon_code is not null then
+        select c.id into v_coupon_id from public.coupons c where upper(c.code) = upper(v_coupon_code);
+      end if;
+    end if;
+
+    if v_coupon_id is not null then
+      if coalesce(v_coupon_kind, '') = 'credit' then
+        update public.coupons
+           set remaining_credit = least(credit_amount,
+                                        coalesce(remaining_credit, 0)
+                                        + coalesce(v_coupon_discount, 0))
+         where id = v_coupon_id
+         returning remaining_credit into v_remaining;
+        -- The pesos are back, so the coupon must be spendable again.
+        if coalesce(v_remaining, 0) > 0 then
+          update public.coupons
+             set status = 'active'
+           where id = v_coupon_id
+             and status = 'used';
+        end if;
+      else
+        -- One-time percent coupon: only reactivated when it has not expired.
+        update public.coupons
+           set status = 'active'
+         where id = v_coupon_id
+           and kind = 'percent'
+           and status = 'used'
+           and (expires_at is null or expires_at > now());
+      end if;
+    end if;
+  end if;
+end;
+$$;
+
+-- NOTE: this is the fixed version (see supabase-fix-audit-4.sql); do not revert.
 create or replace function public.cancel_order(
   p_order_code text,
   p_cancel_token uuid,
@@ -535,22 +625,44 @@ set search_path = public
 as $$
 declare
   v_order public.orders%rowtype;
-  v_item public.order_items%rowtype;
 begin
-  if coalesce(trim(p_reason),'')='' then return jsonb_build_object('ok',false,'error','Cancellation reason is required.'); end if;
-  select * into v_order from public.orders where order_code=p_order_code and cancel_token=p_cancel_token for update;
-  if not found then return jsonb_build_object('ok',false,'error','Order not found.'); end if;
-  if v_order.status='Cancelled' then return jsonb_build_object('ok',true); end if;
-  if p_requested_at > v_order.created_at + interval '3 hours' then return jsonb_build_object('ok',false,'error','The 3-hour cancellation window has expired.'); end if;
-  if p_requested_at < v_order.created_at - interval '5 minutes' then return jsonb_build_object('ok',false,'error','Invalid cancellation request time.'); end if;
+  if coalesce(trim(p_reason),'')='' then
+    return jsonb_build_object('ok',false,'error','Cancellation reason is required.');
+  end if;
+  select * into v_order
+    from public.orders
+   where order_code = p_order_code and cancel_token = p_cancel_token
+   for update;
+  if not found then
+    return jsonb_build_object('ok',false,'error','Order not found.');
+  end if;
+  if v_order.status = 'Cancelled' then return jsonb_build_object('ok',true); end if;
+  -- Delivered and Completed mean the goods have left the shop. Cancelling from
+  -- there would put the items back into stock and refund the coupon, inflating
+  -- inventory and handing coupon money back by mistake. Same rule as the admin
+  -- path.
+  if v_order.status in ('Delivered','Completed') then
+    return jsonb_build_object('ok',false,'error','This order can no longer be cancelled.');
+  end if;
+  -- The window is measured on the server clock. The client timestamp is ignored
+  -- for the decision (it could be forged); a wildly skewed one is still
+  -- rejected as a sanity check. The tolerance is generous so an offline
+  -- retry of a legitimate tap still goes through.
+  if p_requested_at is not null
+     and abs(extract(epoch from (now() - p_requested_at))) > 86400 then
+    return jsonb_build_object('ok',false,'error','Invalid cancellation request time.');
+  end if;
+  if now() > v_order.created_at + interval '3 hours' then
+    return jsonb_build_object('ok',false,'error','The 3-hour cancellation window has expired.');
+  end if;
 
-  update public.orders set status='Cancelled',cancellation_reason=trim(p_reason),cancelled_at=now() where id=v_order.id;
-  for v_item in select * from public.order_items where order_id=v_order.id
-  loop
-    if v_item.product_id is not null then
-      update public.products set stock=stock+v_item.qty,is_available=true where id=v_item.product_id;
-    end if;
-  end loop;
+  update public.orders
+     set status = 'Cancelled',
+         cancellation_reason = trim(p_reason),
+         cancelled_at = now()
+   where id = v_order.id;
+
+  perform public.restore_order_inventory(v_order.id);
   return jsonb_build_object('ok',true);
 end;
 $$;
@@ -720,6 +832,7 @@ $$;
 
 -- Finds the customer from an order number or a phone number and returns their
 -- thread, creating it on first contact. Order numbers match case-insensitively.
+-- NOTE: this is the fixed version (see supabase-fix-audit-4.sql); do not revert.
 create or replace function public.support_identify(p_order_code text, p_phone text)
 returns jsonb
 language plpgsql
@@ -732,31 +845,36 @@ declare
   v_name text;
   v_phone text;
   v_thread public.support_threads%rowtype;
+  v_given_phone text := nullif(btrim(coalesce(p_phone,'')),'');
 begin
-  if coalesce(btrim(p_order_code),'') <> '' then
-    select * into v_order from public.orders
-      where upper(btrim(order_code)) = upper(btrim(p_order_code))
-      order by created_at desc limit 1;
-    if not found then
-      return jsonb_build_object('ok', false, 'error', 'We could not find that order number. Check it and try again.');
-    end if;
-    v_name := v_order.customer_name;
-    v_phone := v_order.phone;
-  elsif coalesce(regexp_replace(coalesce(p_phone,''), '\D', '', 'g'),'') <> '' then
-    select * into v_order from public.orders
-      where right(regexp_replace(coalesce(phone,''), '\D', '', 'g'), 10)
-          = right(regexp_replace(p_phone, '\D', '', 'g'), 10)
-      order by created_at desc limit 1;
-    if not found then
-      return jsonb_build_object('ok', false, 'error', 'We could not find an order for that number. Check it and try again.');
-    end if;
-    v_name := v_order.customer_name;
-    v_phone := coalesce(v_order.phone, p_phone);
-  else
-    return jsonb_build_object('ok', false, 'error', 'Enter your order number or the mobile number you ordered with.');
+  if coalesce(btrim(p_order_code),'') = '' then
+    return jsonb_build_object('ok', false, 'error',
+      'Enter your order number. You will find it on your order confirmation.');
   end if;
 
-  v_key := public.support_key(v_phone, v_name);
+  select * into v_order from public.orders
+    where upper(btrim(order_code)) = upper(btrim(p_order_code))
+    order by created_at desc limit 1;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'We could not find that order number. Check it and try again.');
+  end if;
+
+  if v_given_phone is not null then
+    -- The number must be the one the order was placed with.
+    if right(regexp_replace(coalesce(v_order.phone,''), '\D', '', 'g'), 10)
+       <> right(regexp_replace(v_given_phone, '\D', '', 'g'), 10) then
+      return jsonb_build_object('ok', false, 'error',
+        'That mobile number does not match this order. Check it and try again.');
+    end if;
+  end if;
+
+  v_name := v_order.customer_name;
+  v_phone := coalesce(v_order.phone, v_given_phone);
+  if coalesce(regexp_replace(coalesce(v_phone,''), '\D', '', 'g'), '') <> '' then
+    v_key := public.support_key(v_phone, v_name);
+  else
+    v_key := 'o:' || upper(btrim(p_order_code));
+  end if;
 
   select * into v_thread from public.support_threads where customer_key = v_key;
   if not found then
@@ -1017,9 +1135,19 @@ stable
 security definer
 set search_path = public
 as $$
-declare v text;
+declare
+  v text;
+  v_coupons text := '';
 begin
   if not public.is_admin() then return null; end if;
+  -- The coupons table only exists after the coupons migration. Its hash is
+  -- fetched with dynamic SQL so this function also works on a fresh database:
+  -- naming the table directly would make every call fail there, because the
+  -- database checks every table name before running the query.
+  if to_regclass('public.coupons') is not null then
+    execute 'select md5(coalesce(string_agg(t, '',''), '''')) from (select cp::text t from public.coupons cp order by cp.id) q'
+      into v_coupons;
+  end if;
   select md5(concat_ws('|',
     (select md5(coalesce(string_agg(t, ','), '')) from (select o::text t from public.orders o order by o.id) q),
     (select md5(coalesce(string_agg(t, ','), '')) from (select p::text t from public.products p order by p.id) q),
@@ -1028,13 +1156,7 @@ begin
     (select md5(coalesce(string_agg(t, ','), '')) from (select th::text t from public.support_threads th order by th.id) q),
     (select md5(coalesce(string_agg(t, ','), '')) from (select g::text t from public.product_variant_groups g order by g.id) q),
     (select md5(coalesce(string_agg(t, ','), '')) from (select vo::text t from public.product_variant_options vo order by vo.id) q),
-    -- The coupons table only exists after the coupons migration. Re-running
-    -- this file on a coupon-enabled database must keep watching it, or coupon
-    -- changes would stop refreshing the admin page. to_regclass returns null
-    -- on a fresh database and the branch is simply skipped.
-    case when to_regclass('public.coupons') is not null
-      then (select md5(coalesce(string_agg(t, ','), '')) from (select cp::text t from public.coupons cp order by cp.id) q)
-      else '' end,
+    v_coupons,
     (select count(*)::text from public.support_messages)
   )) into v;
   return v;
@@ -1107,6 +1229,7 @@ end $$;
 -- Only orders marked Paid are counted. Anything still Pending or Not Paid is money
 -- the shop has not taken, so it stays out of every total and is reported separately
 -- as what is still owed.
+-- NOTE: this is the fixed version (see supabase-fix-audit-2.sql); do not revert.
 create or replace function public.seller_sales(p_token uuid)
 returns jsonb
 language plpgsql
@@ -1121,9 +1244,14 @@ declare
   v_interest numeric;
   v_unpaid_qty bigint;
   v_unpaid numeric;
+  v_scope text := null; -- NULL = legacy shared link: every seller
 begin
-  if p_token is null
-     or not exists (select 1 from public.seller_links where id = 1 and token = p_token) then
+  if p_token is not null then
+    select st.seller_name into v_scope
+      from public.seller_tokens st where st.token = p_token;
+  end if;
+  if v_scope is null
+     and not exists (select 1 from public.seller_links where id = 1 and token = p_token) then
     return jsonb_build_object('ok', false, 'error', 'This link is no longer valid. Ask the store for a new one.');
   end if;
 
@@ -1134,7 +1262,9 @@ begin
            coalesce(sum(interest * qty) filter (where is_paid), 0) as interest_total,
            coalesce(sum(qty) filter (where not is_paid), 0)::bigint as unpaid_qty,
            coalesce(sum((original + interest) * qty) filter (where not is_paid), 0) as unpaid_total
-      from public.seller_order_lines group by seller, name
+      from public.seller_order_lines
+     where v_scope is null or seller = v_scope
+     group by seller, name
   ), seller_rows as (
     select seller,
            sum(qty)::bigint as qty,
@@ -1179,11 +1309,14 @@ begin
 
   -- 'overall' is what the shop actually took: cost plus markup on settled orders,
   -- the same figure the admin calls Total Sell. 'unpaid' is what is still owed.
+  -- 'scoped_seller' is new: the seller this token is limited to, or null when
+  -- the legacy shared link may still see every seller.
   return jsonb_build_object('ok', true, 'items', v_rows, 'sellers', v_sellers,
                             'total_qty', v_qty,
                             'original', v_total, 'interest', v_interest,
                             'overall', v_total + v_interest,
                             'unpaid_qty', v_unpaid_qty, 'unpaid', v_unpaid,
+                            'scoped_seller', v_scope,
                             'as_of', now());
 end;
 $$;
@@ -1196,6 +1329,7 @@ grant execute on function public.seller_sales(uuid) to anon, authenticated;
 -- A customer's first name and what they chose is as far as this goes: no phone, no
 -- email, no address, no order code, nothing that would let the link be turned into a
 -- customer list.
+-- NOTE: this is the fixed version (see supabase-fix-audit-2.sql); do not revert.
 create or replace function public.seller_buyers(p_token uuid, p_seller text)
 returns jsonb
 language plpgsql
@@ -1205,10 +1339,19 @@ as $$
 declare
   v_items jsonb;
   v_seller text := coalesce(nullif(btrim(p_seller), ''), 'Unassigned');
+  v_scope text := null;
 begin
-  if p_token is null
-     or not exists (select 1 from public.seller_links where id = 1 and token = p_token) then
+  if p_token is not null then
+    select st.seller_name into v_scope
+      from public.seller_tokens st where st.token = p_token;
+  end if;
+  if v_scope is null
+     and not exists (select 1 from public.seller_links where id = 1 and token = p_token) then
     return jsonb_build_object('ok', false, 'error', 'This link is no longer valid. Ask the store for a new one.');
+  end if;
+  if v_scope is not null
+     and lower(btrim(v_scope)) <> lower(btrim(v_seller)) then
+    return jsonb_build_object('ok', false, 'error', 'This link is only valid for ' || v_scope || '.');
   end if;
 
   with lines as (
@@ -1250,7 +1393,8 @@ begin
     into v_items
     from item_rows r left join item_buyers b on b.name = r.name;
 
-  return jsonb_build_object('ok', true, 'seller', v_seller, 'items', v_items, 'as_of', now());
+  return jsonb_build_object('ok', true, 'seller', v_seller, 'items', v_items,
+    'scoped_seller', v_scope, 'as_of', now());
 end;
 $$;
 
