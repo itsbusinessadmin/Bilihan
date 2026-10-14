@@ -24,6 +24,9 @@ async function retryAdminGoogleOps(){
 const A={section:'dashboard',session:null,orderFilter:'all',orderSearch:'',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 /* Order dates always read in Philippine time, wherever the device is. */
 const phDateTime=d=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(d));
+/* Compact variants for the chat UI, same timezone. */
+const phShort=d=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(d));
+const phClock=d=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',hour:'numeric',minute:'2-digit'}).format(new Date(d));
 
 /* ========================================================================
    Setting up, signing in, and keeping the session
@@ -79,7 +82,8 @@ async function init(){
   retryAdminGoogleOps();
 }
 function renderSetup(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-logo.png" style="width:90px;border-radius:50%"><span class="eyebrow">Bilihan v3</span><h2>Connect Supabase</h2><p>Edit <strong>config.js</strong> once and paste your Supabase Project URL and anon public key, then reload this page.</p><p class="muted">Never paste a service_role key into the website.</p></div></div>`}
-function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword(d);if(error)return renderLogin(error.message);A.session=data.session;const status=await adminStatus();if(status==='no'){await db.auth.signOut();A.session=null;return renderLogin('This account is not listed as a Bilihan admin.')}if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');try{await loadAll()}catch(err){console.error(err);return renderReconnect(err?.message)}renderShell()}}
+function friendlyAuthError(message){const m=String(message||'').toLowerCase();if(m.includes('invalid login credentials')||m.includes('invalid email or password'))return 'That email and password did not match. Please try again.';if(m.includes('email not confirmed'))return 'This email address has not been confirmed yet. Check your inbox for the confirmation link.';if(m.includes('too many requests')||m.includes('rate limit'))return 'Too many sign-in attempts. Wait a minute and try again.';if(m.includes('network')||m.includes('fetch failed')||m.includes('failed to fetch'))return 'Could not reach the server. Check your connection and try again.';return 'Sign in failed. Please try again.'}
+function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<span class="password-wrap"><input name="password" id="loginPassword" type="password" autocomplete="current-password" required><button type="button" class="password-toggle" id="pwToggle" aria-label="Show password">Show</button></span></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('pwToggle').onclick=e=>{const input=document.getElementById('loginPassword');const show=input.type==='password';input.type=show?'text':'password';e.currentTarget.textContent=show?'Hide':'Show';e.currentTarget.setAttribute('aria-label',show?'Hide password':'Show password');input.focus()};document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword(d);if(error)return renderLogin(friendlyAuthError(error.message));A.session=data.session;const status=await adminStatus();if(status==='no'){await db.auth.signOut();A.session=null;return renderLogin('This account is not listed as a Bilihan admin.')}if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');try{await loadAll()}catch(err){console.error(err);return renderReconnect(err?.message)}renderShell()}}
 
 /* ========================================================================
    Reading the store
@@ -825,7 +829,7 @@ function orders(m){
 }
 async function syncAdminOrderToGoogleSheet(order){if(!GOOGLE_SHEETS_WEB_APP_URL||!order)return;/* Same shape the storefront writes. Without the choices, marking an order Paid
      would rewrite its Sheet row and quietly drop what the customer picked. */
-  const items=(order.order_items||order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||''};if(!(await postToScript(payload))){queueAdminGoogleOp(payload);alert('Order updated, but the Google Sheet sync failed. It will retry automatically on your next visit.')}}
+  const items=(order.order_items||order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',coupon_code:order.coupon_code||'',coupon_discount:Number(order.coupon_discount||0)};if(!(await postToScript(payload))){queueAdminGoogleOp(payload);alert('Order updated, but the Google Sheet sync failed. It will retry automatically on your next visit.')}}
 window.updatePaymentStatus=async(id,status)=>{const {error}=await db.from('orders').update({payment_status:status}).eq('id',id);if(error)return alert(error.message);const o=A.data.orders.find(x=>x.id===id);if(o){o.payment_status=status;await syncAdminOrderToGoogleSheet(o)}orders(document.getElementById('adminMain'))};
 async function deleteOrderFromGoogleSheet(orderCode){if(!GOOGLE_SHEETS_WEB_APP_URL||!orderCode)return;const payload={action:'delete_order',order_code:orderCode};if(!(await postToScript(payload)))queueAdminGoogleOp(payload)}
 async function deleteAllOrdersFromGoogleServices(){if(!GOOGLE_SHEETS_WEB_APP_URL)return;const payload={action:'delete_all_orders'};if(!(await postToScript(payload)))queueAdminGoogleOp(payload)}
@@ -924,7 +928,7 @@ function paintNavBadge(){
 }
 
 function threadRowHtml(t){
-  const when=new Date(t.last_message_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  const when=phShort(t.last_message_at);
   /* The checkbox sits beside the row button rather than inside it: a button may
      not contain another interactive control. */
   return `<div class="thread-item${MSG.openId===t.id?' active':''}">${bulkCheckboxHtml(t.id)}<button type="button" class="thread-row" data-thread="${esc(t.id)}">
@@ -966,7 +970,7 @@ function paintSeen(){
      it cannot have been read yet. */
   const sent=last&&!String(last.id).startsWith('local-')?new Date(last.created_at):null;
   if(!last||last.sender!=='admin'||!seenAt||!sent||seenAt<sent){el.hidden=true;el.textContent='';return}
-  el.textContent=`Seen ${seenAt.toLocaleString([],{hour:'numeric',minute:'2-digit'})}`;
+  el.textContent=`Seen ${phClock(seenAt)}`;
   el.hidden=false;
 }
 
@@ -978,7 +982,7 @@ function paintThread(){
   const log=MSG.loading&&!MSG.messages.length
     ?'<p class="muted" style="padding:14px">Loading…</p>'
     :(MSG.messages.length?MSG.messages.map(m=>{
-        const when=new Date(m.created_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+        const when=phShort(m.created_at);
         return `<div class="admin-msg admin-msg-${m.sender==='admin'?'out':'in'}"><p>${esc(m.body)}</p><time>${esc(when)}</time></div>`;
       }).join(''):'<p class="muted" style="padding:14px">No messages in this conversation yet.</p>');
   const atBottom=(()=>{const l=host.querySelector('.thread-log');return !l||l.scrollHeight-l.scrollTop-l.clientHeight<40})();

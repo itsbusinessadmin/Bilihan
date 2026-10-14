@@ -332,6 +332,12 @@ function patchProductDialog(p){
   if(addBtn){
     if(sold){addBtn.disabled=true;addBtn.textContent='Sold Out'}
     else if(addBtn.disabled&&addBtn.textContent==='Sold Out'){addBtn.disabled=false;addBtn.textContent='Add to Cart'}
+  }else if(open.dataset.maxed==='1'&&!sold&&left>0){
+    /* The dialog opened with "you already have the maximum in your cart" and
+       no picker at all. Stock has since come back, so rebuild it with a working
+       picker. Nothing is lost: there were no variant picks or quantity to keep,
+       because that layout has neither. */
+    openProduct(p.id);
   }
 }
 
@@ -456,6 +462,9 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
   }
   refreshVariants();
   $('productDialog').dataset.max=max;
+  /* Remember whether the picker exists at all: patchProductDialog needs to know
+     if a restock should bring the picker back. */
+  $('productDialog').dataset.maxed=max<=0&&!sold?'1':'';
   if($('qMinus')){$('qMinus').onclick=()=>{q=Math.max(1,q-1);$('qVal').textContent=q};$('qPlus').onclick=()=>{const limit=Number($('productDialog').dataset.max);q=Math.min(Number.isFinite(limit)?limit:max,q+1);$('qVal').textContent=q};$('addToCart').onclick=()=>{
     if(missingRequired(groups,chosen).length)return;
     /* The picker cap is live, but stock may have moved since the dialog opened,
@@ -664,6 +673,10 @@ async function uploadReceiptToGoogleDrive(order,file,cachedBase64){
   if(!file)throw new Error('Please upload your payment receipt.');
   const file_base64=cachedBase64||await fileToBase64(file);
   const payload={action:'upload_receipt',order_code:order.order_code,file_name:file.name,mime_type:file.type,file_base64};
+  /* The script rejects calls without the shared secret. Without this line every
+     first-attempt upload was answered "Unauthorized" — invisibly, because
+     mode:'no-cors' hides the rejection — so receipts silently never arrived. */
+  const tok=scriptToken();if(tok)payload.token=tok;
   return fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),cache:'no-store'});
 }
 
@@ -722,7 +735,7 @@ function openCheckout(){
   const paintCheckoutSummary=()=>{
     const subtotal=cartSubtotal();
     const disc=couponDiscountFor(subtotal);
-    $('checkoutSummary').innerHTML=state.cart.map(i=>`<div class="summary-row"><span>${esc(i.name)} × ${i.qty}</span><strong>${money(i.price*i.qty)}</strong></div>`).join('')
+    $('checkoutSummary').innerHTML=state.cart.map(i=>`<div class="summary-row"><span>${esc(i.name)} <span class="qty-nowrap">× ${i.qty}</span></span><strong>${money(i.price*i.qty)}</strong></div>`).join('')
       +(disc>0?`<div class="summary-row coupon-line"><span>Coupon ${esc(state.coupon.code)}</span><strong>&minus;${money(disc)}</strong></div>`:'')
       +`<hr><div class="summary-row"><strong>Total</strong><strong>${money(subtotal-disc)}</strong></div>`;
   };
@@ -901,7 +914,7 @@ function showOrderList(){
 
 function showOrder(order,opts){
   const cancelled=order.status==='Cancelled';
-  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status${cancelled?' is-cancelled':''}">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}${(i.variants||[]).length?`<small class="summary-variants">${i.variants.map(v=>esc(v.label)).join(' · ')}</small>`:''}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}${order.coupon_code?`<div class="summary-row coupon-line"><span>Coupon ${esc(order.coupon_code)}</span><strong>&minus;${money(order.coupon_discount||0)}</strong></div>`:''}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}${!cancelled&&order.payment_method==='QR Payment'&&hasPendingReceipt(order.order_code)?`<div class="status-banner" style="margin-top:14px">Your payment receipt is still uploading. <button type="button" class="secondary-btn" id="retryReceiptBtn" style="margin-left:8px">Try again now</button></div>`:''}<div class="contact-actions" style="margin-top:16px">${opts&&opts.fromList?'<button class="secondary-btn" id="backToOrders">&lsaquo; All orders</button>':''}<button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
+  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status${cancelled?' is-cancelled':''}">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} <span class="qty-nowrap">× ${i.qty}</span>${(i.variants||[]).length?`<small class="summary-variants">${i.variants.map(v=>esc(v.label)).join(' · ')}</small>`:''}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}${order.coupon_code?`<div class="summary-row coupon-line"><span>Coupon ${esc(order.coupon_code)}</span><strong>&minus;${money(order.coupon_discount||0)}</strong></div>`:''}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}${!cancelled&&order.payment_method==='QR Payment'&&hasPendingReceipt(order.order_code)?`<div class="status-banner" style="margin-top:14px">Your payment receipt is still uploading. <button type="button" class="secondary-btn" id="retryReceiptBtn" style="margin-left:8px">Try again now</button></div>`:''}<div class="contact-actions" style="margin-top:16px">${opts&&opts.fromList?'<button class="secondary-btn" id="backToOrders">&lsaquo; All orders</button>':''}<button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
   if(!$('orderDialog').open)$('orderDialog').showModal();
   if($('backToOrders'))$('backToOrders').onclick=()=>showOrderList();
   $('copyOrderNo').onclick=async()=>{try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(order.order_code);else{const ta=document.createElement('textarea');ta.value=order.order_code;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}toast('Copied ✓')}catch{toast(`Order #${order.order_code}`)}};
