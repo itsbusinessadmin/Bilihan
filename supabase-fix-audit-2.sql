@@ -37,7 +37,9 @@ as $$
 declare
   v_order public.orders%rowtype;
   v_item  public.order_items%rowtype;
+  v_coupon_id uuid;
   v_code  text;
+  v_remaining numeric(12,2);
 begin
   select * into v_order from public.orders where id = p_order_id;
   if not found then return; end if;
@@ -58,23 +60,43 @@ begin
     end if;
   end loop;
 
-  -- Coupon value comes back.
-  v_code := nullif(btrim(coalesce(v_order.coupon_code, '')), '');
-  if v_code is not null then
+  -- Coupon value comes back. The id stored on the order survives a code
+  -- regeneration; only orders placed before that column existed fall back to
+  -- matching the code, which cannot survive a regeneration.
+  v_coupon_id := v_order.coupon_id;
+  if v_coupon_id is null then
+    v_code := nullif(btrim(coalesce(v_order.coupon_code, '')), '');
+    if v_code is not null then
+      select c.id into v_coupon_id from public.coupons c where upper(c.code) = upper(v_code);
+    end if;
+  end if;
+
+  if v_coupon_id is not null then
     if coalesce(v_order.coupon_kind, '') = 'credit' then
       update public.coupons
          set remaining_credit = least(credit_amount,
                                       coalesce(remaining_credit, 0)
                                       + coalesce(v_order.coupon_discount, 0))
-       where upper(code) = upper(v_code);
+       where id = v_coupon_id
+       returning remaining_credit into v_remaining;
+      -- The pesos are back, so the coupon must be spendable again. A coupon
+      -- the spending used up sits at 'used', which checkout refuses.
+      if coalesce(v_remaining, 0) > 0 then
+        update public.coupons
+           set status = 'active'
+         where id = v_coupon_id
+           and status = 'used';
+      end if;
     else
       -- One-time percent coupon: only this order could have consumed it, so a
-      -- 'used' coupon with this code belongs to this cancellation.
+      -- 'used' coupon here belongs to this cancellation — but only when it
+      -- has not expired in the meantime.
       update public.coupons
          set status = 'active'
-       where upper(code) = upper(v_code)
+       where id = v_coupon_id
          and kind = 'percent'
-         and status = 'used';
+         and status = 'used'
+         and (expires_at is null or expires_at > now());
     end if;
   end if;
 end;
@@ -110,6 +132,13 @@ begin
     return jsonb_build_object('ok',false,'error','Order not found.');
   end if;
   if v_order.status = 'Cancelled' then return jsonb_build_object('ok',true); end if;
+  -- Delivered and Completed mean the goods have left the shop. Cancelling from
+  -- there would put the items back into stock and refund the coupon, inflating
+  -- inventory and handing coupon money back by mistake. Same rule as the admin
+  -- path.
+  if v_order.status in ('Delivered','Completed') then
+    return jsonb_build_object('ok',false,'error','This order can no longer be cancelled.');
+  end if;
   -- The window is measured on the server clock. The client timestamp is ignored
   -- for the decision (it could be forged); a wildly skewed one is still
   -- rejected as a sanity check. The tolerance is generous so an offline
@@ -165,11 +194,23 @@ begin
   if v_order.status = 'Cancelled' then
     return jsonb_build_object('ok',false,'error','This order is already cancelled.');
   end if;
-
-  update public.orders set status = v_status where id = v_order.id;
+  -- Delivered and Completed mean the goods have left the shop. Cancelling from
+  -- there would put the items back into stock and refund the coupon, inflating
+  -- inventory and handing coupon money back by mistake.
+  if v_status = 'Cancelled' and v_order.status in ('Delivered','Completed') then
+    raise exception 'Cannot cancel an order that is already %', v_order.status;
+  end if;
 
   if v_status = 'Cancelled' then
+    -- The admin path records when and why, exactly like the customer path.
+    update public.orders
+       set status = 'Cancelled',
+           cancelled_at = now(),
+           cancellation_reason = 'Cancelled by admin'
+     where id = v_order.id;
     perform public.restore_order_inventory(v_order.id);
+  else
+    update public.orders set status = v_status where id = v_order.id;
   end if;
   return jsonb_build_object('ok',true,'status',v_status);
 end;
@@ -404,7 +445,14 @@ begin
 
   v_name := v_order.customer_name;
   v_phone := coalesce(v_order.phone, v_given_phone);
-  v_key := public.support_key(v_phone, v_name);
+  -- Customers with a phone number are keyed by the number, as before; customers
+  -- without one are keyed by their order number instead of their bare name, so
+  -- two people called "Maria" can never land in each other's conversation.
+  if coalesce(regexp_replace(coalesce(v_phone,''), '\D', '', 'g'), '') <> '' then
+    v_key := public.support_key(v_phone, v_name);
+  else
+    v_key := 'o:' || upper(btrim(p_order_code));
+  end if;
 
   select * into v_thread from public.support_threads where customer_key = v_key;
   if not found then

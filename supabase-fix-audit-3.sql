@@ -74,6 +74,7 @@ declare
   v_item  public.order_items%rowtype;
   v_coupon_id uuid;
   v_code  text;
+  v_remaining numeric(12,2);
 begin
   select * into v_order from public.orders where id = p_order_id;
   if not found then return; end if;
@@ -111,15 +112,26 @@ begin
          set remaining_credit = least(credit_amount,
                                       coalesce(remaining_credit, 0)
                                       + coalesce(v_order.coupon_discount, 0))
-       where id = v_coupon_id;
+       where id = v_coupon_id
+       returning remaining_credit into v_remaining;
+      -- The pesos are back, so the coupon must be spendable again. A coupon
+      -- the spending used up sits at 'used', which checkout refuses.
+      if coalesce(v_remaining, 0) > 0 then
+        update public.coupons
+           set status = 'active'
+         where id = v_coupon_id
+           and status = 'used';
+      end if;
     else
       -- One-time percent coupon: only this order could have consumed it, so a
-      -- 'used' coupon here belongs to this cancellation.
+      -- 'used' coupon here belongs to this cancellation — but only when it
+      -- has not expired in the meantime.
       update public.coupons
          set status = 'active'
        where id = v_coupon_id
          and kind = 'percent'
-         and status = 'used';
+         and status = 'used'
+         and (expires_at is null or expires_at > now());
     end if;
   end if;
 end;

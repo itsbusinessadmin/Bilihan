@@ -921,12 +921,16 @@ setInterval(async()=>{
 },CHIME_WATCH_MS);
 
 function adminUnreadTotal(){return (A.data.threads||[]).reduce((n,t)=>n+Number(t.admin_unread||0),0)}
-const MSG={openId:null,messages:[],timer:null,loading:false,sync:null};
+const MSG={openId:null,messages:[],timer:null,loading:false,sync:null,sending:false};
 
 function stopMessagePolling(){clearInterval(MSG.timer);MSG.timer=null;MSG.sync=null}
 
 async function loadThreadMessages(id,{silent}={}){
   if(!id)return;
+  /* A poll that lands mid-send would paint the server copy (which does not
+     have the just-sent reply yet) over the optimistic one, blinking it out
+     and back — the submit holds the line until it reconciles itself. */
+  if(MSG.sending)return;
   if(!silent)MSG.loading=true;
   const {data,error}=await db.from('support_messages').select('*').eq('thread_id',id).order('created_at');
   /* The admin may have opened another thread while this fetch was in flight.
@@ -943,6 +947,9 @@ async function openThread(id){
   MSG.openId=id;MSG.messages=[];
   paintThread();
   await loadThreadMessages(id);
+  /* The admin may have clicked away while the messages were loading — stamping
+     read now would zero a conversation they never actually looked at. */
+  if(MSG.openId!==id)return;
   /* Stamped on every open, not only when something was unread: the customer's
      "Seen" marker depends on this timestamp, so it has to keep up even when the
      badge was already clear. */
@@ -1059,14 +1066,19 @@ function paintThread(){
     input.value='';grow();
     MSG.messages=[...MSG.messages,{id:'local-'+Date.now(),sender:'admin',body,created_at:new Date().toISOString()}];
     paintThread();
-    const {data,error}=await db.rpc('support_admin_reply',{p_thread_id:threadId,p_body:body});
-    if(error||!data?.ok){
-      /* The reply never landed: put the text back so it can be retried instead
-         of retyped — but only when this thread is still open, so the text can
-         never leak into another customer's box. paintThread's draft carry-over
-         keeps it across the reload. */
-      if(MSG.openId===threadId){const box=document.getElementById('threadInput');if(box){box.value=body;box.dispatchEvent(new Event('input'));}}
-      alert(error?.message||data?.error||'Reply not sent.');
+    MSG.sending=true;
+    try{
+      const {data,error}=await db.rpc('support_admin_reply',{p_thread_id:threadId,p_body:body});
+      if(error||!data?.ok){
+        /* The reply never landed: put the text back so it can be retried instead
+           of retyped — but only when this thread is still open, so the text can
+           never leak into another customer's box. paintThread's draft carry-over
+           keeps it across the reload. */
+        if(MSG.openId===threadId){const box=document.getElementById('threadInput');if(box){box.value=body;box.dispatchEvent(new Event('input'));}}
+        alert(error?.message||data?.error||'Reply not sent.');
+      }
+    }finally{
+      MSG.sending=false;
     }
     await loadThreadMessages(threadId,{silent:true});
   };
@@ -1849,6 +1861,11 @@ function openCouponSettings(id){
       const rem=Number(document.getElementById('csRemaining').value);
       if(!(rem>=0))return alert('Remaining credit cannot be negative.');
       patch.remaining_credit=rem;
+      /* A used coupon stays used unless it is genuinely topped up: the status
+         dropdown alone cannot bring it back, matching the Pause button and
+         the percent-coupon path. */
+      if(c.status==='used'&&patch.status!=='used'&&!(rem>Number(c.remaining_credit||0)))
+        return alert('This coupon has already been used, so it can only be reactivated by topping up its credit.');
       /* Topping a spent coupon back up returns it to service — but only an
          actual balance increase revives it. Without this, saving any unrelated
          change (like the expiry date) on a coupon the owner deliberately marked
