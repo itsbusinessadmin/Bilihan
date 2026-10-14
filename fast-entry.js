@@ -148,8 +148,10 @@
        "add another" intent left over from an earlier attempt that did not save.
        Both flags are cleared: the armed one too, because a "Save & Add Another"
        whose server save failed leaves it armed, and the next plain Save would
-       otherwise reopen the form unasked. */
-    save.addEventListener('click', () => { addAnotherWanted = false; pendingAddAnother = false; }, true);
+       otherwise reopen the form unasked. requestSubmit() fires a synthetic
+       (untrusted) click on the save button, so the clearing runs only on real
+       clicks — otherwise it would wipe the flag "Save & Add Another" just set. */
+    save.addEventListener('click', e => { if(e.isTrusted){ addAnotherWanted = false; pendingAddAnother = false; } }, true);
 
     actions.insertBefore(note, cancel || actions.firstChild);
     actions.insertBefore(another, save);
