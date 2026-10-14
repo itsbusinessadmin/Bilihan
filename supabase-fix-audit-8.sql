@@ -48,6 +48,7 @@ begin
   return jsonb_build_object(
     'ok',true,
     'status',v_order.status,
+    'cancellation_reason',v_order.cancellation_reason,
     'receipt_url',v_order.receipt_drive_url
   );
 exception when others then

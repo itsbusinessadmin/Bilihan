@@ -72,9 +72,16 @@ function supabaseProp_(key) {
 function markReceiptInSupabase_(orderCode, fileUrl) {
   var url = supabaseProp_('SUPABASE_URL');
   var key = supabaseProp_('SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !key || !orderCode || !fileUrl) return;
+  if (!url || !key || !orderCode || !fileUrl) {
+    /* Loud on purpose: without these properties every receipt upload
+       succeeds in Drive but the storefront can never verify it, so customers
+       see 'still uploading' forever. Visible in Executions. */
+    console.log('RECEIPT WRITE-BACK SKIPPED: set SUPABASE_URL and ' +
+      'SUPABASE_SERVICE_ROLE_KEY in Project Settings > Script properties.');
+    return;
+  }
   try {
-    UrlFetchApp.fetch(
+    var res = UrlFetchApp.fetch(
       url.replace(/\/$/, '') + '/rest/v1/orders?order_code=eq.' + encodeURIComponent(orderCode),
       {
         method: 'PATCH',
@@ -88,6 +95,12 @@ function markReceiptInSupabase_(orderCode, fileUrl) {
         muteHttpExceptions: true
       }
     );
+    var code = res.getResponseCode();
+    /* muteHttpExceptions hides HTTP errors: a wrong key or URL would otherwise
+       fail with nothing in the logs. */
+    if (code < 200 || code >= 300) {
+      console.log('Supabase receipt write-back HTTP ' + code + ': ' + res.getContentText().slice(0, 200));
+    }
   } catch (e) {
     console.log('Supabase receipt write-back failed: ' + e);
   }
