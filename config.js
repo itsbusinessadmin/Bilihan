@@ -23,7 +23,7 @@ window.BILIHAN_CONFIG = {
      (see apps-script/AUTH-PATCH.md). Pick a long random string and keep it the
      same in both places. Until both sides are set, the site simply omits it and
      the script keeps its current behaviour. */
-  GOOGLE_APPS_SCRIPT_TOKEN: '',
+  GOOGLE_APPS_SCRIPT_TOKEN: '1445d1df-1fdf-4e0d-bcdf-bc237dfe1621',
 
   /* Privacy-first analytics. Disabled until you fill this in.
      Plausible and Umami are cookieless and need no consent banner; GA4 sets
