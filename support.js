@@ -76,15 +76,14 @@
   function renderIdentify(message) {
     $('supportBody').innerHTML = `
       <form class="support-identify" id="supportIdentify" novalidate>
-        <p class="support-intro">To open your conversation, enter your order number or the mobile number you ordered with.</p>
+        <p class="support-intro">To open your conversation, enter your order number. If you add the mobile number you ordered with, it must match the order.</p>
         ${message ? `<div class="support-error" role="alert">${esc(message)}</div>` : ''}
         <label class="field">
-          <span class="field-label">Order number</span>
-          <input name="order" autocomplete="off" spellcheck="false" placeholder="e.g. BIL-A2BA14">
+          <span class="field-label">Order number *</span>
+          <input name="order" autocomplete="off" spellcheck="false" placeholder="e.g. BIL-A2BA14" required>
         </label>
-        <p class="support-or"><span>or</span></p>
         <label class="field">
-          <span class="field-label">Mobile number used on the order</span>
+          <span class="field-label">Mobile number used on the order <span class="muted">(optional)</span></span>
           <input name="phone" inputmode="tel" autocomplete="tel" placeholder="09XXXXXXXXX">
         </label>
         <button class="primary-btn" type="submit" id="supportIdentifyBtn">Open my chat</button>
@@ -95,7 +94,7 @@
       const btn = root.querySelector('#supportIdentifyBtn');
       const order = f.order.value.trim();
       const phone = f.phone.value.trim();
-      if (!order && !phone) { renderIdentify('Enter your order number or your mobile number.'); return; }
+      if (!order) { renderIdentify('Enter your order number. You will find it on your order confirmation.'); return; }
       btn.disabled = true; btn.textContent = 'Opening…';
       const ok = await identify(order, phone);
       if (!ok) { renderIdentify(state.lastError); return; }

@@ -285,6 +285,10 @@
     }
     const when = new Date(data.as_of || Date.now());
     $('sellerAsOf').textContent = `Updated ${when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}`;
+    /* Per-seller links scope the page to one seller; say so plainly. */
+    const scoped = data.scoped_seller;
+    $('sellerScope').textContent = scoped ? `Showing ${scoped}'s figures only` : '';
+    $('sellerScope').classList.toggle('hidden', !scoped);
     $('sellerError').classList.add('hidden');
   }
 
