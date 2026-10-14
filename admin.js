@@ -22,6 +22,8 @@ async function retryAdminGoogleOps(){
   writeAdminQueue(rest);
 }
 const A={section:'dashboard',session:null,orderFilter:'all',orderSearch:'',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+/* Order dates always read in Philippine time, wherever the device is. */
+const phDateTime=d=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(new Date(d));
 
 /* ========================================================================
    Setting up, signing in, and keeping the session
@@ -743,7 +745,7 @@ function openOrderDetails(id){
   document.getElementById('orderDetailModal')?.remove();
   document.body.insertAdjacentHTML('beforeend',`<div class="admin-modal-backdrop" id="orderDetailModal"><div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="orderDetailTitle"><div class="admin-modal-header"><div><span class="eyebrow">Customer order</span><h2 id="orderDetailTitle">#${esc(o.order_code)}${o.status==='Cancelled'?' <span class="order-cancelled-tag">Cancelled</span>':''}</h2></div><button type="button" class="admin-modal-close" id="closeOrderDetail" aria-label="Close">&times;</button></div>
   <dl class="order-detail">
-    ${field('Placed',new Date(o.created_at).toLocaleString())}
+    ${field('Placed',phDateTime(o.created_at))}
     ${field('Customer',o.customer_name)}
     ${field('Phone',o.phone||'—')}
     ${field('Email',o.email||'—')}
@@ -757,7 +759,7 @@ function openOrderDetails(id){
       :`<select id="orderStatusSelect" aria-label="Order status">${['New','Preparing','Ready','Delivered','Completed','Cancelled'].map(s=>`<option value="${s}"${o.status===s?' selected':''}>${s}</option>`).join('')}</select> <span class="muted" id="orderStatusHint"></span>`}
     </dd>
     ${o.cancellation_reason?field('Cancellation reason',o.cancellation_reason):''}
-    ${o.cancelled_at?field('Cancelled at',new Date(o.cancelled_at).toLocaleString()):''}
+    ${o.cancelled_at?field('Cancelled at',phDateTime(o.cancelled_at)):''}
     ${o.note?field('Customer note',o.note):''}
   </dl>
   ${receiptHref?`<p class="order-receipt-row"><a class="modal-secondary-btn" id="viewReceipt" href="${esc(receiptHref)}" target="_blank" rel="noopener noreferrer">View payment receipt</a><span class="muted">Opens the customer's uploaded receipt in a new tab.</span></p>`:''}
@@ -789,7 +791,7 @@ function orders(m){
   /* soldOrders(), not every order: a cancelled order is not a sale, and counting it
      here made this page disagree with the dashboard about how much the shop had taken. */
   const totals=soldOrders().reduce((acc,o)=>{const st=o.payment_status||'Pending';acc.sell+=+o.total;if(st==='Paid')acc.paid+=+o.total;else acc.unpaid+=+o.total;(o.order_items||[]).forEach(i=>{const q=Number(i.qty||0);const {original,interest}=lineItemPrices(i);acc.original+=original*q;acc.interest+=interest*q});return acc},{sell:0,paid:0,unpaid:0,original:0,interest:0});
-  m.innerHTML=`<div class="orders-sticky"><div class="page-head"><div><span class="eyebrow">Customer orders</span><h2>Orders</h2></div><div class="row-actions"><button type="button" id="bulkToggle">Select</button><button type="button" class="danger-btn" id="deleteAllOrders">Delete All Orders</button></div></div><div class="cards orders-cards"><div class="metric metric-money"><small>Total Sell</small><h2>${money(totals.sell)}</h2></div><div class="metric metric-money" style="border-color:#86efac"><small>Total Paid</small><h2 style="color:#166534">${money(totals.paid)}</h2></div><div class="metric metric-money" style="border-color:#fca5a5"><small>Total Unpaid</small><h2 style="color:#991b1b">${money(totals.unpaid)}</h2></div><div class="metric metric-money"><small>Total Interest</small><h2>${money(totals.interest)}</h2></div><div class="metric metric-money"><small>Total Original Price</small><h2>${money(totals.original)}</h2></div></div>
+  m.innerHTML=`<div class="orders-sticky"><div class="page-head"><div><span class="eyebrow">Customer orders</span><h2>Orders</h2></div><div class="row-actions"><button type="button" id="bulkToggle">Select</button><button type="button" class="danger-btn" id="deleteAllOrders">Delete All Orders</button></div></div><div class="cards orders-cards"><div class="metric metric-money"><small>Total Sell (incl. unpaid)</small><h2>${money(totals.sell)}</h2></div><div class="metric metric-money" style="border-color:#86efac"><small>Total Paid</small><h2 style="color:#166534">${money(totals.paid)}</h2></div><div class="metric metric-money" style="border-color:#fca5a5"><small>Total Unpaid</small><h2 style="color:#991b1b">${money(totals.unpaid)}</h2></div><div class="metric metric-money"><small>Total Interest</small><h2>${money(totals.interest)}</h2></div><div class="metric metric-money"><small>Total Original Price</small><h2>${money(totals.original)}</h2></div></div>
   <div class="panel"><input id="orderSearch" placeholder="Search name, phone, order number" value="${esc(A.orderSearch||'')}" style="width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
   <div id="payFilters" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">${['all','Paid','Pending','Not Paid'].map(f=>{const active=A.orderFilter===f;const c=f==='all'?null:PAY_COLORS[f];const bg=active?(c?c.bg:'var(--text)'):'transparent';const text=active?(c?c.text:'var(--bg)'):'var(--text)';const border=c?c.border:'var(--line)';return `<button data-f="${f}" style="padding:6px 14px;border-radius:999px;border:1px solid ${border};background:${bg};color:${text};font-weight:600;cursor:pointer">${f==='all'?'All':f}</button>`}).join('')}</div>
   </div></div>
@@ -811,8 +813,9 @@ function orders(m){
   };
   const syncBulk=wireBulk('orders',document.getElementById('orderList'),'order',async ids=>{
     const codes=ids.map(id=>A.data.orders.find(o=>o.id===id)?.order_code).filter(Boolean);
-    const {error}=await db.from('orders').delete().in('id',ids);
-    if(error)throw error;
+    /* Restore stock + coupon credit before deleting, one order at a time. A
+       failed RPC throws so the bulk handler stops and shows the error. */
+    for(const id of ids){const {error}=await db.rpc('admin_delete_order',{p_order_id:id});if(error)throw new Error(error.message||'Could not delete the selected orders.')}
     for(const code of codes)await deleteOrderFromGoogleSheet(code);
   });
   /* Held in state rather than only in the box: this page is redrawn whenever the
@@ -826,7 +829,11 @@ async function syncAdminOrderToGoogleSheet(order){if(!GOOGLE_SHEETS_WEB_APP_URL|
 window.updatePaymentStatus=async(id,status)=>{const {error}=await db.from('orders').update({payment_status:status}).eq('id',id);if(error)return alert(error.message);const o=A.data.orders.find(x=>x.id===id);if(o){o.payment_status=status;await syncAdminOrderToGoogleSheet(o)}orders(document.getElementById('adminMain'))};
 async function deleteOrderFromGoogleSheet(orderCode){if(!GOOGLE_SHEETS_WEB_APP_URL||!orderCode)return;const payload={action:'delete_order',order_code:orderCode};if(!(await postToScript(payload)))queueAdminGoogleOp(payload)}
 async function deleteAllOrdersFromGoogleServices(){if(!GOOGLE_SHEETS_WEB_APP_URL)return;const payload={action:'delete_all_orders'};if(!(await postToScript(payload)))queueAdminGoogleOp(payload)}
-window.deleteOrder=async id=>{const o=A.data.orders.find(x=>x.id===id);if(!o)return alert('Order not found.');if(!confirm(`Delete Order #${o.order_code} permanently? This will also delete its Google Sheet row and matching payment receipt from Google Drive.`))return;const {error}=await db.from('orders').delete().eq('id',id);if(error)return alert(error.message);await deleteOrderFromGoogleSheet(o.order_code);await loadAll();renderShell()};async function deleteAllOrders(){if(!A.data.orders.length)return alert('There are no orders to delete.');if(!confirm(`Delete ALL ${A.data.orders.length} customer orders? This cannot be undone. It will also remove all matching Google Sheet rows and payment receipt files from Google Drive.`))return;if(prompt('Type DELETE ALL ORDERS to confirm:')!=='DELETE ALL ORDERS')return alert('Delete All cancelled.');const ids=A.data.orders.map(o=>o.id);const {error}=await db.from('orders').delete().in('id',ids);if(error)return alert(error.message);await deleteAllOrdersFromGoogleServices();A.orderFilter='all';await loadAll();renderShell();alert('All customer orders, matching Google Sheet rows, and matching Google Drive receipts have been deleted.');}
+/* Deleting restores stock and coupon credit first, exactly like cancelling does.
+   admin_delete_order() does the restore server-side (skipped when the order is
+   already cancelled) and then deletes the order. */
+window.deleteOrder=async id=>{const o=A.data.orders.find(x=>x.id===id);if(!o)return alert('Order not found.');if(!confirm(`Delete Order #${o.order_code} permanently? This will also delete its Google Sheet row and matching payment receipt from Google Drive.`))return;const {error}=await db.rpc('admin_delete_order',{p_order_id:id});if(error)return alert(error.message);await deleteOrderFromGoogleSheet(o.order_code);await loadAll();renderShell()};
+async function deleteAllOrders(){if(!A.data.orders.length)return alert('There are no orders to delete.');if(!confirm(`Delete ALL ${A.data.orders.length} customer orders? This cannot be undone. It will also remove all matching Google Sheet rows and payment receipt files from Google Drive.`))return;if(prompt('Type DELETE ALL ORDERS to confirm:')!=='DELETE ALL ORDERS')return alert('Delete All cancelled.');const ids=A.data.orders.map(o=>o.id);for(const id of ids){const {error}=await db.rpc('admin_delete_order',{p_order_id:id});if(error)return alert(error.message||'Could not delete all orders.')}await deleteAllOrdersFromGoogleServices();A.orderFilter='all';await loadAll();renderShell();alert('All customer orders, matching Google Sheet rows, and matching Google Drive receipts have been deleted.');}
 /* ========================================================================
    Customer messages
 
@@ -1738,6 +1745,11 @@ async function togglePauseCoupon(id){
   const c=(A.data.coupons||[]).find(x=>x.id===id);if(!c)return;
   if(c.status==='used'){alert('This coupon has already been used, so it can no longer be paused or resumed.');return}
   const next=c.status==='paused'?'active':'paused';
+  /* A spent coupon must not come back as Active through Resume. */
+  if(next==='active'){
+    if(c.kind==='credit'&&Number(c.remaining_credit||0)<=0)return alert('This coupon has no credit left. Top up its credit before reactivating.');
+    if(c.kind==='percent'&&c.status==='used')return alert('This coupon has already been used and cannot be reactivated.');
+  }
   const {error}=await db.from('coupons').update({status:next}).eq('id',id);
   if(error)return alert(error.message);
   repaintCoupons();

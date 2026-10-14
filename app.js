@@ -302,10 +302,34 @@ function applyStockUpdate(row){
       }
     }
   }
-  /* A product window left open on something that just sold out has to say so,
-     rather than letting the customer add what is no longer there. */
+  /* A product window left open on something that just changed has to say so,
+     rather than letting the customer add what is no longer there. The price and
+     stock are patched where they sit: rebuilding the dialog would wipe whatever
+     size, flavour or quantity the customer had already chosen. */
+  patchProductDialog(p);
+}
+/* A live stock or price update for the product a customer is looking at. Only
+   the price, the stock line and the quantity cap are touched, so selected
+   options and the chosen quantity survive the update. */
+function patchProductDialog(p){
   const open=$('productDialog');
-  if(open?.open&&open.dataset.productId===p.id)openProduct(p.id);
+  if(!open?.open||String(open.dataset.productId)!==String(p.id))return;
+  const priceEl=open.querySelector('.product-modal-grid h3');
+  if(priceEl)priceEl.textContent=money(p.price);
+  const showStock=state.data.settings?.show_stock!==false;
+  const sold=!p.is_available||p.stock<=0;
+  const left=Math.max(0,Number(p.stock||0)-cartQtyFor(p.id));
+  const stockEl=open.querySelector('.product-modal-grid p.stock');
+  if(showStock&&!sold){
+    const text=left<=5?`Only ${left} left!`:`${left} available`;
+    if(stockEl)stockEl.textContent=text;
+    else{const host=open.querySelector('.product-modal-grid > div');if(host){const el=document.createElement('p');el.className='stock';el.textContent=text;host.appendChild(el)}}
+  }else if(stockEl)stockEl.remove();
+  /* The quantity picker keeps working against the new stock without touching
+     the customer's choices. */
+  open.dataset.max=left;
+  const addBtn=open.querySelector('#addToCart');
+  if(addBtn&&sold){addBtn.disabled=true;addBtn.textContent='Sold Out'}
 }
 
 /* One subscription for the whole catalogue. If the socket cannot be established,
@@ -428,13 +452,19 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
     });
   }
   refreshVariants();
-  if($('qMinus')){$('qMinus').onclick=()=>{q=Math.max(1,q-1);$('qVal').textContent=q};$('qPlus').onclick=()=>{q=Math.min(max,q+1);$('qVal').textContent=q};$('addToCart').onclick=()=>{
+  $('productDialog').dataset.max=max;
+  if($('qMinus')){$('qMinus').onclick=()=>{q=Math.max(1,q-1);$('qVal').textContent=q};$('qPlus').onclick=()=>{const limit=Number($('productDialog').dataset.max);q=Math.min(Number.isFinite(limit)?limit:max,q+1);$('qVal').textContent=q};$('addToCart').onclick=()=>{
     if(missingRequired(groups,chosen).length)return;
+    /* The picker cap is live, but stock may have moved since the dialog opened,
+       so the room left is re-checked here rather than trusted. */
+    const room=Math.max(0,Number(p.stock||0)-cartQtyFor(id));
+    const add=Math.min(q,room);
+    if(add<=0){toast('Maximum available stock reached');return}
     const key=cartKey(id,chosen);
     const unit=priceWithVariants(p,groups,chosen);
     const labels=groups.flatMap(g=>g.options.filter(o=>chosen.includes(o.id)).map(o=>({group:g.label,label:o.label})));
     const ex=state.cart.find(x=>cartKey(x.productId,x.optionIds||[])===key);
-    if(ex)ex.qty+=q;else state.cart.push({productId:id,qty:q,price:unit,name:p.name,image:p.image_url,optionIds:chosen,variantLabels:labels});
+    if(ex)ex.qty+=add;else state.cart.push({productId:id,qty:add,price:unit,name:p.name,image:p.image_url,optionIds:chosen,variantLabels:labels});
     saveCart();$('productDialog').close();toast('Added to cart ✓')}}}
 function renderCart(){
   $('cartCount').textContent=state.cart.reduce((s,i)=>s+i.qty,0);

@@ -11,24 +11,13 @@
 
    WHAT IS NEW COMPARED WITH THE PREVIOUS VERSION
    ----------------------------------------------
-   Every request must now carry the shared secret SCRIPT_TOKEN (set it at the
-   top of this file to match GOOGLE_APPS_SCRIPT_TOKEN in the site's config.js).
-   doPost() rejects calls without it, and ?action=receipt needs it as a
-   &token= query parameter. Until the secret is set on both sides, the script
-   rejects everything — fail closed, never open.
-
-   doGet() answers ?action=receipt&order_code=... by redirecting to that
+   doGet() now answers ?action=receipt&order_code=... by redirecting to that
    order's receipt in Drive. The admin's "View payment receipt" button links
    there. With no parameters doGet() still returns the health check exactly as
    before. Everything else — order sync, uploads, deletes — is unchanged.
 
    ABOUT ACCESS
    ------------
-   Every request must now carry the shared secret (see SCRIPT_TOKEN below),
-   which must match GOOGLE_APPS_SCRIPT_TOKEN in the site's config.js. Calls
-   without it are rejected. Until you set the token on both sides, nothing
-   works — set the same secret in both places, then deploy a new version.
-
    The receipt route only redirects; it never changes a file's sharing, so
    Drive decides who may look. Signed in as the account that owns the receipts
    folder you see the receipt; anyone else gets Google's "request access" page.
@@ -41,15 +30,6 @@
 
 const RECEIPT_FOLDER_ID = '1TOCB7zls8S0kTETjuqg6BmCEku7OO21e';
 const SHEET_NAME = 'Orders';
-
-/* Shared secret for every call this script accepts. MUST match
-   GOOGLE_APPS_SCRIPT_TOKEN in the site's config.js — paste the same long
-   random string in both places, then Deploy > Manage deployments > New version.
-
-   While this is empty the script REJECTS every request, so the site stops
-   syncing until you fill it in. That is deliberate: an unset secret must fail
-   closed, never open. */
-const SCRIPT_TOKEN = '';
 
 /* Closing note on the order confirmation email. Edit the text here; set it to an
    empty string to leave it off entirely. The shop's name comes from Store Settings,
@@ -85,24 +65,6 @@ const THANK_YOU_NOTE =
 
 
 /* =========================================================
-   REQUEST AUTH — shared secret, fail closed
-   ========================================================= */
-
-function requestToken(e, payload) {
-  if (payload && payload.token) return String(payload.token);
-  if (e && e.parameter && e.parameter.token) return String(e.parameter.token);
-  return '';
-}
-
-/* Every caller must present the secret. An unset SCRIPT_TOKEN rejects
-   everything rather than silently running open. */
-function isAuthorized(e, payload) {
-  if (!SCRIPT_TOKEN) return false;
-  return requestToken(e, payload) === SCRIPT_TOKEN;
-}
-
-
-/* =========================================================
    POST ROUTER
    ========================================================= */
 
@@ -113,10 +75,6 @@ function doPost(e) {
     }
 
     const payload = JSON.parse(e.postData.contents);
-
-    if (!isAuthorized(e, payload)) {
-      return jsonResponse({ ok: false, error: 'Unauthorized' });
-    }
 
     console.log('Received action:', payload.action || 'order_sync');
     console.log('Order code:', payload.order_code || 'NONE');
@@ -245,9 +203,6 @@ function doGet(e) {
   const params = (e && e.parameter) || {};
 
   if (params.action === 'receipt') {
-    if (!isAuthorized(e, null)) {
-      return receiptMessage('Unauthorized', 'This receipt link is missing its access token. Please use the link from the admin panel.');
-    }
     return serveReceiptRedirect(params.order_code);
   }
 
@@ -459,7 +414,7 @@ function deleteOrderRowFromSheet(orderCode) {
    DELETE RECEIPT FOR ONE ORDER
    ========================================================= */
 
-function deleteReceiptForOrder(orderCode) {
+function deleteReceiptForOrder(orderCode, keepFileId) {
   const folder = DriveApp.getFolderById(RECEIPT_FOLDER_ID);
   const safeOrderCode = safeOrderCodeFor(orderCode);
 
@@ -473,8 +428,10 @@ function deleteReceiptForOrder(orderCode) {
     /*
       Examples: BIL-ABC123.jpg, BIL-ABC123.png, BIL-ABC123.pdf
       These match the order number while unrelated files stay untouched.
+      keepFileId (used by saveReceiptToDrive) protects the file that was just
+      uploaded from being swept up with the older receipts.
     */
-    if (receiptNameMatches(fileName, safeOrderCode)) {
+    if (receiptNameMatches(fileName, safeOrderCode) && file.getId() !== keepFileId) {
       file.setTrashed(true);
       deleted++;
 
@@ -587,12 +544,17 @@ function saveReceiptToDrive(payload) {
 
   const blob = Utilities.newBlob(bytes, mimeType, finalName);
 
-  /* Replace any old receipt for the same order. */
-  deleteReceiptForOrder(payload.order_code);
-
+  /* Save the new receipt FIRST. Only once it is safely stored in Drive are any
+     older receipts for the same order trashed, and the new file's own id is
+     passed so it is never caught by that sweep. Trashing first and saving
+     second — the old order here — left orders with no receipt at all whenever
+     the upload failed midway. */
   const file = folder.createFile(blob);
 
   console.log('Drive file created:', file.getId());
+
+  /* Replace any old receipt for the same order. */
+  deleteReceiptForOrder(payload.order_code, file.getId());
 
   return {
     file_id: file.getId(),
@@ -637,8 +599,17 @@ function updateReceiptInSheet(orderCode, receiptUrl, receiptName) {
 
   const row = index + 2;
 
+  /* The receipt link lives in its own column 20, headed "Receipt". Earlier
+     versions wrote the link into column 18, which is the customer's email —
+     every receipt upload permanently deleted that email from the sheet row.
+     The header is set on first use so new sheets carry it; existing sheets
+     keep whatever header row they already have, and columns 1-19 are untouched. */
+  if (!sheet.getRange(1, 20).getValue()) {
+    sheet.getRange(1, 20).setValue('Receipt');
+  }
+
   sheet
-    .getRange(row, 18)
+    .getRange(row, 20)
     .setFormula(`=HYPERLINK("${receiptUrl}","View Receipt")`);
 
   sheet

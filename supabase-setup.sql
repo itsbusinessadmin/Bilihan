@@ -276,9 +276,13 @@ grant execute on function public.is_admin() to anon, authenticated;
 -- without direct INSERT/UPDATE permission on order or product tables.
 -- NOTE: phone number is OPTIONAL. Only customer_name is required.
 -- Adding a parameter makes a NEW signature rather than replacing the old one, so
--- the previous eight-argument version is dropped first. Without this both would
--- exist and the old one would quietly keep saving orders with no email.
+-- older versions are dropped first. Without this several versions would exist at
+-- once: after the coupons migration added the ten-argument place_order, re-running
+-- this file left both the nine- and ten-argument versions in place, and every
+-- nine-argument checkout call was rejected with "function is not unique".
 drop function if exists public.place_order(text,text,text,text,date,text,text,jsonb);
+drop function if exists public.place_order(text,text,text,text,text,date,text,text,jsonb);
+drop function if exists public.place_order(text,text,text,text,text,date,text,text,jsonb,text);
 
 create or replace function public.place_order(
   p_customer_name text,
@@ -1293,7 +1297,7 @@ begin
       from pg_class c
       join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and c.relkind = 'r'
-       and c.relname in ('orders','order_items','products','categories','support_threads','support_messages','store_settings','admin_users')
+       and c.relname in ('orders','order_items','products','categories','support_threads','support_messages','store_settings','admin_users','coupons','seller_tokens','seller_links')
      order by pg_total_relation_size(c.oid) desc
   loop
     v_tables := v_tables || jsonb_build_object('name', r.name, 'bytes', r.bytes, 'rows', r.approx_rows);
