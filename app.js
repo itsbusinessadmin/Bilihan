@@ -472,16 +472,21 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
   $('productDialog').dataset.soldout=sold?'1':'';
   if($('qMinus')){$('qMinus').onclick=()=>{q=Math.max(1,q-1);$('qVal').textContent=q};$('qPlus').onclick=()=>{const limit=Number($('productDialog').dataset.max);q=Math.min(Number.isFinite(limit)?limit:max,q+1);$('qVal').textContent=q};$('addToCart').onclick=()=>{
     if(missingRequired(groups,chosen).length)return;
+    /* The popup's product copy goes stale the moment the store changes it — the
+       refresh never re-patches an open popup — so availability is re-read from
+       the current list here rather than trusted. */
+    const live=state.data.products.find(x=>x.id===id);
+    if(!live||live.is_available===false){toast('This item is no longer available');$('productDialog').close();renderProducts();return}
     /* The picker cap is live, but stock may have moved since the dialog opened,
        so the room left is re-checked here rather than trusted. */
-    const room=Math.max(0,Number(p.stock||0)-cartQtyFor(id));
+    const room=Math.max(0,Number(live.stock||0)-cartQtyFor(id));
     const add=Math.min(q,room);
     if(add<=0){toast('Maximum available stock reached');return}
     const key=cartKey(id,chosen);
-    const unit=priceWithVariants(p,groups,chosen);
+    const unit=priceWithVariants(live,groups,chosen);
     const labels=groups.flatMap(g=>g.options.filter(o=>chosen.includes(o.id)).map(o=>({group:g.label,label:o.label})));
     const ex=state.cart.find(x=>cartKey(x.productId,x.optionIds||[])===key);
-    if(ex)ex.qty+=add;else state.cart.push({productId:id,qty:add,price:unit,name:p.name,image:p.image_url,optionIds:chosen,variantLabels:labels});
+    if(ex)ex.qty+=add;else state.cart.push({productId:id,qty:add,price:unit,name:live.name,image:live.image_url,optionIds:chosen,variantLabels:labels});
     saveCart();$('productDialog').close();toast('Added to cart ✓')}}}
 function renderCart(){
   $('cartCount').textContent=state.cart.reduce((s,i)=>s+i.qty,0);

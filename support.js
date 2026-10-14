@@ -286,6 +286,10 @@
     if (!text || !state.session) return;
     const client = db();
     if (!client) return;
+    /* A second tap before the first round-trip finishes must not start a whole
+       second send with the same text — the box clears only after the server
+       answers, so without this, double-tapping posts the message twice. */
+    if (state.sending) return false;
     /* Show it straight away, then reconcile with the server copy. */
     const optimistic = { id: 'local-' + Date.now(), sender: 'customer', body: text, created_at: new Date().toISOString() };
     state.messages = [...state.messages, optimistic];
