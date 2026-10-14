@@ -1,4 +1,26 @@
 const GOOGLE_SHEETS_WEB_APP_URL = (window.BILIHAN_CONFIG||{}).GOOGLE_SHEETS_WEB_APP_URL || '';
+/* Shared secret for the Google Apps Script. Sent with every call; the script
+   must be patched to require it (see apps-script/AUTH-PATCH.md). Until both
+   sides are updated the token is simply omitted and the old behaviour holds. */
+function scriptToken(){return (window.BILIHAN_CONFIG||{}).GOOGLE_APPS_SCRIPT_TOKEN||''}
+async function postToScript(payload){
+  if(!GOOGLE_SHEETS_WEB_APP_URL)return true;
+  const t=scriptToken();if(t)payload.token=t;
+  try{await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});return true}
+  catch(e){console.warn('Google Apps Script call failed:',e);return false}
+}
+/* Google calls that failed (network-level) are queued and retried on the next
+   admin visit, so a Sheet row or Drive receipt is not silently left behind. */
+const LS_ADMIN_PENDING='bilihan_admin_pending_google_ops_v1';
+function readAdminQueue(){try{const q=JSON.parse(localStorage.getItem(LS_ADMIN_PENDING)||'[]');return Array.isArray(q)?q:[]}catch(e){return[]}}
+function writeAdminQueue(q){try{localStorage.setItem(LS_ADMIN_PENDING,JSON.stringify(q))}catch(e){}}
+function queueAdminGoogleOp(payload){const q=readAdminQueue();q.push({payload,ts:Date.now()});writeAdminQueue(q.slice(-50))}
+async function retryAdminGoogleOps(){
+  const q=readAdminQueue();if(!q.length)return;
+  const rest=[];
+  for(const op of q){if(!(await postToScript(op.payload)))rest.push(op)}
+  writeAdminQueue(rest);
+}
 const A={section:'dashboard',session:null,orderFilter:'all',orderSearch:'',data:{products:[],categories:[],orders:[],settings:null}};const app=document.getElementById('app');const money=n=>`₱${Number(n||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 
 /* ========================================================================
@@ -52,6 +74,7 @@ async function init(){
   try{await loadAll()}
   catch(err){console.error(err);renderReconnect(err?.message);return}
   renderShell();
+  retryAdminGoogleOps();
 }
 function renderSetup(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-logo.png" style="width:90px;border-radius:50%"><span class="eyebrow">Bilihan v3</span><h2>Connect Supabase</h2><p>Edit <strong>config.js</strong> once and paste your Supabase Project URL and anon public key, then reload this page.</p><p class="muted">Never paste a service_role key into the website.</p></div></div>`}
 function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword(d);if(error)return renderLogin(error.message);A.session=data.session;const status=await adminStatus();if(status==='no'){await db.auth.signOut();A.session=null;return renderLogin('This account is not listed as a Bilihan admin.')}if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');try{await loadAll()}catch(err){console.error(err);return renderReconnect(err?.message)}renderShell()}}
@@ -334,18 +357,33 @@ function openSellersModal(){
   const figures=(r,labels)=>`<td data-label="${labels[0]}">${r.qty}</td><td data-label="${labels[1]}">${money(r.original)}</td><td data-label="${labels[2]}">${money(r.interest)}</td><td data-label="${labels[3]}"><strong>${money(r.overall)}</strong></td>`;
   const SELLER_LABELS=['Qty sold','Seller price total','Interest total','Overall'];
   const ITEM_LABELS=['Qty','Seller price','Interest','Overall'];
-  const sellerRow=(r,i)=>`<tr class="seller-row"><td class="seller-cell"><button type="button" class="seller-toggle" aria-expanded="false" aria-controls="sellerItems${i}"><span class="seller-caret" aria-hidden="true">›</span><strong>${esc(r.name)}</strong></button><small class="seller-row-sub">${r.items.length} item${r.items.length===1?'':'s'}</small>${owedSub(r)}</td>${figures(r,SELLER_LABELS)}</tr>
+  const sellerRow=(r,i)=>`<tr class="seller-row"><td class="seller-cell"><button type="button" class="seller-toggle" aria-expanded="false" aria-controls="sellerItems${i}"><span class="seller-caret" aria-hidden="true">›</span><strong>${esc(r.name)}</strong></button><small class="seller-row-sub">${r.items.length} item${r.items.length===1?'':'s'}</small>${owedSub(r)}<br><button type="button" class="link-btn" data-seller-link="${esc(r.name)}" title="Copy a link that shows only this seller's figures">Copy seller link</button></td>${figures(r,SELLER_LABELS)}</tr>
     <tr class="seller-items-row" id="sellerItems${i}" hidden><td colspan="5"><table class="table seller-subtable"><thead><tr><th>Item</th><th>Qty</th><th>Seller price</th><th>Interest</th><th>Overall</th></tr></thead><tbody>${r.items.map(it=>`<tr><td class="seller-cell">${esc(it.name)}${owedSub(it)}</td>${figures(it,ITEM_LABELS)}</tr>`).join('')}</tbody></table></td></tr>`;
   const body=rows.length?`<div class="table-wrap"><table class="table sales-table sellers-table"><thead><tr><th>Seller</th><th>Qty Sold</th><th>Seller Price Total</th><th>Interest Total</th><th>Overall</th></tr></thead><tbody>${rows.map(sellerRow).join('')}</tbody><tfoot><tr><td class="seller-cell"><strong>All sellers</strong></td>${figures(t,SELLER_LABELS)}</tr></tfoot></table></div>`
     :`<p class="muted" style="padding:20px 0">No sales yet. Put a seller name on each product and their totals will appear here as orders come in.</p>`;
   const modal=openDashboardModal({id:'sellersModal',eyebrow:'Overview',title:'Sellers',body,
-    footnote:`Only orders marked Paid are counted; cancelled orders never are. Products with no seller name are gathered under &ldquo;${esc(NO_SELLER)}&rdquo;.${owedFootnote(rows)}`,
+    footnote:`Only orders marked Paid are counted; cancelled orders never are. Products with no seller name are gathered under &ldquo;${esc(NO_SELLER)}&rdquo;. Each seller's "Copy seller link" makes a link that shows only their figures — safer than the one shared link that shows everything.${owedFootnote(rows)}`,
     opener:'openSellers'});
   modal.querySelectorAll('.seller-toggle').forEach(b=>b.onclick=()=>{
     const panel=document.getElementById(b.getAttribute('aria-controls'));
     const open=b.getAttribute('aria-expanded')==='true';
     b.setAttribute('aria-expanded',String(!open));
     panel.hidden=open;
+  });
+  /* Per-seller links: each seller gets a token that scopes the seller page to
+     their own figures, instead of everyone sharing the one link that sees all. */
+  modal.querySelectorAll('[data-seller-link]').forEach(b=>b.onclick=async()=>{
+    const name=b.dataset.sellerLink;
+    b.disabled=true;
+    try{
+      const {data,error}=await db.from('seller_tokens').upsert({seller_name:name},{onConflict:'seller_name'}).select('token').single();
+      if(error)throw error;
+      const url=`${location.origin}${location.pathname.replace(/[^/]*$/,'')}seller.html?t=${encodeURIComponent(data.token)}`;
+      try{await navigator.clipboard.writeText(url);b.textContent='Copied ✓'}
+      catch(_){prompt('Copy this seller link:',url);b.textContent='Copy seller link'}
+      setTimeout(()=>{b.textContent='Copy seller link'},2000);
+    }catch(err){alert(err?.message||'Could not make the seller link.')}
+    b.disabled=false;
   });
 }
 
@@ -530,7 +568,9 @@ function uploadSizeProblem(file){
               :' Please use a smaller image.');
 }
 async function compressImage(file){
-  if(!file.type?.startsWith('image/')||file.type==='image/gif'||file.type==='image/svg+xml')return file;
+  /* SVG is rejected outright: it can carry scripts, and these buckets are public. */
+  if(file.type==='image/svg+xml')throw new Error('SVG images are not allowed. Please choose a JPG, PNG, or WEBP file.');
+  if(!file.type?.startsWith('image/')||file.type==='image/gif')return file;
   let bitmap;
   try{bitmap=await createImageBitmap(file)}catch{return file}
   const scale=Math.min(1,IMAGE_MAX_SIDE/Math.max(bitmap.width,bitmap.height));
@@ -547,6 +587,7 @@ async function compressImage(file){
 }
 async function uploadImage(file,bucket='product-images'){
   if(!file)return null;
+  if(String(file.type||'').toLowerCase()==='image/svg+xml')throw new Error('SVG images are not allowed. Please choose a JPG, PNG, or WEBP file.');
   const prepared=await compressImage(file);
   /* Checked after compressing, so a big JPEG that shrinks under the cap is still
      accepted; a GIF or SVG skipped the re-encode and is measured as picked. */
@@ -665,8 +706,12 @@ window.moveProduct=(id,d)=>reorder('products',A.data.products,id,d);
 /* ========================================================================
    Categories
    ======================================================================== */
-function categories(m){m.innerHTML=`<span class="eyebrow">Menu structure</span><h2>Categories</h2><div class="admin-grid"><div class="panel">${A.data.categories.map(c=>`<div class="summary-row"><strong>${esc(c.name)}</strong><div class="row-actions"><button onclick="renameCategory('${c.id}')">Rename</button><button onclick="moveCategory('${c.id}',-1)">↑</button><button onclick="moveCategory('${c.id}',1)">↓</button><button onclick="deleteCategory('${c.id}')">Delete</button></div></div>`).join('')}</div><form id="catForm" class="panel admin-form"><input name="name" placeholder="New category name" required><button class="primary-btn">Add Category</button></form></div>`;document.getElementById('catForm').onsubmit=async e=>{e.preventDefault();const name=new FormData(e.currentTarget).get('name');const {error}=await db.from('categories').insert({name,sort_order:nextSortOrder(A.data.categories)});if(error)return alert(error.message);await loadAll();renderShell()}}
-window.renameCategory=async id=>{const c=A.data.categories.find(x=>x.id===id),n=prompt('Category name',c.name);if(!n)return;const {error}=await db.from('categories').update({name:n}).eq('id',id);if(error)return alert(error.message);await loadAll();renderShell()};window.deleteCategory=async id=>{if(A.data.products.some(p=>p.category_id===id))return alert('Move or delete products in this category first.');if(!confirm('Delete category?'))return;const {error}=await db.from('categories').delete().eq('id',id);if(error)return alert(error.message);await loadAll();renderShell()};window.moveCategory=(id,d)=>reorder('categories',A.data.categories,id,d);
+function categories(m){m.innerHTML=`<span class="eyebrow">Menu structure</span><h2>Categories</h2><div class="admin-grid"><div class="panel">${A.data.categories.map(c=>`<div class="summary-row" data-cat="${c.id}"><strong class="cat-name">${esc(c.name)}</strong><form class="cat-rename-form" hidden><input name="name" value="${esc(c.name)}" required maxlength="80" aria-label="Category name"><button class="primary-btn">Save</button><button type="button" data-cancel-rename>Cancel</button></form><div class="row-actions"><button onclick="renameCategory('${c.id}')">Rename</button><button onclick="moveCategory('${c.id}',-1)">↑</button><button onclick="moveCategory('${c.id}',1)">↓</button><button onclick="deleteCategory('${c.id}')">Delete</button></div></div>`).join('')}</div><form id="catForm" class="panel admin-form"><input name="name" placeholder="New category name" required><button class="primary-btn">Add Category</button></form></div>`;document.getElementById('catForm').onsubmit=async e=>{e.preventDefault();const name=new FormData(e.currentTarget).get('name');const {error}=await db.from('categories').insert({name,sort_order:nextSortOrder(A.data.categories)});if(error)return alert(error.message);await loadAll();renderShell()};
+m.querySelectorAll('.cat-rename-form').forEach(f=>{
+  f.onsubmit=async e=>{e.preventDefault();const row=f.closest('[data-cat]');const n=String(new FormData(f).get('name')||'').trim();if(!n)return;const {error}=await db.from('categories').update({name:n}).eq('id',row.dataset.cat);if(error)return alert(error.message);await loadAll();renderShell()};
+  f.querySelector('[data-cancel-rename]').onclick=()=>{const row=f.closest('[data-cat]');row.querySelector('.cat-name').hidden=false;f.hidden=true};
+});}
+window.renameCategory=id=>{const row=document.querySelector(`[data-cat="${CSS.escape(id)}"]`);if(!row)return;const nameEl=row.querySelector('.cat-name'),form=row.querySelector('.cat-rename-form');const show=form.hidden;form.hidden=!show;nameEl.hidden=show;if(show){form.name.value=nameEl.textContent;form.name.focus();form.name.select()}};window.deleteCategory=async id=>{if(A.data.products.some(p=>p.category_id===id))return alert('Move or delete products in this category first.');if(!confirm('Delete category?'))return;const {error}=await db.from('categories').delete().eq('id',id);if(error)return alert(error.message);await loadAll();renderShell()};window.moveCategory=(id,d)=>reorder('categories',A.data.categories,id,d);
 
 /* ========================================================================
    Orders: the list, one order's detail, and the Google Sheet it mirrors
@@ -685,7 +730,8 @@ function receiptUrlFor(order){
   if(order.receipt_url)return String(order.receipt_url);
   if(order.payment_method!=='QR Payment')return '';
   if(!GOOGLE_SHEETS_WEB_APP_URL)return '';
-  return GOOGLE_SHEETS_WEB_APP_URL+'?action=receipt&order_code='+encodeURIComponent(order.order_code||'');
+  const tok=scriptToken();
+  return GOOGLE_SHEETS_WEB_APP_URL+'?action=receipt&order_code='+encodeURIComponent(order.order_code||'')+(tok?'&token='+encodeURIComponent(tok):'');
 }
 function openOrderDetails(id){
   const o=(A.data.orders||[]).find(x=>x.id===id);
@@ -706,7 +752,10 @@ function openOrderDetails(id){
     ${field('Preferred date',o.preferred_date)}
     ${field('Payment method',o.payment_method)}
     ${field('Payment status',o.payment_status||'Pending')}
-    ${field('Order status',o.status)}
+    <dt>Order status</dt><dd>${o.status==='Cancelled'
+      ?'<span class="order-cancelled-tag">Cancelled</span>'
+      :`<select id="orderStatusSelect" aria-label="Order status">${['New','Preparing','Ready','Delivered','Completed','Cancelled'].map(s=>`<option value="${s}"${o.status===s?' selected':''}>${s}</option>`).join('')}</select> <span class="muted" id="orderStatusHint"></span>`}
+    </dd>
     ${o.cancellation_reason?field('Cancellation reason',o.cancellation_reason):''}
     ${o.cancelled_at?field('Cancelled at',new Date(o.cancelled_at).toLocaleString()):''}
     ${o.note?field('Customer note',o.note):''}
@@ -721,6 +770,18 @@ function openOrderDetails(id){
   document.getElementById('closeOrderDetail').onclick=close;
   modal.addEventListener('click',e=>{if(e.target===modal)close()});
   document.addEventListener('keydown',onKey);
+  const statusSel=document.getElementById('orderStatusSelect');
+  if(statusSel)statusSel.onchange=async()=>{
+    const next=statusSel.value,prev=o.status;
+    if(next===prev)return;
+    if(next==='Cancelled'&&!confirm(`Cancel Order #${o.order_code}?\n\nIts items return to stock and any coupon value is given back to the customer. This cannot be undone.`)){statusSel.value=prev;return}
+    statusSel.disabled=true;
+    const hint=document.getElementById('orderStatusHint');if(hint)hint.textContent='Saving…';
+    const {data,error}=await db.rpc('admin_set_order_status',{p_order_id:o.id,p_status:next});
+    statusSel.disabled=false;
+    if(error||!data?.ok){if(hint)hint.textContent='';statusSel.value=prev;alert(error?.message||data?.error||'Could not update the order status.');return}
+    close();await loadAll();renderShell();openOrderDetails(id);
+  };
   document.getElementById('closeOrderDetail').focus();
 }
 
@@ -738,7 +799,7 @@ function orders(m){
   const draw=()=>{
     const t=document.getElementById('orderSearch').value.toLowerCase();
     const rows=A.data.orders.filter(o=>{
-      const matchesSearch=`${o.order_code||''} ${o.customer_name||''} ${o.phone||''}`.toLowerCase().includes(t);
+      const matchesSearch=`${o.order_code||''} ${o.customer_name||''} ${o.phone||''} ${o.email||''}`.toLowerCase().includes(t);
       const matchesFilter=A.orderFilter==='all'||((o.payment_status||'Pending')===A.orderFilter);
       return matchesSearch&&matchesFilter;
     });
@@ -759,12 +820,12 @@ function orders(m){
   document.getElementById('orderSearch').oninput=e=>{A.orderSearch=e.target.value;draw();syncBulk()};
   draw();syncBulk();
 }
-async function syncAdminOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL||!order)return;/* Same shape the storefront writes. Without the choices, marking an order Paid
+async function syncAdminOrderToGoogleSheet(order){if(!GOOGLE_SHEETS_WEB_APP_URL||!order)return;/* Same shape the storefront writes. Without the choices, marking an order Paid
      would rewrite its Sheet row and quietly drop what the customer picked. */
-  const items=(order.order_items||order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||''};await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(err){console.warn('Google Sheets admin sync failed:',err)}}
+  const items=(order.order_items||order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||''};if(!(await postToScript(payload))){queueAdminGoogleOp(payload);alert('Order updated, but the Google Sheet sync failed. It will retry automatically on your next visit.')}}
 window.updatePaymentStatus=async(id,status)=>{const {error}=await db.from('orders').update({payment_status:status}).eq('id',id);if(error)return alert(error.message);const o=A.data.orders.find(x=>x.id===id);if(o){o.payment_status=status;await syncAdminOrderToGoogleSheet(o)}orders(document.getElementById('adminMain'))};
-async function deleteOrderFromGoogleSheet(orderCode){try{if(!GOOGLE_SHEETS_WEB_APP_URL||!orderCode)return;await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'delete_order',order_code:orderCode})})}catch(err){console.warn('Google Sheets/Drive delete sync failed:',err)}}
-async function deleteAllOrdersFromGoogleServices(){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'delete_all_orders'})})}catch(err){console.warn('Google Sheets/Drive bulk delete sync failed:',err)}}
+async function deleteOrderFromGoogleSheet(orderCode){if(!GOOGLE_SHEETS_WEB_APP_URL||!orderCode)return;const payload={action:'delete_order',order_code:orderCode};if(!(await postToScript(payload)))queueAdminGoogleOp(payload)}
+async function deleteAllOrdersFromGoogleServices(){if(!GOOGLE_SHEETS_WEB_APP_URL)return;const payload={action:'delete_all_orders'};if(!(await postToScript(payload)))queueAdminGoogleOp(payload)}
 window.deleteOrder=async id=>{const o=A.data.orders.find(x=>x.id===id);if(!o)return alert('Order not found.');if(!confirm(`Delete Order #${o.order_code} permanently? This will also delete its Google Sheet row and matching payment receipt from Google Drive.`))return;const {error}=await db.from('orders').delete().eq('id',id);if(error)return alert(error.message);await deleteOrderFromGoogleSheet(o.order_code);await loadAll();renderShell()};async function deleteAllOrders(){if(!A.data.orders.length)return alert('There are no orders to delete.');if(!confirm(`Delete ALL ${A.data.orders.length} customer orders? This cannot be undone. It will also remove all matching Google Sheet rows and payment receipt files from Google Drive.`))return;if(prompt('Type DELETE ALL ORDERS to confirm:')!=='DELETE ALL ORDERS')return alert('Delete All cancelled.');const ids=A.data.orders.map(o=>o.id);const {error}=await db.from('orders').delete().in('id',ids);if(error)return alert(error.message);await deleteAllOrdersFromGoogleServices();A.orderFilter='all';await loadAll();renderShell();alert('All customer orders, matching Google Sheet rows, and matching Google Drive receipts have been deleted.');}
 /* ========================================================================
    Customer messages

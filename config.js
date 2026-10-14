@@ -18,6 +18,13 @@ window.BILIHAN_CONFIG = {
      Script itself must validate every request. Leave empty to turn the sync off. */
   GOOGLE_SHEETS_WEB_APP_URL: 'https://script.google.com/macros/s/AKfycbwDiNU-R9HQDL79QlO6kObtnpS7XCxc2_xoHL3Dk1becwEEjPtAx43WZcUpNWDW3L35/exec',
 
+  /* Shared secret for the Google Apps Script (audit fix #4). The site sends this
+     with every call to the script above; the script must be patched to require it
+     (see apps-script/AUTH-PATCH.md). Pick a long random string and keep it the
+     same in both places. Until both sides are set, the site simply omits it and
+     the script keeps its current behaviour. */
+  GOOGLE_APPS_SCRIPT_TOKEN: '',
+
   /* Privacy-first analytics. Disabled until you fill this in.
      Plausible and Umami are cookieless and need no consent banner; GA4 sets
      cookies, so use it only if you are comfortable without one.

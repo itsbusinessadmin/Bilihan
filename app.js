@@ -1,5 +1,5 @@
 const GOOGLE_SHEETS_WEB_APP_URL = (window.BILIHAN_CONFIG||{}).GOOGLE_SHEETS_WEB_APP_URL || '';
-const LS = { cart:'bilihan_cart_v3', theme:'bilihan_theme_v3', skin:'bilihan_skin_v1', latestOrder:'bilihan_latest_order_v3', orders:'bilihan_orders_v1', cache:'bilihan_cache_v3', pendingCancel:'bilihan_pending_cancel_v3', productView:'bilihan_product_view_v1', lastOrderAt:'bilihan_last_order_at_v1' };
+const LS = { cart:'bilihan_cart_v3', theme:'bilihan_theme_v3', skin:'bilihan_skin_v1', latestOrder:'bilihan_latest_order_v3', orders:'bilihan_orders_v1', cache:'bilihan_cache_v3', pendingCancel:'bilihan_pending_cancel_v3', productView:'bilihan_product_view_v1', lastOrderAt:'bilihan_last_order_at_v1', pendingReceipts:'bilihan_pending_receipts_v1', pendingSheetSyncs:'bilihan_pending_sheet_syncs_v1' };
 const TITLE_SUFFIX='Order Food Online for Pickup or Delivery';
 /* Order cooldown and form dwell time: cheap client-side deterrents against bots and
    accidental double submissions. Server-side limits still belong in Supabase. */
@@ -44,7 +44,7 @@ async function bootstrap(){
     state.data={categories,products,settings,
       variantGroups:vge?[]:(variantGroups||[]),variantOptions:voe?[]:(variantOptions||[])};state.online=true;localStorage.setItem(LS.cache,JSON.stringify(state.data));
   }catch(e){console.error(e);state.online=false;state.data=safeJsonParse(localStorage.getItem(LS.cache),null)||structuredClone(FALLBACK)}
-  renderAll();retryPendingCancel();
+  renderAll();retryPendingCancel();retryPendingReceipts();retryPendingSheetSyncs();
 }
 function renderSkeletons(){$('menuGrid').innerHTML=Array.from({length:8},()=>'<div class="skeleton"></div>').join('')}
 /* The browser chrome colour follows the design's own --bg token rather than a
@@ -232,7 +232,7 @@ function renderCategories(){
   if(!sel.value){state.category='all';sel.value='all'}
   bindCategorySelect();
 }
-function bindCategorySelect(){const sel=$('categorySelect');if(!sel||sel.dataset.bound)return;sel.dataset.bound='1';sel.addEventListener('change',()=>{state.category=sel.value;renderProducts()})}
+function bindCategorySelect(){const sel=$('categorySelect');if(!sel||sel.dataset.bound)return;sel.dataset.bound='1';sel.addEventListener('change',()=>{state.category=sel.value;renderProducts()});const search=$('productSearch');if(search&&!search.dataset.bound){search.dataset.bound='1';search.addEventListener('input',()=>{state.search=search.value;renderProducts()})}}
 function renderViewSwitch(){const grid=$('gridViewBtn'),list=$('listViewBtn'),menu=$('menuGrid');if(!grid||!list||!menu)return;const isList=state.productView==='list';menu.classList.toggle('list-view',isList);grid.classList.toggle('active',!isList);list.classList.toggle('active',isList);grid.setAttribute('aria-pressed',String(!isList));list.setAttribute('aria-pressed',String(isList));grid.onclick=()=>setProductView('grid');list.onclick=()=>setProductView('list')}
 function setProductView(view){state.productView=view==='list'?'list':'grid';localStorage.setItem(LS.productView,state.productView);renderViewSwitch()}
 /* A product picture that shows its own loading state. Until the file arrives the
@@ -290,7 +290,8 @@ function applyStockUpdate(row){
       let line=bottom.querySelector('.stock');
       if(showStock||sold){
         if(!line){line=document.createElement('div');line.className='stock';bottom.prepend(line)}
-        line.textContent=sold?'Sold Out':p.stock<=5?`Only ${p.stock} left!`:`${p.stock} available`;
+        const left=Math.max(0,p.stock-cartQtyFor(p.id));
+        line.textContent=sold?'Sold Out':left<=5?`Only ${left} left!`:`${left} available`;
         line.classList.toggle('sold',sold);
       }else if(line)line.remove();
       /* The add button goes when it sells out and comes back when it returns. */
@@ -326,17 +327,17 @@ function watchStock(){
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!live)bootstrap()});
 }
 
-function renderProducts(){const showStock=state.data.settings?.show_stock!==false;const ps=(state.data.products||[]).filter(p=>state.category==='all'||p.category_id===state.category).sort((a,b)=>a.sort_order-b.sort_order);const allSold=ps.length&&ps.every(p=>!p.is_available||p.stock<=0);const empty=!ps.length?'<div class="empty-state"><h3>No products here yet</h3><p>Try another category or check back soon.</p></div>':'';$('menuGrid').innerHTML=empty+(allSold?'<div class="status-banner" style="grid-column:1/-1">We’re currently sold out. Please check back again soon!</div>':'')+ps.map(p=>{const sold=!p.is_available||p.stock<=0;const stock=sold?'Sold Out':p.stock<=5?`Only ${p.stock} left!`:`${p.stock} available`;const stockHtml=(showStock||sold)?`<div class="stock ${sold?'sold':''}">${stock}</div>`:'';const addButton=sold?'':`<button class="product-card-add" type="button" data-add-id="${p.id}" aria-label="Add ${esc(p.name)} to cart" title="Add to cart"><img class="ui-icon" src="ios-icons/add-to-cart.svg" alt="" aria-hidden="true"></button>`;return `<article class="product-card" data-id="${p.id}">${productImageHtml(p,'product-card-image','loading="lazy" decoding="async"')}<div class="product-info"><div class="product-row"><strong>${esc(p.name)}</strong><span class="price">${money(p.price)}</span></div><div class="product-card-bottom">${stockHtml}${addButton}</div></div></article>`}).join('');settleProductImages($('menuGrid'));bindMenuGrid()}
+function renderProducts(){const showStock=state.data.settings?.show_stock!==false;const q=String(state.search||'').trim().toLowerCase();const ps=(state.data.products||[]).filter(p=>(state.category==='all'||p.category_id===state.category)&&(!q||`${p.name||''} ${p.description||''}`.toLowerCase().includes(q))).sort((a,b)=>a.sort_order-b.sort_order);const allSold=ps.length&&ps.every(p=>!p.is_available||p.stock<=0);const empty=!ps.length?(q?'<div class="empty-state"><h3>No matches</h3><p>Try a different search or category.</p></div>':'<div class="empty-state"><h3>No products here yet</h3><p>Try another category or check back soon.</p></div>'):'';$('menuGrid').innerHTML=empty+(allSold?'<div class="status-banner" style="grid-column:1/-1">We’re currently sold out. Please check back again soon!</div>':'')+ps.map(p=>{const sold=!p.is_available||p.stock<=0;const left=Math.max(0,p.stock-cartQtyFor(p.id));const stock=sold?'Sold Out':left<=5?`Only ${left} left!`:`${left} available`;const stockHtml=(showStock||sold)?`<div class="stock ${sold?'sold':''}">${stock}</div>`:'';const addButton=sold?'':`<button class="product-card-add" type="button" data-add-id="${p.id}" aria-label="Add ${esc(p.name)} to cart" title="Add to cart"><img class="ui-icon" src="ios-icons/add-to-cart.svg" alt="" aria-hidden="true"></button>`;return `<article class="product-card" data-id="${p.id}">${productImageHtml(p,'product-card-image','loading="lazy" decoding="async"')}<div class="product-info"><div class="product-row"><strong>${esc(p.name)}</strong><span class="price">${money(p.price)}</span></div><div class="product-card-bottom">${stockHtml}${addButton}</div></div></article>`}).join('');settleProductImages($('menuGrid'));bindMenuGrid()}
 /* One delegated listener for the whole grid, attached once. The previous version
    re-bound two handlers per card on every render, which got slower with the
    catalogue and left the old closures behind each time. */
 function bindMenuGrid(){const grid=$('menuGrid');if(!grid||grid.dataset.bound)return;grid.dataset.bound='1';grid.addEventListener('click',e=>{const add=e.target.closest('.product-card-add');if(add){quickAddToCart(add.dataset.addId,e,add);return}const card=e.target.closest('.product-card');if(card)openProduct(card.dataset.id)})}
-function quickAddToCart(id,event,button){event?.stopPropagation();const p=state.data.products.find(x=>x.id===id);if(!p||!p.is_available||p.stock<=0)return;
+function quickAddToCart(id,event,button){event?.stopPropagation();const p=state.data.products.find(x=>x.id===id);if(!p||!p.is_available||p.stock<=0){toast('Sorry, this item is sold out.');return};
   /* A product with choices cannot be added from the card: the card has nowhere to
      ask which size or flavour, and guessing one on the customer's behalf is worse
      than opening the product. */
   if(variantGroupsFor(id).length)return openProduct(id);
-  const ex=state.cart.find(x=>x.productId===id&&!(x.optionIds||[]).length);const current=ex?.qty||0;if(current>=p.stock){toast('Maximum available stock reached');return}if(ex)ex.qty+=1;else state.cart.push({productId:id,qty:1,price:+p.price,name:p.name,image:p.image_url});saveCart();const btn=button||event?.currentTarget;if(btn?.classList){btn.classList.add('added');setTimeout(()=>btn.classList.remove('added'),350)}toast('Added to cart ✓')}
+  const ex=state.cart.find(x=>x.productId===id&&!(x.optionIds||[]).length);const current=cartQtyFor(id);if(current>=p.stock){toast('Maximum available stock reached');return}if(ex)ex.qty+=1;else state.cart.push({productId:id,qty:1,price:+p.price,name:p.name,image:p.image_url});saveCart();const btn=button||event?.currentTarget;if(btn?.classList){btn.classList.add('added');setTimeout(()=>btn.classList.remove('added'),350)}toast('Added to cart ✓')}
 /* What a product asks the customer, in the order the shop arranged it. */
 function variantGroupsFor(productId){
   return (state.data?.variantGroups||[]).filter(g=>g.product_id===productId)
@@ -358,6 +359,12 @@ function variantGroupsFor(productId){
 const pesos=n=>Math.round((Number(n)||0)*100)/100;
 /* Comparing two amounts is the same question asked in whole centavos. */
 const samePesos=(a,b)=>Math.round((Number(a)||0)*100)===Math.round((Number(b)||0)*100);
+/* Philippine wall-clock date (YYYY-MM-DD). toISOString() is UTC, which is a day
+   behind Manila between midnight and 8am; order dates must not say "yesterday". */
+const phDateStr=(d=new Date())=>new Date(d.getTime()+8*3600*1000).toISOString().slice(0,10);
+/* Total quantity of one product across every cart line. One product can sit on
+   several lines (a Large and a Regular), so per-line counts under-guard stock. */
+const cartQtyFor=productId=>state.cart.reduce((s,i)=>s+(i.productId===productId?Number(i.qty||0):0),0);
 
 /* An option left at zero changes nothing, whichever mode its group is in. It only
    adds to the price, or stands in for it, when the shop has actually put an amount
@@ -381,7 +388,7 @@ function missingRequired(groups,chosenIds){
 /* Two of the same product with different choices are two different cart lines. */
 const cartKey=(productId,ids)=>productId+'|'+[...ids].sort().join(',');
 
-function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=state.cart.find(x=>x.productId===id)?.qty||0;const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').dataset.productId=id;$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${p.stock<=5?`Only ${p.stock} left!`:`${p.stock} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));$('productDialog').showModal();let q=1;
+function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=cartQtyFor(id);const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').dataset.productId=id;$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${max<=5?`Only ${max} left!`:`${max} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));$('productDialog').showModal();let q=1;
   const groups=variantGroupsFor(id);
   let chosen=[];
   const priceEl=$('productDialog').querySelector('.product-modal-grid h3');
@@ -437,7 +444,7 @@ function renderCart(){
   settleProductImages($('cartItems'));
   $('cartItems').querySelectorAll('button').forEach(b=>b.onclick=()=>cartAction(b.dataset.a,+b.dataset.i));$('checkoutBtn').onclick=openCheckout;
 }
-async function cartAction(a,i){const item=state.cart[i];if(a==='minus')item.qty=Math.max(1,item.qty-1);if(a==='plus'){const p=state.data.products.find(p=>p.id===item.productId);if(item.qty<(p?.stock||0))item.qty++;else toast('Maximum available stock reached')}if(a==='remove'&&confirm('Remove this item from your cart?'))state.cart.splice(i,1);saveCart()}
+async function cartAction(a,i){const item=state.cart[i];if(!item)return;if(a==='minus')item.qty=Math.max(1,item.qty-1);if(a==='plus'){const p=state.data.products.find(p=>p.id===item.productId);if(cartQtyFor(item.productId)<(p?.stock||0))item.qty++;else toast('Maximum available stock reached')}if(a==='remove'&&confirm('Remove this item from your cart?'))state.cart.splice(i,1);saveCart()}
 function openCart(){const d=$('cartDrawer');d.classList.add('open');d.setAttribute('aria-hidden','false');d.removeAttribute('inert');$('backdrop').classList.remove('hidden');$('closeCart').focus()}
 function closeCart(){const d=$('cartDrawer');d.classList.remove('open');d.setAttribute('aria-hidden','true');d.setAttribute('inert','');$('backdrop').classList.add('hidden')}
 $('cartBtn').onclick=openCart;$('closeCart').onclick=closeCart;$('backdrop').onclick=closeCart;
@@ -470,22 +477,40 @@ function syncBottomNav(id){
   syncBottomNav('home');
 })();
 function validateCartAgainstLive(live){
-  let changed=false, invalid=[];
+  let changed=false,dropBadChoices=false;const invalid=[];
   /* One product can sit on several lines now, a Large and a Regular of the same
-     thing, so stock is checked against what the whole cart asks for rather than
-     line by line. This is the same sum place_order does. */
-  const wanted=new Map();
-  for(const item of state.cart)wanted.set(item.productId,(wanted.get(item.productId)||0)+Number(item.qty||0));
-  const flagged=new Set();
+     thing, so stock is allocated across the whole cart for a product rather than
+     line by line. This is the same sum place_order does. Lines for products that
+     vanished or were disabled are removed outright; lines asking for more than
+     remains are cut down to what is left. Either way the customer is told. */
+  const allocated=new Map();
+  const keep=[];
   for(const item of state.cart){
     const p=live.products.find(x=>x.id===item.productId);
-    if(!p){invalid.push(`${item.name} is no longer available.`);changed=true;continue}
-    if((!p.is_available||p.stock<wanted.get(item.productId))&&!flagged.has(p.id)){
-      flagged.add(p.id);invalid.push(`${item.name} no longer has enough stock.`);changed=true;
+    if(!p||!p.is_available){
+      invalid.push(`${item.name} is no longer available, so it was removed from your cart.`);
+      changed=true;continue;
     }
+    const already=allocated.get(item.productId)||0;
+    const canTake=Math.max(0,p.stock-already);
+    if(canTake<=0){
+      invalid.push(`${item.name} no longer has enough stock, so it was removed from your cart.`);
+      changed=true;continue;
+    }
+    if(Number(item.qty||0)>canTake){
+      item.qty=canTake;
+      invalid.push(`${item.name} only has ${canTake} left, so your quantity was reduced.`);
+      changed=true;
+    }
+    allocated.set(item.productId,already+Number(item.qty||0));
+    keep.push(item);
+  }
+  state.cart=keep;
+  for(const item of state.cart){
     const expected=livePriceForLine(item,live);
     if(expected===null){
-      invalid.push(`${item.name}: one of your choices is no longer available. Please open it and choose again.`);changed=true;
+      invalid.push(`${item.name}: one of your choices is no longer available, so it was removed from your cart.`);
+      changed=true;dropBadChoices=true;
     }else if(!samePesos(expected,item.price)){
       item.price=expected;invalid.push(`${item.name} price was updated.`);changed=true;
     }else if(expected!==+item.price){
@@ -494,6 +519,7 @@ function validateCartAgainstLive(live){
       item.price=expected;changed=true;
     }
   }
+  if(dropBadChoices)state.cart=state.cart.filter(item=>livePriceForLine(item,live)!==null);
   if(changed)saveCart();
   return invalid;
 }
@@ -524,7 +550,49 @@ function livePriceForLine(item,live){
   }
   return gone?null:pesos(Math.max(0,base+add));
 }
-async function syncOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return;const items=(order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',coupon_code:order.coupon_code||'',coupon_discount:Number(order.coupon_discount||0),store_name:realSetting(state.data.settings?.business_name)||'Bilihan',pickup_location:realSetting(state.data.settings?.pickup_location)||'',store_email:realSetting(state.data.settings?.email)||''};await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)})}catch(err){console.warn('Google Sheets sync failed:',err)}}
+/* Failed Google uploads are queued in localStorage and retried on the next
+   visit. The Apps Script endpoint answers with mode:'no-cors', so only a
+   network-level failure can be detected — but that is exactly the case where
+   a retry helps, and the customer is told instead of left guessing. */
+const MAX_QUEUED_RECEIPT_B64=1200000;
+function readQueue(key){const q=safeJsonParse(localStorage.getItem(key),null);return Array.isArray(q)?q:[]}
+function writeQueue(key,list){try{localStorage.setItem(key,JSON.stringify(list))}catch(e){/* storage full or blocked: the session still works */}}
+function scriptToken(){const t=(window.BILIHAN_CONFIG||{}).GOOGLE_APPS_SCRIPT_TOKEN||'';return t}
+async function queuePendingReceipt(order,file,cachedBase64){
+  try{
+    const b64=cachedBase64||await fileToBase64(file);
+    if(!b64||b64.length>MAX_QUEUED_RECEIPT_B64){toast('Order placed. Please send your payment receipt to the store directly.');return}
+    const q=readQueue(LS.pendingReceipts).filter(r=>r.order_code!==order.order_code);
+    q.push({order_code:order.order_code,file_name:file.name,mime_type:file.type,file_base64:b64,ts:Date.now()});
+    writeQueue(LS.pendingReceipts,q);
+  }catch(e){console.warn('Could not queue receipt:',e)}
+}
+async function retryPendingReceipts(){
+  if(!GOOGLE_SHEETS_WEB_APP_URL)return;
+  const q=readQueue(LS.pendingReceipts);if(!q.length)return;
+  const rest=[];
+  for(const r of q){
+    try{
+      const payload={action:'upload_receipt',order_code:r.order_code,file_name:r.file_name,mime_type:r.mime_type,file_base64:r.file_base64};
+      const tok=scriptToken();if(tok)payload.token=tok;
+      await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload),cache:'no-store'});
+    }catch(e){rest.push(r)}
+  }
+  writeQueue(LS.pendingReceipts,rest);
+  return q.length-rest.length;
+}
+function hasPendingReceipt(orderCode){return readQueue(LS.pendingReceipts).some(r=>r.order_code===orderCode)}
+function queueSheetSync(order){
+  syncOrderToGoogleSheet(order).then(ok=>{if(ok)return;const q=readQueue(LS.pendingSheetSyncs);q.push({order,ts:Date.now()});writeQueue(LS.pendingSheetSyncs,q.slice(-20))});
+}
+async function retryPendingSheetSyncs(){
+  if(!GOOGLE_SHEETS_WEB_APP_URL)return;
+  const q=readQueue(LS.pendingSheetSyncs);if(!q.length)return;
+  const rest=[];
+  for(const e of q){try{if(!(await syncOrderToGoogleSheet(e.order)))rest.push(e)}catch(_){rest.push(e)}}
+  writeQueue(LS.pendingSheetSyncs,rest);
+}
+async function syncOrderToGoogleSheet(order){try{if(!GOOGLE_SHEETS_WEB_APP_URL)return true;const items=(order.items||[]).map(i=>{const v=(i.variants||[]).map(x=>x.label).join(', ');return `${i.product_name}${v?` (${v})`:''} x ${i.qty}`}).join(', ');const payload={order_id:order.id||order.order_id||order.order_code,order_code:order.order_code||'',order_date:order.created_at||new Date().toISOString(),customer_name:order.customer_name||'',phone:order.phone||'',email:order.email||'',fulfillment:order.fulfillment||'',address:order.address||'',preferred_date:order.preferred_date||'',payment_method:order.payment_method||'',items:items,subtotal:Number(order.subtotal??order.total??0),delivery_fee:Number(order.delivery_fee||0),total:Number(order.total||0),payment_status:order.payment_status||'Pending',order_status:order.status||'Pending',cancellation_reason:order.cancellation_reason||'',coupon_code:order.coupon_code||'',coupon_discount:Number(order.coupon_discount||0),store_name:realSetting(state.data.settings?.business_name)||'Bilihan',pickup_location:realSetting(state.data.settings?.pickup_location)||'',store_email:realSetting(state.data.settings?.email)||''};const tok=scriptToken();if(tok)payload.token=tok;await fetch(GOOGLE_SHEETS_WEB_APP_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});return true}catch(err){console.warn('Google Sheets sync failed:',err);return false}}
 function fileToBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');reader.onerror=()=>reject(new Error('Unable to read receipt file.'));reader.readAsDataURL(file)})}
 function formatFileSize(bytes){if(bytes<1024)return `${bytes} B`;if(bytes<1024*1024)return `${(bytes/1024).toFixed(0)} KB`;return `${(bytes/1024/1024).toFixed(1)} MB`}
 /* Receipts are read, not admired: 1280px at a size budget keeps every digit
@@ -605,7 +673,7 @@ function openCheckout(){
   const paymentOptions=paymentValues.map(item=>`<option value="${item.value}">${item.label}</option>`).join('');
   if(!paymentValues.length){toast(isExplicitlyEnabled(s,'show_qr_payment')?'QR payment is not fully configured yet. Please contact the store.':'No payment method is available right now. Please contact the store.');return}
   const paymentField=paymentValues.length===1?`<div class="field"><span class="field-label">Payment</span><div class="choice-value">${esc(paymentValues[0].label)}</div><input type="hidden" name="payment" value="${esc(paymentValues[0].value)}"></div>`:`<label class="field"><span class="field-label">Payment *</span><select name="payment">${paymentOptions}</select></label>`;
-  const today=new Date().toISOString().slice(0,10);
+  const today=phDateStr();
   const minDate=availableFrom||today;
   const fixedDate=availableFrom||today;
   const availableLabel=availableFrom?new Date(availableFrom+'T00:00:00').toLocaleDateString('en-PH',{year:'numeric',month:'long',day:'numeric'}):'';
@@ -631,6 +699,12 @@ function openCheckout(){
   removeCouponBtn.onclick=()=>state.clearCouponUI('Coupon removed.');
   applyCouponBtn.onclick=async()=>{
     const msg=$('couponMsg');
+    /* Cheap client-side throttle: one check every couple of seconds. The code
+       space (8 chars) already makes brute force infeasible; this just stops
+       accidental hammering. */
+    const nowMs=Date.now();
+    if(nowMs-(state.lastCouponAttempt||0)<2000){msg.textContent='Please wait a moment before trying again.';return}
+    state.lastCouponAttempt=nowMs;
     const code=$('couponInput').value.trim().toUpperCase();
     if(!code){msg.textContent='Enter a coupon code first.';return}
     msg.textContent='Checking…';applyCouponBtn.disabled=true;
@@ -712,11 +786,11 @@ async function placeOrder(e){
   const isQr=d.payment==='QR Payment';const receiptFile=isQr?f._receiptPrepared:null;if(isQr&&!receiptFile){checkoutError('Please upload a JPG, PNG, WEBP, or PDF payment receipt before placing the order.');return}
   f.dataset.submitting='true';btn.disabled=true;btn.textContent='Creating order…';if(progress)progress.textContent='Creating order…';
   try{
-    const live=await fetchLiveProducts();const invalid=validateCartAgainstLive(live);if(invalid.length){checkoutError('Your cart changed while you were checking out. Please review it again.');$('checkoutDialog').close();openCart();toast('Cart updated. Please review before checkout.');return}
+    const live=await fetchLiveProducts();const invalid=validateCartAgainstLive(live);if(invalid.length){checkoutError('Your cart changed while you were checking out. Please review it again.');$('checkoutDialog').close();openCart();toast(invalid.length===1?invalid[0]:`${invalid.length} items in your cart changed. Please review before checkout.`);return}
     const fulfillment=d.fulfillment;const address=fulfillment==='Delivery'?String(d.address||'').trim()||null:null;
     if(fulfillment==='Delivery'&&!address){checkoutError('Delivery address is required.');f.address?.focus();return}
     const showPreferredDate=isExplicitlyEnabled(s,'show_preferred_date');const preferredDateMode=s.preferred_date_mode||'calendar';const availableFrom=s.order_available_from||'';
-    let preferredDate=d.preferredDate||availableFrom||new Date().toISOString().slice(0,10);if(showPreferredDate&&preferredDateMode==='calendar'&&availableFrom&&preferredDate<availableFrom)throw new Error('Please select a date on or after the available-from date.');
+    let preferredDate=d.preferredDate||availableFrom||phDateStr();if(showPreferredDate&&preferredDateMode==='calendar'&&availableFrom&&preferredDate<availableFrom)throw new Error('Please select a date on or after the available-from date.');
     const items=state.cart.map(i=>({product_id:i.productId,qty:i.qty,option_ids:i.optionIds||[]}));
     const {data,error}=await db.rpc('place_order',{p_customer_name:String(d.name||'').trim(),p_phone:phone||null,p_email:email||null,p_fulfillment:fulfillment,p_address:address,p_preferred_date:preferredDate,p_payment_method:d.payment,p_note:String(d.note||'').trim()||null,p_items:items,p_coupon_code:state.coupon?.code||null});
     if(error)throw error;
@@ -728,8 +802,8 @@ async function placeOrder(e){
        customer has no reason to wait behind, so none of it blocks the receipt.
        The upload was awaited before, even though mode:'no-cors' makes its
        response unreadable — the wait bought nothing but a slower checkout. */
-    if(isQr&&receiptFile)uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>console.warn('Receipt upload failed:',err));
-    syncOrderToGoogleSheet(order);
+    if(isQr&&receiptFile)uploadReceiptToGoogleDrive(order,receiptFile,f._receiptBase64).catch(err=>{console.warn('Receipt upload failed:',err);queuePendingReceipt(order,receiptFile,f._receiptBase64);toast('Order placed, but the receipt upload failed. We will keep trying in the background.')});
+    queueSheetSync(order);
     rememberOrder(order);localStorage.setItem(LS.lastOrderAt,String(Date.now()));
     state.cart=[];state.coupon=null;saveCart();$('checkoutDialog').close();
     showOrder(order);toast(`Order #${order.order_code} placed ✓`);track('order_placed');
@@ -794,11 +868,13 @@ function showOrderList(){
 
 function showOrder(order,opts){
   const cancelled=order.status==='Cancelled';
-  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status${cancelled?' is-cancelled':''}">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}${(i.variants||[]).length?`<small class="summary-variants">${i.variants.map(v=>esc(v.label)).join(' · ')}</small>`:''}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}${order.coupon_code?`<div class="summary-row coupon-line"><span>Coupon ${esc(order.coupon_code)}</span><strong>&minus;${money(order.coupon_discount||0)}</strong></div>`:''}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}<div class="contact-actions" style="margin-top:16px">${opts&&opts.fromList?'<button class="secondary-btn" id="backToOrders">&lsaquo; All orders</button>':''}<button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
+  $('orderDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="orderDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><span class="order-status${cancelled?' is-cancelled':''}">${cancelled?'Order cancelled':'Order confirmed'}</span><h2>#${esc(order.order_code)}</h2><p>${new Date(order.created_at).toLocaleString()}</p><div class="summary">${(order.items||[]).map(i=>`<div class="summary-row"><span>${esc(i.product_name)} × ${i.qty}${(i.variants||[]).length?`<small class="summary-variants">${i.variants.map(v=>esc(v.label)).join(' · ')}</small>`:''}</span><strong>${money(i.unit_price*i.qty)}</strong></div>`).join('')}${order.coupon_code?`<div class="summary-row coupon-line"><span>Coupon ${esc(order.coupon_code)}</span><strong>&minus;${money(order.coupon_discount||0)}</strong></div>`:''}<hr><div class="summary-row"><strong>Total</strong><strong>${money(order.total)}</strong></div><p>${esc(order.fulfillment)} · ${esc(order.preferred_date)} · ${esc(order.payment_method)}</p></div>${cancelled&&order.cancellation_reason?`<div class="status-banner" style="margin-top:14px"><strong>Cancellation reason:</strong> ${esc(order.cancellation_reason)}</div>`:''}${!cancelled&&order.payment_method==='QR Payment'&&hasPendingReceipt(order.order_code)?`<div class="status-banner" style="margin-top:14px">Your payment receipt is still uploading. <button type="button" class="secondary-btn" id="retryReceiptBtn" style="margin-left:8px">Try again now</button></div>`:''}<div class="contact-actions" style="margin-top:16px">${opts&&opts.fromList?'<button class="secondary-btn" id="backToOrders">&lsaquo; All orders</button>':''}<button class="secondary-btn" id="copyOrderNo">Copy Order Number</button><button class="secondary-btn" id="messageUsBtn">Message us</button><button class="primary-btn" id="continueBtn">Continue Shopping</button></div><p class="muted" style="margin:12px 0 0;font-size:var(--text-caption)">Need to change or cancel this order? Message us and we will sort it out.</p></div>`;
   if(!$('orderDialog').open)$('orderDialog').showModal();
   if($('backToOrders'))$('backToOrders').onclick=()=>showOrderList();
   $('copyOrderNo').onclick=async()=>{try{if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(order.order_code);else{const ta=document.createElement('textarea');ta.value=order.order_code;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}toast('Copied ✓')}catch{toast(`Order #${order.order_code}`)}};
   $('continueBtn').onclick=()=>$('orderDialog').close();
+  const retryReceiptBtn=$('retryReceiptBtn');
+  if(retryReceiptBtn)retryReceiptBtn.onclick=async()=>{retryReceiptBtn.disabled=true;const n=await retryPendingReceipts();if(!hasPendingReceipt(order.order_code)){toast('Receipt uploaded ✓');showOrder(order,opts)}else{retryReceiptBtn.disabled=false;toast(n?'Still trying. Please check your connection.':'The receipt is still queued and will retry automatically.')}};
   /* Cancelling is no longer self-service: the customer talks to the store instead. */
   $('messageUsBtn').onclick=()=>{$('orderDialog').close();if(window.BilihanSupport?.open)window.BilihanSupport.open();else toast('Chat is loading. Please try again in a moment.')};
 }
