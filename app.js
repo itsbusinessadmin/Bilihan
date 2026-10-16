@@ -471,9 +471,9 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
   if(groups.length&&$('variantPicker')){
     $('variantPicker').innerHTML=groups.map(g=>`<fieldset class="variant-field">
       <legend>${esc(g.label)}${g.is_required?' <span class="variant-required">Required</span>':' <span class="variant-optional">Optional</span>'}</legend>
-      <div class="variant-choices">${g.options.map(o=>hasQtyStepper(g,o)?`<div class="variant-choice variant-choice-qty" data-opt="${esc(o.id)}">
-        <span class="variant-choice-label">${esc(o.label)}</span>
-        ${hasAmount(o)?`<span class="variant-choice-price">+${money(o.amount)}</span>`:''}
+      <div class="variant-choices${g.options.some(o=>hasQtyStepper(g,o))?' is-list':''}">${g.options.map(o=>hasQtyStepper(g,o)?`<div class="variant-choice variant-choice-qty" data-opt="${esc(o.id)}">
+        <span class="variant-choice-text"><span class="variant-choice-label">${esc(o.label)}</span>
+        ${hasAmount(o)?`<span class="variant-choice-price">+${money(o.amount)}</span>`:''}</span>
         <span class="variant-stepper">
           <button type="button" data-step="-1" data-opt="${esc(o.id)}" aria-label="One less ${esc(o.label)}" disabled>&minus;</button>
           <strong data-qty-for="${esc(o.id)}">0</strong>
@@ -481,8 +481,8 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
         </span>
       </div>`:`<label class="variant-choice">
         <input type="${g.selection==='multi'?'checkbox':'radio'}" name="vg-${esc(g.id)}" value="${esc(o.id)}" data-group="${esc(g.id)}">
-        <span class="variant-choice-label">${esc(o.label)}</span>
-        ${hasAmount(o)?`<span class="variant-choice-price">${g.price_mode==='absolute'?'':'+'}${money(o.amount)}</span>`:''}
+        <span class="variant-choice-text"><span class="variant-choice-label">${esc(o.label)}</span>
+        ${hasAmount(o)?`<span class="variant-choice-price">${g.price_mode==='absolute'?'':'+'}${money(o.amount)}</span>`:''}</span>
       </label>`).join('')}</div></fieldset>`).join('');
     /* An extra with a stepper: zero is not chosen, anything up to the shop's max
        is chosen that many times. */
