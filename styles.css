@@ -322,6 +322,15 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .variant-choice:has(input:focus-visible){outline:2px solid var(--accent-2);outline-offset:2px}
 .variant-choice-price{color:var(--muted);font-variant-numeric:tabular-nums}
 .variant-choice:has(input:checked) .variant-choice-price{color:var(--accent-3)}
+/* An extra the customer can take several of: a pill with its own - n + stepper. */
+.variant-choice-qty{cursor:default;padding-right:6px}
+.variant-choice-qty.is-on{border-color:var(--accent-2);background:var(--accent-tint);font-weight:600}
+.variant-choice-qty.is-on .variant-choice-price{color:var(--accent-3)}
+.variant-stepper{display:inline-flex;align-items:center;gap:4px;margin-left:4px}
+.variant-stepper button{display:grid;place-items:center;width:30px;height:30px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--card);color:var(--text);font:inherit;font-size:1rem;font-weight:700;line-height:1;cursor:pointer}
+.variant-stepper button:hover:not(:disabled){border-color:var(--accent-2)}
+.variant-stepper button:disabled{opacity:.35;cursor:default}
+.variant-stepper strong{min-width:18px;text-align:center;font-variant-numeric:tabular-nums}
 .variant-hint{margin:8px 0 0;font-size:var(--text-caption)}
 /* The tick that stands in for a payment screenshot. */
 .paid-already-row{margin-top:var(--space-sm)}

@@ -429,12 +429,15 @@ const cartQtyFor=productId=>state.cart.reduce((s,i)=>s+(i.productId===productId?
    page shows is what the customer is charged. */
 const hasAmount=o=>Number(o?.amount)>0;
 
-function priceWithVariants(product,groups,chosenIds){
+/* An extra the shop lets customers take several of (Extra Rice x2): an add-on in a
+   pick-any variant whose max is above one. place_order applies the same rule. */
+const hasQtyStepper=(g,o)=>g.selection==='multi'&&g.price_mode!=='absolute'&&Number(o.max_qty||1)>1;
+function priceWithVariants(product,groups,chosenIds,qtys={}){
   let base=Number(product.price||0),add=0;
   groups.forEach(g=>g.options.forEach(o=>{
     if(!chosenIds.includes(o.id)||!hasAmount(o))return;
     if(g.price_mode==='absolute')base=Number(o.amount);
-    else add+=Number(o.amount);
+    else add+=Number(o.amount)*(qtys[o.id]||1);
   }));
   return pesos(Math.max(0,base+add));
 }
@@ -446,12 +449,14 @@ function missingRequired(groups,chosenIds){
 const deadRequiredGroups=productId=>(state.data?.variantGroups||[])
   .filter(g=>g.product_id===productId&&g.is_required)
   .filter(g=>!(state.data?.variantOptions||[]).some(o=>o.group_id===g.id&&o.is_available!==false));
-/* Two of the same product with different choices are two different cart lines. */
-const cartKey=(productId,ids)=>productId+'|'+[...ids].sort().join(',');
+/* Two of the same product with different choices are two different cart lines,
+   and so are one with Extra Rice x2 and one with a single Extra Rice. */
+const cartKey=(productId,ids,qtys={})=>productId+'|'+[...ids].sort().map(id=>(qtys?.[id]||1)>1?`${id}:${qtys[id]}`:id).join(',');
 
 function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p||p.is_hidden){toast('This product is no longer available.');renderProducts();return}const inCart=cartQtyFor(id);const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const deadReq=deadRequiredGroups(id);const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').dataset.productId=id;$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${max<=5?`Only ${max} left!`:`${max} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':deadReq.length?'<p class="muted">One of this item\u2019s required options is unavailable right now, so it can\u2019t be ordered yet. Please check back later.</p>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));/* patchProductDialog rebuilds this dialog while it is already open when stock comes back; showModal on an open dialog throws and would leave the picker and buttons unwired. */if(!$('productDialog').open)$('productDialog').showModal();let q=1;
   const groups=variantGroupsFor(id);
   let chosen=[];
+  const qtys={};
   const priceEl=$('productDialog').querySelector('.product-modal-grid h3');
   /* The button stays shut until every compulsory choice has an answer. Toppings
      and the rest are optional, so they never hold it closed. */
@@ -461,16 +466,41 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
     btn.disabled=missing.length>0;
     const hint=$('variantHint');
     if(hint)hint.textContent=missing.length?`Choose a ${missing.map(g=>g.label.toLowerCase()).join(' and a ')} to continue.`:'';
-    if(priceEl)priceEl.textContent=money(priceWithVariants(p,groups,chosen));
+    if(priceEl)priceEl.textContent=money(priceWithVariants(p,groups,chosen,qtys));
   }
   if(groups.length&&$('variantPicker')){
     $('variantPicker').innerHTML=groups.map(g=>`<fieldset class="variant-field">
       <legend>${esc(g.label)}${g.is_required?' <span class="variant-required">Required</span>':' <span class="variant-optional">Optional</span>'}</legend>
-      <div class="variant-choices">${g.options.map(o=>`<label class="variant-choice">
+      <div class="variant-choices">${g.options.map(o=>hasQtyStepper(g,o)?`<div class="variant-choice variant-choice-qty" data-opt="${esc(o.id)}">
+        <span class="variant-choice-label">${esc(o.label)}</span>
+        ${hasAmount(o)?`<span class="variant-choice-price">+${money(o.amount)}</span>`:''}
+        <span class="variant-stepper">
+          <button type="button" data-step="-1" data-opt="${esc(o.id)}" aria-label="One less ${esc(o.label)}" disabled>&minus;</button>
+          <strong data-qty-for="${esc(o.id)}">0</strong>
+          <button type="button" data-step="1" data-opt="${esc(o.id)}" aria-label="One more ${esc(o.label)}">+</button>
+        </span>
+      </div>`:`<label class="variant-choice">
         <input type="${g.selection==='multi'?'checkbox':'radio'}" name="vg-${esc(g.id)}" value="${esc(o.id)}" data-group="${esc(g.id)}">
         <span class="variant-choice-label">${esc(o.label)}</span>
         ${hasAmount(o)?`<span class="variant-choice-price">${g.price_mode==='absolute'?'':'+'}${money(o.amount)}</span>`:''}
       </label>`).join('')}</div></fieldset>`).join('');
+    /* An extra with a stepper: zero is not chosen, anything up to the shop's max
+       is chosen that many times. */
+    $('variantPicker').querySelectorAll('[data-step]').forEach(btn=>{
+      btn.onclick=()=>{
+        const id=btn.dataset.opt;
+        const o=groups.flatMap(g=>g.options).find(x=>x.id===id);if(!o)return;
+        const n=Math.min(Number(o.max_qty||1),Math.max(0,(qtys[id]||0)+Number(btn.dataset.step)));
+        if(n>0){qtys[id]=n;if(!chosen.includes(id))chosen.push(id)}
+        else{delete qtys[id];chosen=chosen.filter(c=>c!==id)}
+        const row=btn.closest('.variant-choice-qty');
+        row.classList.toggle('is-on',n>0);
+        row.querySelector('[data-qty-for]').textContent=n;
+        row.querySelector('[data-step="-1"]').disabled=n<=0;
+        row.querySelector('[data-step="1"]').disabled=n>=Number(o.max_qty||1);
+        refreshVariants();
+      };
+    });
     $('variantPicker').querySelectorAll('input').forEach(input=>{
       /* click, not change: tapping an already-picked radio fires no change event,
          and that tap is exactly how someone takes a choice back. */
@@ -506,11 +536,12 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
     const room=Math.max(0,Number(live.stock||0)-cartQtyFor(id));
     const add=Math.min(q,room);
     if(add<=0){toast('Maximum available stock reached');return}
-    const key=cartKey(id,chosen);
-    const unit=priceWithVariants(live,groups,chosen);
-    const labels=groups.flatMap(g=>g.options.filter(o=>chosen.includes(o.id)).map(o=>({group:g.label,label:o.label})));
-    const ex=state.cart.find(x=>cartKey(x.productId,x.optionIds||[])===key);
-    if(ex)ex.qty+=add;else state.cart.push({productId:id,qty:add,price:unit,name:live.name,image:live.image_url,optionIds:chosen,variantLabels:labels});
+    const optionQty=Object.fromEntries(chosen.filter(c=>(qtys[c]||1)>1).map(c=>[c,qtys[c]]));
+    const key=cartKey(id,chosen,optionQty);
+    const unit=priceWithVariants(live,groups,chosen,optionQty);
+    const labels=groups.flatMap(g=>g.options.filter(o=>chosen.includes(o.id)).map(o=>({group:g.label,label:o.label+((optionQty[o.id]||1)>1?` ×${optionQty[o.id]}`:'')})));
+    const ex=state.cart.find(x=>cartKey(x.productId,x.optionIds||[],x.optionQty)===key);
+    if(ex)ex.qty+=add;else state.cart.push({productId:id,qty:add,price:unit,name:live.name,image:live.image_url,optionIds:chosen,optionQty,variantLabels:labels});
     saveCart();$('productDialog').close();toast('Added to cart ✓')}}}
 function renderCart(){
   $('cartCount').textContent=state.cart.reduce((s,i)=>s+i.qty,0);
@@ -620,9 +651,12 @@ function livePriceForLine(item,live){
   for(const id of (item.optionIds||[])){
     const o=live.options.find(x=>x.id===id);
     const g=o&&live.groups.find(x=>x.id===o.group_id&&x.product_id===p.id);
+    const n=item.optionQty?.[id]||1;
     if(!o||!g||o.is_available===false){gone=true;break}
+    /* The shop lowered the max on an extra this line took several of. */
+    if(n>1&&(n>Number(o.max_qty||1)||g.selection!=='multi'||g.price_mode==='absolute')){gone=true;break}
     if(!hasAmount(o))continue;
-    if(g.price_mode==='absolute')base=Number(o.amount);else add+=Number(o.amount);
+    if(g.price_mode==='absolute')base=Number(o.amount);else add+=Number(o.amount)*n;
   }
   return gone?null:pesos(Math.max(0,base+add));
 }
@@ -1006,7 +1040,7 @@ async function placeOrder(e){
     if(fulfillment==='Delivery'&&!address){checkoutError('Delivery address is required.');f.address?.focus();return}
     const showPreferredDate=isExplicitlyEnabled(s,'show_preferred_date');const preferredDateMode=s.preferred_date_mode||'calendar';const availableFrom=s.order_available_from||'';
     let preferredDate=d.preferredDate||availableFrom||phDateStr();if(showPreferredDate&&preferredDateMode==='calendar'&&availableFrom&&preferredDate<availableFrom)throw new Error('Please select a date on or after the available-from date.');
-    const items=state.cart.map(i=>({product_id:i.productId,qty:i.qty,option_ids:i.optionIds||[]}));
+    const items=state.cart.map(i=>({product_id:i.productId,qty:i.qty,option_ids:i.optionIds||[],option_qty:i.optionQty||{}}));
     const {data,error}=await db.rpc('place_order',{p_customer_name:String(d.name||'').trim(),p_phone:phone||null,p_email:email||null,p_fulfillment:fulfillment,p_address:address,p_preferred_date:preferredDate,p_payment_method:d.payment,p_note:String(d.note||'').trim()||null,p_items:items,p_coupon_code:state.coupon?.code||null,p_idempotency_key:f.dataset.idempotencyKey||null});
     if(error)throw error;
     /* The shop closed while this form was open. Raise the notice rather than only
