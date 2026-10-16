@@ -52,17 +52,19 @@ This creates:
 - secure `place_order` and `cancel_order` functions
 - RLS policies
 
-### 3. Create your Admin account
-Open **Authentication -> Users -> Add user**. Create your email/password user.
+### 3. Set up password-only Admin access
+Enable **Authentication -> Sign In / Providers -> Anonymous Sign-Ins** in Supabase.
+Run `supabase-admin-password.sql` in the SQL Editor after the main schema. Then
+run `select public.admin_set_password('YOUR-CHOSEN-PASSWORD');` in the SQL Editor,
+replacing the placeholder with your password (8–72 bytes). Do not save the actual
+password in repository files. The database stores a bcrypt hash.
 
-Copy that user's UUID. Then return to **SQL Editor** and run:
-
-```sql
-insert into public.admin_users(user_id)
-values ('PASTE-YOUR-AUTH-USER-UUID-HERE');
-```
-
-This is what gives that Auth account permission to edit Bilihan.
+No email, phone number, or registration is required. Supabase creates an anonymous
+device identity, which has no admin access until `admin_password_login` verifies
+the password on the server. Existing RLS and admin membership checks still apply.
+Five failed attempts block new attempts for one minute across all devices.
+Existing signed-in devices stay signed in after a password change; to revoke a
+device, remove its user ID from `admin_users` in Supabase and end its Auth sessions.
 
 ### 4. Get your Project URL and anon public key
 Open **Project Settings -> API** (the exact Supabase dashboard labels can vary slightly).
@@ -93,7 +95,7 @@ Admin:
 `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/admin.html`
 
 ### 6. Sign in to Admin
-Open `admin.html` and enter the password for the `itsbilihan@gmail.com` Supabase Auth account. The email is supplied automatically by `ADMIN_LOGIN_EMAIL` in `admin.js`. Set or change the account password in Supabase Authentication; never put the password in the website source. The account must still be listed in `admin_users`.
+Open `admin.html` and enter only the admin password configured in step 3. No email account is used.
 
 You can then manage:
 - Products

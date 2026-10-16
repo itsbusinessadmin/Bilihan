@@ -30,7 +30,7 @@ const phClock=d=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',hour:'n
 /* ========================================================================
    Setting up, signing in, and keeping the session
    Nothing else runs until init() has a session and has confirmed it belongs to
-   somebody listed in admin_users.
+   a device listed in admin_users.
    ======================================================================== */
 function configured(){return !!window.BILIHAN_SUPABASE_CONFIGURED}
 /* The Supabase client stores the session in this browser (persistSession), so a
@@ -58,8 +58,7 @@ function renderRestoring(){app.innerHTML=`<div class="login-wrap"><div class="lo
 /* Reached when the database is unreachable. The session stays saved, so this is a
    retry screen rather than a login screen. */
 function renderReconnect(message){
-  const email=A.session?.user?.email||'';
-  app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Can't reach the database</h2><div class="status-banner">${esc(message||'We could not load your admin data.')}</div><p class="muted">You are still signed in on this device${email?` as ${esc(email)}`:''}.</p><button type="button" class="primary-btn" id="retryAdmin">Try Again</button><button type="button" class="secondary-btn" id="signOutAdmin">Log Out</button></div></div>`;
+  app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Can't reach the database</h2><div class="status-banner">${esc(message||'We could not load your admin data.')}</div><p class="muted">You are still signed in on this device.</p><button type="button" class="primary-btn" id="retryAdmin">Try Again</button><button type="button" class="secondary-btn" id="signOutAdmin">Log Out</button></div></div>`;
   document.getElementById('retryAdmin').onclick=()=>{init().catch(err=>renderReconnect(err?.message))};
   document.getElementById('signOutAdmin').onclick=async()=>{await db.auth.signOut();A.session=null;renderLogin()};
 }
@@ -73,7 +72,7 @@ async function init(){
   A.session=session;
   if(!session){renderLogin();return}
   const status=await adminStatus();
-  if(status==='no'){await db.auth.signOut();A.session=null;renderLogin('This account is not listed as a Bilihan admin.');return}
+  if(status==='no'){renderLogin();return}
   if(status==='unknown'){renderReconnect('We could not confirm your admin access right now.');return}
   try{await loadAll()}
   catch(err){console.error(err);renderReconnect(err?.message);return}
@@ -81,10 +80,49 @@ async function init(){
   retryAdminGoogleOps();
 }
 function renderSetup(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-logo.png" style="width:90px;border-radius:50%"><span class="eyebrow">Bilihan v3</span><h2>Connect Supabase</h2><p>Edit <strong>config.js</strong> once and paste your Supabase Project URL and anon public key, then reload this page.</p><p class="muted">Never paste a service_role key into the website.</p></div></div>`}
-// Supabase still authenticates the configured admin account; only the password is entered.
-const ADMIN_LOGIN_EMAIL='itsbilihan@gmail.com';
 function friendlyAuthError(message){const m=String(message||'').toLowerCase();if(m.includes('invalid login credentials')||m.includes('invalid email or password'))return 'That password did not match. Please try again.';if(m.includes('email not confirmed'))return 'This email address has not been confirmed yet. Check your inbox for the confirmation link.';if(m.includes('too many requests')||m.includes('rate limit'))return 'Too many sign-in attempts. Wait a minute and try again.';if(m.includes('network')||m.includes('fetch failed')||m.includes('failed to fetch'))return 'Could not reach the server. Check your connection and try again.';return 'Sign in failed. Please try again.'}
-function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<input name="email" type="email" autocomplete="username" value="${esc(ADMIN_LOGIN_EMAIL)}" hidden readonly><label>Password<span class="password-wrap"><input name="password" id="loginPassword" type="password" autocomplete="current-password" required><button type="button" class="password-toggle" id="pwToggle" aria-label="Show password">Show</button></span></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('pwToggle').onclick=e=>{const input=document.getElementById('loginPassword');const show=input.type==='password';input.type=show?'text':'password';e.currentTarget.textContent=show?'Hide':'Show';e.currentTarget.setAttribute('aria-label',show?'Hide password':'Show password');input.focus()};document.getElementById('loginForm').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.currentTarget));const {data,error}=await db.auth.signInWithPassword({email:ADMIN_LOGIN_EMAIL,password:d.password});if(error)return renderLogin(friendlyAuthError(error.message));A.session=data.session;const status=await adminStatus();if(status==='no'){await db.auth.signOut();A.session=null;return renderLogin('This account is not listed as a Bilihan admin.')}if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');try{await loadAll()}catch(err){console.error(err);return renderReconnect(err?.message)}renderShell()}}
+function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Password<span class="password-wrap"><input name="password" id="loginPassword" type="password" autocomplete="current-password" required><button type="button" class="password-toggle" id="pwToggle" aria-label="Show password">Show</button></span></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('pwToggle').onclick=e=>{const input=document.getElementById('loginPassword');const show=input.type==='password';input.type=show?'text':'password';e.currentTarget.textContent=show?'Hide':'Show';e.currentTarget.setAttribute('aria-label',show?'Hide password':'Show password');input.focus()};document.getElementById('loginForm').onsubmit=async e=>{
+  e.preventDefault();
+  const form=e.currentTarget;
+  const button=form.querySelector('button[type="submit"],button.primary-btn');
+  if(button.disabled)return;
+  button.disabled=true;button.textContent='Signing in…';
+  const password=new FormData(form).get('password');
+  try{
+    // An anonymous Supabase identity needs no email, phone, or registration.
+    // It has no admin permissions until the server verifies the shared password.
+    const {data:existing,error:sessionError}=await db.auth.getSession();
+    if(sessionError)throw sessionError;
+    let session=existing?.session;
+    if(!session){
+      const {data,error}=await db.auth.signInAnonymously();
+      if(error)throw error;
+      session=data?.session;
+    }
+    if(!session)return renderLogin('Could not start a sign-in session. Please try again.');
+    const {data,error}=await db.rpc('admin_password_login',{p_password:password});
+    if(error){
+      if(error.code==='PGRST202'||error.code==='42883')return renderLogin('Password sign-in is not set up yet. Run supabase-admin-password.sql in Supabase first.');
+      throw error;
+    }
+    if(!data?.ok)return renderLogin(data?.message||'That password did not match. Please try again.');
+    A.session=session;
+    const status=await adminStatus();
+    if(status==='no')return renderLogin('Admin access was not granted. Please try again.');
+    if(status==='unknown')return renderReconnect('We could not confirm your admin access right now.');
+    try{await loadAll()}catch(err){return renderReconnect(err?.message)}
+    renderShell();
+  }catch(err){
+    const message=String(err?.message||'');
+    renderLogin(/anonymous.*(disabled|not enabled)|anonymous_provider_disabled/i.test(message+' '+(err?.code||''))
+      ?'Enable anonymous sign-ins in Supabase Authentication before using password sign-in.'
+      :friendlyAuthError(message));
+  }finally{
+    // Never leave the password in a detached form after a re-render.
+    form.reset();button.disabled=false;button.textContent='Sign In';
+  }
+}}
+
 
 /* ========================================================================
    Reading the store
@@ -1584,7 +1622,7 @@ function paintUsage(){
 function security(m){
   m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Access</span><h2>Security &amp; storage</h2></div>
       <button type="button" id="refreshUsage">Refresh</button></div>
-    <div class="panel"><p><strong>Signed in as:</strong> ${esc(A.session.user.email)}</p>
+    <div class="panel"><p><strong>Signed in as:</strong> Admin (password sign-in)</p>
       <p>Admin access is protected by Supabase Auth and the <code>admin_users</code> table. Your service-role key is never exposed to the browser.</p></div>
     <div id="usagePanels"><p class="muted">Measuring…</p></div>
     <div class="panel"><h3>This device</h3>
