@@ -343,6 +343,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .row-actions button[title="Move down"]::before{--btn-icon:url(ios-icons/chevron-down.png)}
 .row-actions button[title="Move up"],.row-actions button[title="Move down"]{font-size:0;padding-inline:11px}
 .row-actions button[title="Move up"]::before,.row-actions button[title="Move down"]::before{width:15px;height:15px;flex-basis:15px}
+/* Eye beside Edit: open = shown to customers, crossed out = hidden. */
+.row-actions .visibility-btn{display:inline-flex;align-items:center;justify-content:center;padding-inline:11px}
+.row-actions .visibility-btn::before{content:"";display:block;width:16px;height:16px;background-color:currentColor;-webkit-mask:url(ios-icons/eye.svg) center/contain no-repeat;mask:url(ios-icons/eye.svg) center/contain no-repeat}
+.row-actions .visibility-btn.is-hidden{color:var(--admin-muted,#8a8f98)}
+.row-actions .visibility-btn.is-hidden::before{-webkit-mask-image:url(ios-icons/eye-off.svg);mask-image:url(ios-icons/eye-off.svg)}
+.products-page .product-row-hidden td:not(:last-child){opacity:.5}
 
 #orderSearch{padding-left:42px!important;background-color:var(--admin-card)!important;background-repeat:no-repeat!important;background-position:14px center!important;background-size:16px 16px!important;background-image:url("ios-icons/search.png")!important}
 

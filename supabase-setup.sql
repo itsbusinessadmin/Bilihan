@@ -37,6 +37,10 @@ create table if not exists public.products (
 -- not accounts: there is nothing to join to, and a name typed once is enough to
 -- group a seller's items together on the dashboard and the seller page.
 alter table public.products add column if not exists seller_name text not null default '';
+-- The eye toggle in Admin -> Products. A hidden product stays in the catalog
+-- (stock, price, seller kept) but is left off the customer menu entirely,
+-- unlike is_available=false, which still shows the card as Sold Out.
+alter table public.products add column if not exists is_hidden boolean not null default false;
 
 create table if not exists public.store_settings (
   id integer primary key default 1 check (id = 1),

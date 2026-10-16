@@ -284,7 +284,15 @@ function applyStockUpdate(row){
   const p=(state.data?.products||[]).find(x=>x.id===row.id);
   if(!p)return;
   const before={stock:p.stock,is_available:p.is_available,price:p.price};
+  const wasHidden=!!p.is_hidden;
   Object.assign(p,row);
+  /* Hiding or showing a product adds or removes a whole card, so that one case
+     redraws the menu instead of patching the card in place. */
+  if(wasHidden!==!!p.is_hidden){
+    try{localStorage.setItem(LS.cache,JSON.stringify(state.data))}catch(e){}
+    if(p.is_hidden&&$('productDialog')?.open&&String($('productDialog').dataset.productId)===String(p.id)){$('productDialog').close();toast('This item is no longer available')}
+    renderProducts();return;
+  }
   if(before.stock===p.stock&&before.is_available===p.is_available&&before.price===p.price)return;
   try{localStorage.setItem(LS.cache,JSON.stringify(state.data))}catch(e){}
 
@@ -372,12 +380,12 @@ function watchStock(){
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!live)bootstrap()});
 }
 
-function renderProducts(){const showStock=state.data.settings?.show_stock!==false;const q=String(state.search||'').trim().toLowerCase();const ps=(state.data.products||[]).filter(p=>(state.category==='all'||p.category_id===state.category)&&(!q||`${p.name||''} ${p.description||''}`.toLowerCase().includes(q))).sort((a,b)=>a.sort_order-b.sort_order);const allSold=ps.length&&ps.every(p=>!p.is_available||p.stock<=0);const empty=!ps.length?(q?'<div class="empty-state"><h3>No matches</h3><p>Try a different search or category.</p></div>':'<div class="empty-state"><h3>No products here yet</h3><p>Try another category or check back soon.</p></div>'):'';$('menuGrid').innerHTML=empty+(allSold?'<div class="status-banner" style="grid-column:1/-1">We’re currently sold out. Please check back again soon!</div>':'')+ps.map(p=>{const sold=!p.is_available||p.stock<=0;const unorderable=sold||deadRequiredGroups(p.id).length>0;const left=Math.max(0,p.stock-cartQtyFor(p.id));const stock=sold?'Sold Out':left<=5?`Only ${left} left!`:`${left} available`;const stockHtml=(showStock||sold)?`<div class="stock ${sold?'sold':''}">${stock}</div>`:'';const addButton=unorderable?'':`<button class="product-card-add" type="button" data-add-id="${p.id}" aria-label="Add ${esc(p.name)} to cart" title="Add to cart"><img class="ui-icon" src="ios-icons/add-to-cart.svg" alt="" aria-hidden="true"></button>`;return `<article class="product-card" data-id="${p.id}">${productImageHtml(p,'product-card-image','loading="lazy" decoding="async"')}<div class="product-info"><div class="product-row"><strong>${esc(p.name)}</strong><span class="price">${money(p.price)}</span></div><div class="product-card-bottom">${stockHtml}${addButton}</div></div></article>`}).join('');settleProductImages($('menuGrid'));bindMenuGrid()}
+function renderProducts(){const showStock=state.data.settings?.show_stock!==false;const q=String(state.search||'').trim().toLowerCase();const ps=(state.data.products||[]).filter(p=>!p.is_hidden&&(state.category==='all'||p.category_id===state.category)&&(!q||`${p.name||''} ${p.description||''}`.toLowerCase().includes(q))).sort((a,b)=>a.sort_order-b.sort_order);const allSold=ps.length&&ps.every(p=>!p.is_available||p.stock<=0);const empty=!ps.length?(q?'<div class="empty-state"><h3>No matches</h3><p>Try a different search or category.</p></div>':'<div class="empty-state"><h3>No products here yet</h3><p>Try another category or check back soon.</p></div>'):'';$('menuGrid').innerHTML=empty+(allSold?'<div class="status-banner" style="grid-column:1/-1">We’re currently sold out. Please check back again soon!</div>':'')+ps.map(p=>{const sold=!p.is_available||p.stock<=0;const unorderable=sold||deadRequiredGroups(p.id).length>0;const left=Math.max(0,p.stock-cartQtyFor(p.id));const stock=sold?'Sold Out':left<=5?`Only ${left} left!`:`${left} available`;const stockHtml=(showStock||sold)?`<div class="stock ${sold?'sold':''}">${stock}</div>`:'';const addButton=unorderable?'':`<button class="product-card-add" type="button" data-add-id="${p.id}" aria-label="Add ${esc(p.name)} to cart" title="Add to cart"><img class="ui-icon" src="ios-icons/add-to-cart.svg" alt="" aria-hidden="true"></button>`;return `<article class="product-card" data-id="${p.id}">${productImageHtml(p,'product-card-image','loading="lazy" decoding="async"')}<div class="product-info"><div class="product-row"><strong>${esc(p.name)}</strong><span class="price">${money(p.price)}</span></div><div class="product-card-bottom">${stockHtml}${addButton}</div></div></article>`}).join('');settleProductImages($('menuGrid'));bindMenuGrid()}
 /* One delegated listener for the whole grid, attached once. The previous version
    re-bound two handlers per card on every render, which got slower with the
    catalogue and left the old closures behind each time. */
 function bindMenuGrid(){const grid=$('menuGrid');if(!grid||grid.dataset.bound)return;grid.dataset.bound='1';grid.addEventListener('click',e=>{const add=e.target.closest('.product-card-add');if(add){quickAddToCart(add.dataset.addId,e,add);return}const card=e.target.closest('.product-card');if(card)openProduct(card.dataset.id)})}
-function quickAddToCart(id,event,button){event?.stopPropagation();const p=state.data.products.find(x=>x.id===id);if(!p||!p.is_available||p.stock<=0){toast('Sorry, this item is sold out.');return};
+function quickAddToCart(id,event,button){event?.stopPropagation();const p=state.data.products.find(x=>x.id===id);if(!p||p.is_hidden||!p.is_available||p.stock<=0){toast('Sorry, this item is sold out.');return};
   /* A product with choices cannot be added from the card: the card has nowhere to
      ask which size or flavour, and guessing one on the customer's behalf is worse
      than opening the product. */
@@ -441,7 +449,7 @@ const deadRequiredGroups=productId=>(state.data?.variantGroups||[])
 /* Two of the same product with different choices are two different cart lines. */
 const cartKey=(productId,ids)=>productId+'|'+[...ids].sort().join(',');
 
-function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p){toast('This product is no longer available.');renderProducts();return}const inCart=cartQtyFor(id);const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const deadReq=deadRequiredGroups(id);const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').dataset.productId=id;$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${max<=5?`Only ${max} left!`:`${max} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':deadReq.length?'<p class="muted">One of this item\u2019s required options is unavailable right now, so it can\u2019t be ordered yet. Please check back later.</p>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));/* patchProductDialog rebuilds this dialog while it is already open when stock comes back; showModal on an open dialog throws and would leave the picker and buttons unwired. */if(!$('productDialog').open)$('productDialog').showModal();let q=1;
+function openProduct(id){const showStock=state.data.settings?.show_stock!==false;const p=state.data.products.find(x=>x.id===id);if(!p||p.is_hidden){toast('This product is no longer available.');renderProducts();return}const inCart=cartQtyFor(id);const max=Math.max(0,p.stock-inCart);const sold=!p.is_available||p.stock<=0;const deadReq=deadRequiredGroups(id);const cat=state.data.categories.find(c=>c.id===p.category_id)?.name||'';$('productDialog').dataset.productId=id;$('productDialog').innerHTML=`<div class="modal-body"><button class="icon-btn modal-close" aria-label="Close" onclick="productDialog.close()"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button><div class="product-modal-grid">${productImageHtml(p,'product-modal-image')}<div><span class="eyebrow">${esc(cat)}</span><h2>${esc(p.name)}</h2><p>${esc(p.description)}</p><h3>${money(p.price)}</h3>${(showStock&&!sold)?`<p class="stock">${max<=5?`Only ${max} left!`:`${max} available`}</p>`:''}${sold?'<button class="primary-btn" disabled>Sold Out</button>':deadReq.length?'<p class="muted">One of this item\u2019s required options is unavailable right now, so it can\u2019t be ordered yet. Please check back later.</p>':max<=0?'<p class="muted">You already have the maximum available quantity in your cart.</p>':`<div id="variantPicker"></div><div class="qty"><button id="qMinus" aria-label="Decrease quantity"><img class="ui-icon" src="ios-icons/minus.png" alt="" aria-hidden="true"></button><strong id="qVal">1</strong><button id="qPlus" aria-label="Increase quantity"><img class="ui-icon" src="ios-icons/plus.png" alt="" aria-hidden="true"></button></div><br><button id="addToCart" class="primary-btn">Add to Cart</button><p class="muted variant-hint" id="variantHint"></p>`}</div></div></div>`;settleProductImages($('productDialog'));/* patchProductDialog rebuilds this dialog while it is already open when stock comes back; showModal on an open dialog throws and would leave the picker and buttons unwired. */if(!$('productDialog').open)$('productDialog').showModal();let q=1;
   const groups=variantGroupsFor(id);
   let chosen=[];
   const priceEl=$('productDialog').querySelector('.product-modal-grid h3');
@@ -492,7 +500,7 @@ function openProduct(id){const showStock=state.data.settings?.show_stock!==false
        refresh never re-patches an open popup — so availability is re-read from
        the current list here rather than trusted. */
     const live=state.data.products.find(x=>x.id===id);
-    if(!live||live.is_available===false){toast('This item is no longer available');$('productDialog').close();renderProducts();return}
+    if(!live||live.is_available===false||live.is_hidden){toast('This item is no longer available');$('productDialog').close();renderProducts();return}
     /* The picker cap is live, but stock may have moved since the dialog opened,
        so the room left is re-checked here rather than trusted. */
     const room=Math.max(0,Number(live.stock||0)-cartQtyFor(id));
@@ -512,7 +520,7 @@ function renderCart(){
   settleProductImages($('cartItems'));
   $('cartItems').querySelectorAll('button').forEach(b=>b.onclick=()=>cartAction(b.dataset.a,+b.dataset.i));$('checkoutBtn').onclick=openCheckout;
 }
-async function cartAction(a,i){const item=state.cart[i];if(!item)return;if(a==='minus')item.qty=Math.max(1,item.qty-1);if(a==='plus'){const p=state.data.products.find(p=>p.id===item.productId);if(!p||p.is_available===false){toast('This item is no longer available');return}if(cartQtyFor(item.productId)<(p?.stock||0))item.qty++;else toast('Maximum available stock reached')}if(a==='remove'&&confirm('Remove this item from your cart?'))state.cart.splice(i,1);saveCart()}
+async function cartAction(a,i){const item=state.cart[i];if(!item)return;if(a==='minus')item.qty=Math.max(1,item.qty-1);if(a==='plus'){const p=state.data.products.find(p=>p.id===item.productId);if(!p||p.is_available===false||p.is_hidden){toast('This item is no longer available');return}if(cartQtyFor(item.productId)<(p?.stock||0))item.qty++;else toast('Maximum available stock reached')}if(a==='remove'&&confirm('Remove this item from your cart?'))state.cart.splice(i,1);saveCart()}
 function openCart(){const d=$('cartDrawer');d.classList.add('open');d.setAttribute('aria-hidden','false');d.removeAttribute('inert');$('backdrop').classList.remove('hidden');$('closeCart').focus()}
 function closeCart(){const d=$('cartDrawer');d.classList.remove('open');d.setAttribute('aria-hidden','true');d.setAttribute('inert','');$('backdrop').classList.add('hidden')}
 $('cartBtn').onclick=openCart;$('closeCart').onclick=closeCart;$('backdrop').onclick=closeCart;
@@ -555,7 +563,7 @@ function validateCartAgainstLive(live){
   const keep=[];
   for(const item of state.cart){
     const p=live.products.find(x=>x.id===item.productId);
-    if(!p||!p.is_available){
+    if(!p||!p.is_available||p.is_hidden){
       invalid.push(`${item.name} is no longer available, so it was removed from your cart.`);
       changed=true;continue;
     }

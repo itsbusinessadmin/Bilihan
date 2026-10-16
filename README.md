@@ -447,6 +447,17 @@ but the admin can read `seller_links`.
 point, so **New link** next to the copy button issues a fresh token and stops the
 old link working straight away. Use it when someone should no longer have access.
 
+## Hiding products from customers
+
+In **Admin → Products**, the eye button beside **Edit** controls whether a product
+appears on the customer page. Click the open eye to hide it (the eye is crossed out
+and the row is dimmed); click again to show it. Hiding does not change stock, price
+or availability, so showing it again puts it back exactly as it was. A hidden
+product that is already in a customer's cart is removed at checkout.
+
+Run `supabase-fix-audit-10.sql` in the Supabase SQL Editor once to add the
+`products.is_hidden` column the button uses. Safe to re-run.
+
 ## Orders header
 
 On the Orders tab the heading, Select, Delete All Orders, the five totals, the
