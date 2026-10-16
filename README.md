@@ -447,6 +447,26 @@ but the admin can read `seller_links`.
 point, so **New link** next to the copy button issues a fresh token and stops the
 old link working straight away. Use it when someone should no longer have access.
 
+## Product variants and extras
+
+In the product editor, **Variants** lists each choice (Size, Flavour, Extras) as a
+card showing how it works and its options; tap one to edit it. Each variant sets:
+
+- **Customer picks**: *One* (a size) or *Any number* (toppings, extras).
+- **Option price**: *Adds to price* (an extra) or *Replaces price* (a flavour at
+  its own price; only one variant per product can do this).
+- **Required**: the customer must choose before adding to cart.
+
+For an *Any number* variant that *Adds to price*, each option has a **Max qty**.
+Leave it at 1 for a simple tick; set it higher (up to 20) and the customer gets
+− / + buttons to order that extra several times, e.g. **Extra Rice ×2**. The
+extra is charged that many times, and the order, receipt and reports show
+"Extra Rice ×2".
+
+Run `supabase-fix-audit-11.sql` in the Supabase SQL Editor once before using Max
+qty. It adds the column, saves it from the editor, and teaches `place_order` to
+check and charge extra quantities. Safe to re-run.
+
 ## Hiding products from customers
 
 In **Admin → Products**, the eye button beside **Edit** controls whether a product

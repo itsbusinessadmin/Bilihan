@@ -225,6 +225,11 @@ create table if not exists public.product_variant_options (
   is_available boolean not null default true,
   sort_order integer not null default 0
 );
+-- How many of an extra one order may take (Extra Rice x2). 1 means tick it or not.
+alter table public.product_variant_options add column if not exists max_qty integer not null default 1;
+alter table public.product_variant_options drop constraint if exists product_variant_options_max_qty_check;
+alter table public.product_variant_options add constraint product_variant_options_max_qty_check
+  check (max_qty between 1 and 20);
 create index if not exists product_variant_groups_product_idx on public.product_variant_groups(product_id, sort_order);
 create index if not exists product_variant_options_group_idx on public.product_variant_options(group_id, sort_order);
 
@@ -1129,9 +1134,14 @@ begin
 
     -- with ordinality, so the options keep the order the admin arranged them in
     -- rather than whatever order the rows happen to come back in.
-    insert into public.product_variant_options(group_id, label, amount, sort_order)
+    -- max_qty: how many of an extra one order may take. Only an add-on in a
+    -- pick-any variant can be taken more than once; everything else is 1.
+    insert into public.product_variant_options(group_id, label, amount, max_qty, sort_order)
     select v_group_id, btrim(o.value->>'label'),
-           round(coalesce((o.value->>'amount')::numeric, 0), 2), o.ord
+           round(coalesce((o.value->>'amount')::numeric, 0), 2),
+           case when v_group->>'price_mode' is distinct from 'absolute' and v_group->>'selection' = 'multi'
+                then least(greatest(coalesce((o.value->>'max_qty')::integer, 1), 1), 20) else 1 end,
+           o.ord
       from jsonb_array_elements(coalesce(v_group->'options', '[]'::jsonb))
            with ordinality o(value, ord)
      where coalesce(btrim(o.value->>'label'), '') <> '';

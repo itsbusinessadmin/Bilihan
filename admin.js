@@ -1689,6 +1689,10 @@ if(window.db){
    goes through set_product_variants() in one transaction, so a failure leaves the
    product with the choices it already had rather than none at all.
    ======================================================================== */
+/* An extra the customer can take several of (Extra Rice x2): only an add-on in a
+   pick-any-number variant can, since a size or a whole-price flavour is one thing. */
+const VARIANT_MAX_QTY=20;
+const canHaveQty=g=>g.price_mode==='add'&&g.selection==='multi';
 function mountVariantEditor(mount,groups){
   /* Saved variants start folded away: a product with four of them is otherwise a
      wall of controls when all the owner wanted was to glance at the list. */
@@ -1697,47 +1701,66 @@ function mountVariantEditor(mount,groups){
 
   function paint(){
     mount.innerHTML=`<div class="variant-head">
-        <div><strong>Variants</strong><small class="muted">Sizes, flavours, toppings, anything this product needs the customer to choose. Leave it empty if it has none.</small></div>
-        <div class="variant-add"><button type="button" class="modal-secondary-btn" id="variantAddGroup">+ Add variant</button></div>
+        <strong>Variants</strong>
+        <small class="muted">Sizes, flavours, extras: anything the customer chooses. Leave empty if this product has none.</small>
       </div>
-      ${state.groups.length?state.groups.map((g,gi)=>variantGroupHtml(g,gi)).join(''):'<p class="muted variant-empty">No variants yet. Press + Add variant to create one.</p>'}`;
+      ${state.groups.length?`<div class="variant-list">${state.groups.map((g,gi)=>variantGroupHtml(g,gi)).join('')}</div>`:''}
+      <button type="button" class="variant-add-group" id="variantAddGroup">+ Add variant</button>`;
     wire();
   }
+
+  /* What a folded variant says about itself, so the list reads without opening. */
+  function variantSummary(g){
+    const opts=g.options.filter(o=>String(o.label||'').trim());
+    const rules=[g.selection==='multi'?'Pick any':'Pick one',g.is_required?'Required':'Optional'].join(' · ');
+    const list=opts.map(o=>{
+      const amt=Number(o.amount||0)>0?` ${g.price_mode==='absolute'?'':'+'}${money(o.amount)}`:'';
+      const qty=canHaveQty(g)&&Number(o.max_qty||1)>1?` (up to ${Number(o.max_qty)})`:'';
+      return esc(o.label.trim())+amt+qty;
+    }).join(', ');
+    return `<span class="variant-summary-rules">${rules}</span>${list?`<span class="variant-summary-opts">${list}</span>`:''}`;
+  }
+
+  const seg=(gi,key,value,current,text)=>`<button type="button" class="variant-seg-btn${current===value?' is-on':''}" data-a="seg" data-k="${key}" data-v="${value}" data-g="${gi}" aria-pressed="${current===value}">${text}</button>`;
 
   function variantGroupHtml(g,gi){
     if(!state.open.has(g.id))return `<div class="variant-group is-closed" data-g="${gi}">
       <button type="button" class="variant-summary" data-a="toggle" data-g="${gi}" aria-label="Edit ${esc(String(g.label||'').trim()||'this variant')}">
-        <span class="variant-summary-name">${esc(String(g.label||'').trim())||'<em>Untitled variant</em>'}</span>
+        <span class="variant-summary-text">
+          <span class="variant-summary-name">${esc(String(g.label||'').trim())||'<em>Untitled variant</em>'}</span>
+          ${variantSummary(g)}
+        </span>
         <span class="variant-edit-icon" aria-hidden="true"></span>
       </button></div>`;
+    const qty=canHaveQty(g);
+    const cols=qty?' has-qty':'';
     return `<div class="variant-group" data-g="${gi}">
-      <div class="variant-group-head">
-        <input class="variant-label" data-a="label" data-g="${gi}" value="${esc(g.label)}" placeholder="Name this choice, e.g. Size">
-        <button type="button" class="variant-done" data-a="toggle" data-g="${gi}">Done</button>
-        <button type="button" class="variant-remove" data-a="delgroup" data-g="${gi}" title="Remove ${esc(g.label)}">Remove</button>
-      </div>
+      <label class="variant-name-field">Variant name
+        <input class="variant-label" data-a="label" data-g="${gi}" value="${esc(g.label)}" placeholder="e.g. Size, Flavour, Extras">
+      </label>
       <div class="variant-rules">
-        <label>Pricing<select data-a="price_mode" data-g="${gi}">
-          <option value="add"${g.price_mode==='add'?' selected':''}>Adds to the price</option>
-          <option value="absolute"${g.price_mode==='absolute'?' selected':''}>Is the whole price</option>
-        </select></label>
-        <label>Choosing<select data-a="selection" data-g="${gi}">
-          <option value="single"${g.selection==='single'?' selected':''}>Pick one</option>
-          <option value="multi"${g.selection==='multi'?' selected':''}>Pick any number</option>
-        </select></label>
-        <label class="check-row"><input type="checkbox" data-a="required" data-g="${gi}"${g.is_required?' checked':''}> Must choose</label>
+        <div class="variant-rule"><span>Customer picks</span>
+          <div class="variant-seg">${seg(gi,'selection','single',g.selection,'One')}${seg(gi,'selection','multi',g.selection,'Any number')}</div></div>
+        <div class="variant-rule"><span>Option price</span>
+          <div class="variant-seg">${seg(gi,'price_mode','add',g.price_mode,'Adds to price')}${seg(gi,'price_mode','absolute',g.price_mode,'Replaces price')}</div></div>
+        <label class="variant-required-toggle"><input type="checkbox" data-a="required" data-g="${gi}"${g.is_required?' checked':''}><span>Required</span></label>
       </div>
       <div class="variant-options">
-        <div class="variant-option-head"><span>Option</span><span>${g.price_mode==='absolute'?'Whole price':'Adds'}</span><span></span></div>
-        ${g.options.map((o,oi)=>`<div class="variant-option">
-          <input data-a="optlabel" data-g="${gi}" data-o="${oi}" value="${esc(o.label)}" placeholder="Name">
-          <input data-a="optamount" data-g="${gi}" data-o="${oi}" type="number" min="0" step="0.01" value="${Number(o.amount||0)}">
-          <button type="button" class="variant-opt-remove" data-a="delopt" data-g="${gi}" data-o="${oi}" title="Remove ${esc(o.label)}">×</button>
+        <div class="variant-option-head${cols}"><span>Option</span><span>${g.price_mode==='absolute'?'Price':'Adds'}</span>${qty?'<span title="How many of this the customer may order">Max qty</span>':''}<span></span></div>
+        ${g.options.map((o,oi)=>`<div class="variant-option${cols}">
+          <input data-a="optlabel" data-g="${gi}" data-o="${oi}" value="${esc(o.label)}" placeholder="Option name" aria-label="Option name">
+          <div class="variant-money"><span>${g.price_mode==='absolute'?'₱':'+₱'}</span><input data-a="optamount" data-g="${gi}" data-o="${oi}" type="number" min="0" step="0.01" value="${Number(o.amount||0)}" aria-label="Price"></div>
+          ${qty?`<div class="variant-money variant-qty-wrap"><span>Max</span><input class="variant-qty" data-a="optqty" data-g="${gi}" data-o="${oi}" type="number" min="1" max="${VARIANT_MAX_QTY}" step="1" value="${Math.max(1,Number(o.max_qty||1))}" aria-label="Max quantity"></div>`:''}
+          <button type="button" class="variant-opt-remove" data-a="delopt" data-g="${gi}" data-o="${oi}" title="Remove ${esc(o.label)}" aria-label="Remove option">×</button>
         </div>`).join('')}
-        <button type="button" class="modal-secondary-btn variant-add-option" data-a="addopt" data-g="${gi}">+ Add option</button>
+        <button type="button" class="variant-add-option" data-a="addopt" data-g="${gi}">+ Add option</button>
         <p class="muted variant-zero-hint">${g.price_mode==='absolute'
-          ?'Leave an option at 0 and choosing it keeps the product&rsquo;s own price. Customers only see a price on the options that have one.'
-          :'Leave an option at 0 and it adds nothing. Customers only see a price on the options that have one.'}</p>
+          ?'An option left at 0 keeps the product&rsquo;s own price.'
+          :'An option left at 0 adds nothing.'}${qty?' Set Max qty above 1 to let the customer order more than one, e.g. Extra Rice &times;2.':''}</p>
+      </div>
+      <div class="variant-group-foot">
+        <button type="button" class="variant-remove" data-a="delgroup" data-g="${gi}">Remove variant</button>
+        <button type="button" class="variant-done" data-a="toggle" data-g="${gi}">Done</button>
       </div>
     </div>`;
   }
@@ -1748,9 +1771,10 @@ function mountVariantEditor(mount,groups){
       /* A brand new one opens: there is nothing to glance at yet. */
       state.groups.push({id,variant_type:'custom',label:'',
         price_mode:'add',selection:'single',is_required:false,
-        options:[{id:uid(),label:'',amount:0}]});
+        options:[{id:uid(),label:'',amount:0,max_qty:1}]});
       state.open.add(id);
       paint();
+      mount.querySelector(`.variant-group[data-g="${state.groups.length-1}"] .variant-label`)?.focus();
     };
     mount.querySelectorAll('[data-a]').forEach(el=>{
       const gi=Number(el.dataset.g),oi=Number(el.dataset.o),a=el.dataset.a;
@@ -1760,19 +1784,20 @@ function mountVariantEditor(mount,groups){
         paint();
       };
       if(a==='delgroup')el.onclick=()=>{state.open.delete(state.groups[gi].id);state.groups.splice(gi,1);paint()};
-      if(a==='addopt')el.onclick=()=>{state.groups[gi].options.push({id:uid(),label:'',amount:0});paint()};
+      if(a==='addopt')el.onclick=()=>{state.groups[gi].options.push({id:uid(),label:'',amount:0,max_qty:1});paint();
+        mount.querySelector(`.variant-group[data-g="${gi}"] .variant-option:last-of-type input`)?.focus()};
       if(a==='delopt')el.onclick=()=>{state.groups[gi].options.splice(oi,1);paint()};
       if(a==='label')el.oninput=()=>{state.groups[gi].label=el.value};
       if(a==='optlabel')el.oninput=()=>{state.groups[gi].options[oi].label=el.value};
       if(a==='optamount')el.oninput=()=>{state.groups[gi].options[oi].amount=Number(el.value||0)};
+      if(a==='optqty')el.oninput=()=>{state.groups[gi].options[oi].max_qty=Math.min(VARIANT_MAX_QTY,Math.max(1,Math.floor(Number(el.value||1))))};
       if(a==='required')el.onchange=()=>{state.groups[gi].is_required=el.checked};
-      if(a==='selection')el.onchange=()=>{state.groups[gi].selection=el.value};
-      if(a==='price_mode')el.onchange=()=>{
-        if(el.value==='absolute'&&state.groups.some((g,i)=>i!==gi&&g.price_mode==='absolute')){
-          alert('Only one choice can set the whole price. Change the other one to "Adds to the price" first.');
-          el.value=state.groups[gi].price_mode;return;
+      if(a==='seg')el.onclick=()=>{
+        const k=el.dataset.k,v=el.dataset.v;
+        if(k==='price_mode'&&v==='absolute'&&state.groups.some((g,i)=>i!==gi&&g.price_mode==='absolute')){
+          alert('Only one variant can replace the price. Change the other one to "Adds to price" first.');return;
         }
-        state.groups[gi].price_mode=el.value;paint();
+        state.groups[gi][k]=v;paint();
       };
     });
   }
@@ -1780,10 +1805,12 @@ function mountVariantEditor(mount,groups){
   paint();
   /* Read back at save time, with the empty rows an admin left behind dropped. */
   /* A variant with no name, or with nothing to pick from, is an abandoned row
-     rather than a variant, so it never reaches the database. */
+     rather than a variant, so it never reaches the database. Max qty only means
+     something on an add-on the customer may pick several of; anywhere else it is 1. */
   return ()=>state.groups
     .map(g=>({...g,label:String(g.label||'').trim(),
-      options:g.options.filter(o=>String(o.label||'').trim()).map(o=>({...o,label:o.label.trim()}))}))
+      options:g.options.filter(o=>String(o.label||'').trim()).map(o=>({...o,label:o.label.trim(),
+        max_qty:canHaveQty(g)?Math.min(VARIANT_MAX_QTY,Math.max(1,Math.floor(Number(o.max_qty||1)))):1}))}))
     .filter(g=>g.label&&g.options.length);
 }
 
@@ -1800,7 +1827,7 @@ async function saveVariants(productId,groups){
     p_product_id:productId,
     p_groups:groups.map(g=>({variant_type:g.variant_type||'custom',label:g.label,
       price_mode:g.price_mode,selection:g.selection,is_required:!!g.is_required,
-      options:(g.options||[]).map(o=>({label:o.label,amount:Number(o.amount||0)}))}))
+      options:(g.options||[]).map(o=>({label:o.label,amount:Number(o.amount||0),max_qty:Number(o.max_qty||1)}))}))
   });
   if(error)throw error;
   if(!data?.ok)throw new Error(data?.error||'We could not save the choices for this product.');
