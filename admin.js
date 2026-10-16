@@ -1586,8 +1586,6 @@ function paintUsage(){
   const stLimit=LIMITS.storage_mb*1048576;
   const storageBytes=(u.storage||[]).reduce((n,b)=>n+Number(b.bytes||0),0);
   const storageFiles=(u.storage||[]).reduce((n,b)=>n+Number(b.files||0),0);
-  const exact=u.tables?.exact||{};
-  const tables=u.tables?.list||[];
 
   host.innerHTML=`
     <div class="panel"><div class="usage-head"><h3>Capacity</h3><span class="muted">${esc(LIMITS.plan_label)}</span></div>
@@ -1596,28 +1594,7 @@ function paintUsage(){
       <p class="usage-hint">Limits come from <code>config.js</code>. Your plan cannot be read from the browser, so check them against your Supabase plan.</p>
     </div>
 
-    <div class="panel"><h3>What is taking the space</h3>
-      <div class="table-wrap"><table class="table"><thead><tr><th>Table</th><th>Rows</th><th>Size</th></tr></thead><tbody>
-        ${tables.map(t=>`<tr><td>${esc(t.name)}</td><td>${Number(t.rows||0).toLocaleString()}</td><td>${esc(fmtBytes(t.bytes))}</td></tr>`).join('')}
-      </tbody></table></div>
-      <p class="usage-hint">Exact counts — orders ${Number(exact.orders||0).toLocaleString()}, order items ${Number(exact.order_items||0).toLocaleString()}, conversations ${Number(exact.support_threads||0).toLocaleString()}, messages ${Number(exact.support_messages||0).toLocaleString()}. Prune from Orders and Messages; deleting a conversation removes its messages too.</p>
-    </div>
-
-    ${(u.storage||[]).length?`<div class="panel"><h3>Uploaded files</h3>
-      <div class="table-wrap"><table class="table"><thead><tr><th>Bucket</th><th>Files</th><th>Size</th></tr></thead><tbody>
-        ${(u.storage||[]).map(b=>`<tr><td>${esc(b.bucket)}</td><td>${Number(b.files||0).toLocaleString()}</td><td>${esc(fmtBytes(b.bytes))}</td></tr>`).join('')}
-      </tbody></table></div>
-      <p class="usage-hint">Images are compressed on upload, so these should stay small. Deleting a product does not delete its image file.</p></div>`:''}
-
-    ${latencyBlock}
-
-    <div class="panel"><h3>Not measurable from here</h3>
-      <ul class="usage-list">
-        <li><strong>Bandwidth / egress</strong> — Supabase does not expose this to the browser. Check Supabase → Reports.</li>
-        <li><strong>Google Drive space</strong> used by payment receipts — check your Google account storage.</li>
-        <li><strong>Project pausing</strong> — free Supabase projects pause after a week with no activity.</li>
-      </ul>
-    </div>`;
+    ${latencyBlock}`;
 }
 
 function security(m){
