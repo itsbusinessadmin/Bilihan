@@ -322,15 +322,26 @@ button:disabled,.primary-btn:disabled,.secondary-btn:disabled,.danger-btn:disabl
 .variant-choice:has(input:focus-visible){outline:2px solid var(--accent-2);outline-offset:2px}
 .variant-choice-price{color:var(--muted);font-variant-numeric:tabular-nums}
 .variant-choice:has(input:checked) .variant-choice-price{color:var(--accent-3)}
-/* An extra the customer can take several of: a pill with its own - n + stepper. */
-.variant-choice-qty{cursor:default;padding-right:6px}
+/* A choice with extras the customer can take several of reads as a list: one
+   roomy row per option, name and price on the left, the - n + stepper (or a tick
+   for a plain option) on the right, so long names never squeeze the controls. */
+.variant-choices.is-list{flex-direction:column;flex-wrap:nowrap;gap:8px}
+.variant-choices.is-list .variant-choice{display:flex;justify-content:space-between;gap:12px;width:100%;min-height:56px;padding:10px 12px 10px 16px;border-radius:14px}
+.variant-choice-text{display:contents}
+.variant-choices.is-list .variant-choice-text{display:grid;gap:2px;min-width:0;flex:1}
+.variant-choices.is-list .variant-choice-label{overflow-wrap:anywhere;line-height:1.3}
+.variant-choices.is-list .variant-choice-price{font-size:var(--text-caption);white-space:nowrap}
+.variant-choices.is-list label.variant-choice::after{content:"";flex:0 0 auto;width:22px;height:22px;margin-right:6px;border:1.5px solid var(--line-strong);border-radius:6px;background:var(--card)}
+.variant-choices.is-list label.variant-choice:has(input:checked)::after{border-color:var(--accent-2);background:var(--accent-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5 9-10'/%3E%3C/svg%3E") center/14px no-repeat}
+.variant-choices.is-list label.variant-choice{position:relative}
+.variant-choice-qty{cursor:default}
 .variant-choice-qty.is-on{border-color:var(--accent-2);background:var(--accent-tint);font-weight:600}
 .variant-choice-qty.is-on .variant-choice-price{color:var(--accent-3)}
-.variant-stepper{display:inline-flex;align-items:center;gap:4px;margin-left:4px}
-.variant-stepper button{display:grid;place-items:center;width:30px;height:30px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--card);color:var(--text);font:inherit;font-size:1rem;font-weight:700;line-height:1;cursor:pointer}
+.variant-stepper{display:inline-flex;flex:0 0 auto;align-items:center;gap:10px}
+.variant-stepper button{display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid var(--line-strong);border-radius:50%;background:var(--card);color:var(--text);font:inherit;font-size:1.05rem;font-weight:700;line-height:1;cursor:pointer}
 .variant-stepper button:hover:not(:disabled){border-color:var(--accent-2)}
 .variant-stepper button:disabled{opacity:.35;cursor:default}
-.variant-stepper strong{min-width:18px;text-align:center;font-variant-numeric:tabular-nums}
+.variant-stepper strong{min-width:16px;text-align:center;font-variant-numeric:tabular-nums}
 .variant-hint{margin:8px 0 0;font-size:var(--text-caption)}
 /* The tick that stands in for a payment screenshot. */
 .paid-already-row{margin-top:var(--space-sm)}
