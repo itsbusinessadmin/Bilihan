@@ -93,7 +93,7 @@ Admin:
 `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/admin.html`
 
 ### 6. Sign in to Admin
-Open `admin.html` and use the email/password you created in Supabase Authentication.
+Open `admin.html` and enter the password for the `itsbilihan@gmail.com` Supabase Auth account. The email is supplied automatically by `ADMIN_LOGIN_EMAIL` in `admin.js`. Set or change the account password in Supabase Authentication; never put the password in the website source. The account must still be listed in `admin_users`.
 
 You can then manage:
 - Products
