@@ -458,6 +458,16 @@ become one swipeable row, because stacked they would take most of the screen and
 leave nowhere for the orders; and on a window shorter than 620px it stops pinning
 altogether, where a fixed header would leave barely a row visible.
 
+## Copying sales reports as images
+
+The camera buttons copy a PNG of All Sales, Who ordered, each seller's sales, or
+the five Orders totals, ready to paste into a message. Seller links offer the
+same controls for their reports and buyer lists. Reports include scrolling rows
+and collapsed buyer folders, while leaving out buttons and private seller-link
+tokens. If image clipboard access is unavailable or denied, the PNG downloads
+instead. Rendering happens in the browser using the bundled MIT-licensed
+`html-to-image` 1.11.13 library; reports are not uploaded anywhere.
+
 ## Storefront theme
 
 The storefront can wear one of two designs, chosen in **Admin → Appearance → Storefront theme**:

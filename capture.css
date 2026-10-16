@@ -1,0 +1,25 @@
+/* Small camera controls, shared by Admin and the seller sales page. */
+.capture-button{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:36px;height:36px;min-height:36px;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--card,var(--bg));color:var(--text);box-shadow:none;vertical-align:middle;cursor:pointer}
+.capture-button svg{width:19px;height:19px;pointer-events:none}
+.capture-button:hover{background:var(--card-soft,var(--bg));color:var(--text)}
+.capture-button:focus-visible{outline:2px solid var(--text);outline-offset:3px}
+.capture-button[aria-busy="true"]{opacity:.6;cursor:progress}
+.capture-heading{display:flex;align-items:center;gap:10px}
+.capture-heading h2,.capture-heading h3{margin:0}
+.capture-seller-card{position:relative}
+.capture-seller-card>.seller-card{width:100%;padding-right:62px}
+.capture-seller-card>.capture-button{position:absolute;right:14px;top:14px}
+.capture-seller-card .seller-card-go{display:none}
+.capture-notice{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:2147483647;width:max-content;max-width:calc(100vw - 32px);padding:12px 18px;border:1px solid var(--line);border-radius:12px;background:var(--bg-elevated,var(--bg));color:var(--text);box-shadow:0 6px 20px rgba(0,0,0,.16);font-size:.9rem;text-align:center}
+/* The export is a temporary offscreen snapshot, never the live admin form. */
+.capture-sheet{position:fixed;left:-20000px;top:0;box-sizing:border-box;padding:24px;background:var(--admin-card,var(--bg-elevated,var(--bg)));color:var(--text);pointer-events:none}
+.capture-sheet .capture-content{position:static!important;width:100%!important;max-width:none!important;height:auto!important;max-height:none!important;overflow:visible!important;margin:0!important;box-shadow:none!important;border:0!important;border-radius:0!important}
+.capture-sheet .admin-modal.capture-content,.capture-sheet .modal-body.capture-content{padding:0!important}
+.capture-sheet .table-wrap,.capture-sheet .buyers-table-wrap,.capture-sheet .seller-table-wrap{overflow:visible!important;max-height:none!important}
+.capture-sheet .orders-cards{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(160px,1fr))!important;overflow:visible!important;gap:12px!important}
+.capture-sheet .orders-cards .metric{min-width:0;flex:none!important}
+.capture-sheet .row-actions,.capture-sheet .who-btn,.capture-sheet .seller-toggle .seller-caret,.capture-sheet .item-folder-caret{display:none!important}
+.capture-sheet .seller-toggle,.capture-sheet .item-folder-head{pointer-events:none}
+.capture-sheet .seller-items-row[hidden],.capture-sheet .item-folder-body[hidden]{display:revert}
+.capture-sheet .orders-sticky::after{display:none}
+@media(max-width:600px){.capture-button{width:44px;height:44px;min-height:44px}.capture-seller-card>.capture-button{right:10px;top:10px}}

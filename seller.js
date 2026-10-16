@@ -119,7 +119,7 @@
   function sellerCard(seller) {
     const items = seller.items || [];
     const owed = owedOf(seller);
-    return `<button type="button" class="seller-card" data-seller="${esc(seller.name)}">
+    return `<div class="capture-seller-card"><button type="button" class="seller-card" data-seller="${esc(seller.name)}">
       <span class="seller-card-main">
         <span class="seller-card-name">${esc(seller.name)}</span>
         <span class="seller-card-sub">${num(seller.qty)} paid &middot; ${items.length} item${items.length === 1 ? '' : 's'}</span>
@@ -129,7 +129,8 @@
         ${owed ? `<span class="seller-card-owed">${money(owed)} unpaid</span>` : ''}
       </span>
       <span class="seller-card-go" aria-hidden="true">&rsaquo;</span>
-    </button>`;
+    </button>${BilihanCapture.button('#sellerCardCapture'+lastSellers.indexOf(seller),seller.name+' sales')}
+    <template id="sellerCardCapture${lastSellers.indexOf(seller)}"><section><h2>${esc(seller.name)}</h2><p>Paid sales only</p>${moneyTable(items,{label:'All items',qty:seller.qty,original_total:seller.original_total,interest_total:seller.interest_total,overall:seller.overall})}${owedNote(seller)}</section></template></div>`;
   }
 
   /* ---------- one seller's window ---------- */
@@ -137,7 +138,7 @@
   function dialogMarkup(title, body) {
     return `<div class="modal-body">
       <button type="button" class="icon-btn modal-close" id="sellerDialogClose" aria-label="Close"><img class="ui-icon" src="ios-icons/close.png" alt="" aria-hidden="true"></button>
-      <h2 class="seller-dialog-title">${esc(title)}</h2>
+      <div class="capture-heading"><h2 class="seller-dialog-title">${esc(title)}</h2>${BilihanCapture.button("#sellerDialog .modal-body",title+" sales and buyers")}</div>
       ${body}
     </div>`;
   }
@@ -191,8 +192,8 @@
     const open = openItemFolders.has(it.name);
     const paid = Number(it.qty || 0), unpaid = Number(it.unpaid_qty || 0);
     const people = new Set((it.buyers || []).map(b => String(b.name || '').toLowerCase())).size;
-    return `<section class="item-folder${open ? ' is-open' : ''}">
-      <h4 class="item-folder-heading">
+    return `<section id="sellerItemCapture${i}" class="item-folder${open ? ' is-open' : ''}">
+      <div class="capture-heading"><h4 class="item-folder-heading">
         <button type="button" class="item-folder-head" aria-expanded="${open}" aria-controls="${id}" data-item="${esc(it.name)}">
           <span class="item-folder-caret" aria-hidden="true"></span>
           <span class="item-folder-main">
@@ -200,7 +201,7 @@
             <span class="item-folder-sub">${[paid || !unpaid ? `${num(paid)} paid` : '', unpaid ? `${num(unpaid)} unpaid` : '', `${people} ${people === 1 ? 'customer' : 'customers'}`].filter(Boolean).join(' &middot; ')}</span>
           </span>
         </button>
-      </h4>
+      </h4>${BilihanCapture.button('#sellerItemCapture'+i,it.name+' buyers')}</div>
       <div class="item-folder-body" id="${id}"${open ? '' : ' hidden'}>${buyersTable(it.buyers || [])}${owedNote(it)}</div>
     </section>`;
   }
