@@ -229,7 +229,7 @@ async function autoRefresh(){
     if(print===AUTO.print)return;
     AUTO.print=print;
     const m=document.getElementById('adminMain');
-    const paint={dashboard,products,categories,orders}[A.section];
+    const paint={dashboard,products,promote,categories,orders}[A.section];
     if(!m||!paint)return;
     const y=window.scrollY;
     paint(m);
@@ -254,7 +254,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefres
 /* ========================================================================
    The shell: sidebar, and whichever section is showing
    ======================================================================== */
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['categories','Categories'],['orders','Orders'],['coupons','Coupons'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,categories,orders,coupons,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['promote','Promote'],['categories','Categories'],['orders','Orders'],['coupons','Coupons'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,promote,categories,orders,coupons,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
 /* ========================================================================
    Sales reporting
    ======================================================================== */
@@ -820,6 +820,42 @@ window.toggleProductHidden=async id=>{const p=A.data.products.find(x=>x.id===id)
 /* ========================================================================
    Categories
    ======================================================================== */
+/* ========================================================================
+   Promote: the menu as customers see it, as one shareable picture
+
+   Only what the storefront shows: hidden products are left out, sold-out ones
+   stay with a Sold Out tag, grouped by category in the shop's own order. The
+   section repaints through the same 3-second auto-refresh as Products, so a
+   price, stock or visibility change appears here on its own. The camera copies
+   the poster (logo, name and every product) ready to paste.
+   ======================================================================== */
+function promote(m){
+  const st=A.data.settings||{};
+  const shown=A.data.products.filter(p=>!p.is_hidden).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+  const cats=[...A.data.categories].sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+  const groups=cats.map(c=>({name:c.name,items:shown.filter(p=>p.category_id===c.id)}))
+    .concat([{name:'More',items:shown.filter(p=>!cats.some(c=>c.id===p.category_id))}])
+    .filter(g=>g.items.length);
+  const card=p=>{const sold=!p.is_available||Number(p.stock)<=0;return `<div class="promo-card${sold?' is-sold':''}">
+      <div class="promo-card-img">${p.image_url?`<img src="${esc(p.image_url)}" alt="">`:`<img src="bilihan-logo.png" alt="" class="is-placeholder">`}${sold?'<span class="promo-sold">Sold Out</span>':''}</div>
+      <strong class="promo-card-name">${esc(p.name)}</strong>
+      <span class="promo-card-price">${money(p.price)}</span>
+    </div>`};
+  m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Share your menu</span>
+      <div class="capture-heading"><h2>Promote</h2>${BilihanCapture.button('#promoPoster','Bilihan menu')}</div></div>
+      <span class="promo-live"><span class="promo-live-dot"></span>Live &middot; matches the customer page</span></div>
+    <p class="muted promo-hint">Tap the camera to copy this as one picture, ready to paste in Messenger, Facebook or a group chat. Hidden products are left out.</p>
+    <div class="promo-poster" id="promoPoster">
+      <div class="promo-head">
+        <img class="promo-logo" src="${esc(st.logo_url||'bilihan-logo.png')}" alt="">
+        <div><h3 class="promo-name">${esc(st.business_name||'Bilihan')}</h3>
+          ${st.hero_tagline?`<p class="promo-tagline">${esc(st.hero_tagline)}</p>`:''}</div>
+      </div>
+      ${groups.length?groups.map(g=>`<section class="promo-group"><h4>${esc(g.name)}</h4><div class="promo-grid">${g.items.map(card).join('')}</div></section>`).join('')
+        :'<p class="promo-empty">No products are showing on the customer page right now.</p>'}
+      <p class="promo-foot">Order now at <strong>${esc(location.hostname&&!/^(localhost|127\.)/.test(location.hostname)?location.hostname:'bilihan.shop')}</strong></p>
+    </div>`;
+}
 function categories(m){m.innerHTML=`<span class="eyebrow">Menu structure</span><h2>Categories</h2><div class="admin-grid"><div class="panel">${A.data.categories.map(c=>`<div class="summary-row" data-cat="${c.id}"><strong class="cat-name">${esc(c.name)}</strong><form class="cat-rename-form" hidden><input name="name" value="${esc(c.name)}" required maxlength="80" aria-label="Category name"><button class="primary-btn">Save</button><button type="button" data-cancel-rename>Cancel</button></form><div class="row-actions"><button onclick="renameCategory('${c.id}')">Rename</button><button onclick="moveCategory('${c.id}',-1)">↑</button><button onclick="moveCategory('${c.id}',1)">↓</button><button onclick="deleteCategory('${c.id}')">Delete</button></div></div>`).join('')}</div><form id="catForm" class="panel admin-form"><input name="name" placeholder="New category name" required><button class="primary-btn">Add Category</button></form></div>`;document.getElementById('catForm').onsubmit=async e=>{e.preventDefault();const name=new FormData(e.currentTarget).get('name');const {error}=await db.from('categories').insert({name,sort_order:nextSortOrder(A.data.categories)});if(error)return alert(error.message);await loadAll();renderShell()};
 m.querySelectorAll('.cat-rename-form').forEach(f=>{
   f.onsubmit=async e=>{e.preventDefault();const row=f.closest('[data-cat]');const n=String(new FormData(f).get('name')||'').trim();if(!n)return;const {error}=await db.from('categories').update({name:n}).eq('id',row.dataset.cat);if(error)return alert(error.message);await loadAll();renderShell()};

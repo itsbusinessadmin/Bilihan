@@ -467,6 +467,18 @@ Run `supabase-fix-audit-11.sql` in the Supabase SQL Editor once before using Max
 qty. It adds the column, saves it from the editor, and teaches `place_order` to
 check and charge extra quantities. Safe to re-run.
 
+## Promote tab
+
+**Admin → Promote** shows your menu the way customers see it: your logo, store
+name and tagline, then every product on the customer page grouped by category,
+with photo and price. Hidden products are left out and sold-out ones are tagged
+**Sold Out**. It updates on its own (the same 3-second refresh as the rest of
+Admin), so a price, stock or visibility change appears without reloading.
+
+Tap the camera beside the title to copy the whole poster as one picture, ready
+to paste into Messenger, Facebook or a group chat. If the browser does not allow
+copying, the picture downloads instead.
+
 ## Hiding products from customers
 
 In **Admin → Products**, the eye button beside **Edit** controls whether a product

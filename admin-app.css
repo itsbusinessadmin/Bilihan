@@ -794,3 +794,38 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 @media(max-width:640px){
   .coupon-gen-grid{grid-template-columns:1fr}
 }
+
+/* Promote: a poster of the customer menu, built to be copied as one image. */
+.promo-live{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--admin-line);border-radius:999px;background:var(--admin-card);color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:600}
+.promo-live-dot{width:8px;height:8px;border-radius:50%;background:#22a55a;box-shadow:0 0 0 3px rgba(34,165,90,.2);animation:promoPulse 2s ease-in-out infinite}
+@keyframes promoPulse{50%{box-shadow:0 0 0 6px rgba(34,165,90,0)}}
+@media (prefers-reduced-motion:reduce){.promo-live-dot{animation:none}}
+.promo-hint{margin:6px 0 var(--admin-space-md);font-size:var(--admin-text-secondary)}
+.promo-poster{max-width:960px;padding:28px;border:1px solid var(--admin-line);border-radius:var(--admin-radius);background:#fffdf8;color:#1d1f1c}
+.promo-head{display:flex;align-items:center;gap:16px;padding-bottom:20px;margin-bottom:8px;border-bottom:2px solid #efe8da}
+.promo-logo{width:76px;height:76px;flex:0 0 76px;border-radius:50%;object-fit:cover;background:#fff;border:1px solid #efe8da}
+.promo-name{margin:0;font-size:1.7rem;line-height:1.1;letter-spacing:-.02em;color:#1d1f1c}
+.promo-tagline{margin:6px 0 0;color:#6b6f68;font-size:.92rem;line-height:1.4}
+.promo-group{margin-top:20px}
+.promo-group h4{margin:0 0 12px;color:#1f4d34;font-size:.8rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.promo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
+.promo-card{display:grid;align-content:start;gap:4px;padding:10px;border:1px solid #efe8da;border-radius:16px;background:#fff}
+.promo-card-img{position:relative;aspect-ratio:1;margin-bottom:6px;overflow:hidden;border-radius:12px;background:#f4efe4}
+.promo-card-img img{display:block;width:100%;height:100%;object-fit:cover}
+.promo-card-img img.is-placeholder{object-fit:contain;padding:18%;opacity:.55}
+.promo-card-name{font-size:.92rem;line-height:1.3;color:#1d1f1c;overflow-wrap:anywhere}
+.promo-card-price{color:#1f4d34;font-size:1rem;font-weight:800;font-variant-numeric:tabular-nums}
+.promo-card.is-sold .promo-card-img img{filter:grayscale(1);opacity:.5}
+.promo-card.is-sold .promo-card-price{color:#9a9d97;text-decoration:line-through}
+.promo-sold{position:absolute;left:8px;top:8px;padding:3px 9px;border-radius:999px;background:#c62828;color:#fff;font-size:.7rem;font-weight:800;letter-spacing:.03em}
+.promo-empty{margin:24px 0;color:#6b6f68;text-align:center}
+.promo-poster p{max-width:none}
+.promo-foot{margin:24px 0 0;padding-top:16px;border-top:2px solid #efe8da;color:#6b6f68;font-size:.9rem;text-align:center}
+.promo-foot strong{color:#1f4d34}
+.capture-sheet:has(.promo-poster){background:#fffdf8;padding:0}
+@media (max-width:560px){
+  .promo-poster{padding:16px}
+  .promo-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .promo-logo{width:58px;height:58px;flex-basis:58px}
+  .promo-name{font-size:1.35rem}
+}
