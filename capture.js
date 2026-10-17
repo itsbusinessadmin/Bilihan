@@ -49,6 +49,9 @@
       const pixelRatio = Math.min(2, 16384 / Math.max(width, height), Math.sqrt(16000000 / (width * height)));
       const blob = await htmlToImage.toBlob(stage, {
         width, height, pixelRatio, skipFonts: true,
+        // An image the browser cannot re-read (no CORS) becomes a blank tile
+        // instead of failing the whole picture.
+        imagePlaceholder: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
         style: {position: 'static', margin: '0'},
         backgroundColor: getComputedStyle(stage).backgroundColor
       });
