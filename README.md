@@ -579,7 +579,16 @@ Several orders from the same person land in **one** conversation. Threads are ke
 on the customer's phone number when they gave one and on their name otherwise, so
 Admin sees one thread per customer rather than one per order.
 
-Replies are in **Admin → Messages**, which carries an unread count in the sidebar.
+Replies are in the floating chat bubble at the bottom right of every Admin page
+(above the menu on a phone). The bubble carries the unread count; tap it for the
+conversation list, tap a customer to read and reply, and use the back arrow to
+return to the list. Each conversation has its own delete button, and **Delete
+all** sits at the top of the list.
+
+On the storefront, the chat opens by itself with the notification sound when the
+store replies (or when a reply is already waiting as the page opens), without
+popping up the phone keyboard. A tab in the background waits and opens the chat
+when the customer comes back to it.
 The customer's button carries its own unread badge.
 
 The chat opens with a greeting that uses the name on the order — "Hi, Maria Santos
