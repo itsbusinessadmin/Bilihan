@@ -81,7 +81,7 @@ async function init(){
 }
 function renderSetup(){app.innerHTML=`<div class="login-wrap"><div class="login-card"><img src="bilihan-logo.png" style="width:90px;border-radius:50%"><span class="eyebrow">Bilihan v3</span><h2>Connect Supabase</h2><p>Edit <strong>config.js</strong> once and paste your Supabase Project URL and anon public key, then reload this page.</p><p class="muted">Never paste a service_role key into the website.</p></div></div>`}
 function friendlyAuthError(message){const m=String(message||'').toLowerCase();if(m.includes('invalid login credentials')||m.includes('invalid email or password'))return 'That password did not match. Please try again.';if(m.includes('email not confirmed'))return 'This email address has not been confirmed yet. Check your inbox for the confirmation link.';if(m.includes('too many requests')||m.includes('rate limit'))return 'Too many sign-in attempts. Wait a minute and try again.';if(m.includes('network')||m.includes('fetch failed')||m.includes('failed to fetch'))return 'Could not reach the server. Check your connection and try again.';return 'Sign in failed. Please try again.'}
-function renderLogin(msg=''){app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Password<span class="password-wrap"><input name="password" id="loginPassword" type="password" autocomplete="current-password" required><button type="button" class="password-toggle" id="pwToggle" aria-label="Show password">Show</button></span></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('pwToggle').onclick=e=>{const input=document.getElementById('loginPassword');const show=input.type==='password';input.type=show?'text':'password';e.currentTarget.textContent=show?'Hide':'Show';e.currentTarget.setAttribute('aria-label',show?'Hide password':'Show password');input.focus()};document.getElementById('loginForm').onsubmit=async e=>{
+function renderLogin(msg=''){unmountChatDock();app.innerHTML=`<div class="login-wrap"><form id="loginForm" class="login-card admin-form"><img src="bilihan-mark.webp" alt="" style="width:86px;border-radius:50%;margin:auto"><span class="eyebrow">Bilihan Admin</span><h2>Secure sign in</h2>${msg?`<div class="status-banner">${esc(msg)}</div>`:''}<label>Password<span class="password-wrap"><input name="password" id="loginPassword" type="password" autocomplete="current-password" required><button type="button" class="password-toggle" id="pwToggle" aria-label="Show password">Show</button></span></label><button class="primary-btn">Sign In</button><p class="muted" style="margin:0;text-align:center">This device stays signed in until you use Log Out.</p></form></div>`;document.getElementById('pwToggle').onclick=e=>{const input=document.getElementById('loginPassword');const show=input.type==='password';input.type=show?'text':'password';e.currentTarget.textContent=show?'Hide':'Show';e.currentTarget.setAttribute('aria-label',show?'Hide password':'Show password');input.focus()};document.getElementById('loginForm').onsubmit=async e=>{
   e.preventDefault();
   const form=e.currentTarget;
   const button=form.querySelector('button[type="submit"],button.primary-btn');
@@ -222,7 +222,7 @@ async function autoRefresh(){
        have started while it was in flight. */
     if(autoRefreshPaused())return;
     paintNavBadge();
-    if(A.section==='messages'){paintThreadList();paintSeen()}  /* receipts, without touching the reply box */
+    if(MSG.panelOpen){paintThreadList();paintSeen()}  /* receipts, without touching the reply box */
     if(AUTO_KEEP_MARKUP.has(A.section))return;
     /* Nothing moved, so there is nothing to redraw. */
     const print=dataPrint();
@@ -254,7 +254,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefres
 /* ========================================================================
    The shell: sidebar, and whichever section is showing
    ======================================================================== */
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['promote','Promote'],['categories','Categories'],['orders','Orders'],['coupons','Coupons'],['messages','Messages'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();if(A.section!=='messages'){stopMessagePolling();MSG.openId=null}renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,promote,categories,orders,coupons,messages,settings,appearance,security}[A.section]||dashboard)(m);startAutoRefresh()}
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['promote','Promote'],['categories','Categories'],['orders','Orders'],['coupons','Coupons'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,promote,categories,orders,coupons,settings,appearance,security}[A.section]||dashboard)(m);mountChatDock();startAutoRefresh()}
 /* ========================================================================
    Sales reporting
    ======================================================================== */
@@ -1062,7 +1062,7 @@ const CHIME_WATCH_MS=8000;
 setInterval(async()=>{
   if(!A.session||!window.db)return;
   if(!document.hidden&&!autoRefreshPaused())return;          /* the 3-second refresh has it */
-  if(!document.hidden&&A.section==='messages')return;         /* the Messages poll has it   */
+  if(!document.hidden&&MSG.panelOpen)return;                  /* the chat poll has it       */
   const started=Date.now();
   try{
     const {data,error}=await db.from('support_threads').select('id,admin_unread');
@@ -1071,7 +1071,7 @@ setInterval(async()=>{
 },CHIME_WATCH_MS);
 
 function adminUnreadTotal(){return (A.data.threads||[]).reduce((n,t)=>n+Number(t.admin_unread||0),0)}
-const MSG={openId:null,messages:[],timer:null,loading:false,sync:null,sending:new Set()};
+const MSG={openId:null,messages:[],timer:null,loading:false,sync:null,sending:new Set(),panelOpen:false};
 
 function stopMessagePolling(){clearInterval(MSG.timer);MSG.timer=null;MSG.sync=null}
 
@@ -1119,20 +1119,19 @@ async function openThread(id){
 }
 
 function paintNavBadge(){
-  const btn=document.querySelector('.side-nav button[data-s="messages"]');
-  if(!btn)return;
+  const badge=document.getElementById('chatFabBadge');
+  if(!badge)return;
   const n=adminUnreadTotal();
-  const existing=btn.querySelector('.nav-badge');
-  if(!n){existing?.remove();return}
-  if(existing)existing.textContent=n>99?'99+':n;
-  else btn.insertAdjacentHTML('beforeend',`<span class="nav-badge">${n>99?'99+':n}</span>`);
+  badge.textContent=n>99?'99+':n;
+  badge.hidden=!n;
+  document.getElementById('chatFab')?.setAttribute('aria-label',n?`Customer messages, ${n} unread`:'Customer messages');
 }
 
 function threadRowHtml(t){
   const when=phShort(t.last_message_at);
   /* The checkbox sits beside the row button rather than inside it: a button may
      not contain another interactive control. */
-  return `<div class="thread-item${MSG.openId===t.id?' active':''}">${bulkCheckboxHtml(t.id)}<button type="button" class="thread-row" data-thread="${esc(t.id)}">
+  return `<div class="thread-item${MSG.openId===t.id?' active':''}"><button type="button" class="thread-row" data-thread="${esc(t.id)}">
     <span class="thread-row-top"><strong>${esc(t.customer_name||'Customer')}</strong>${t.admin_unread?`<span class="thread-unread">${t.admin_unread}</span>`:''}</span>
     <span class="thread-row-sub">${esc(t.phone||'No phone on file')} · ${esc(when)}</span></button></div>`;
 }
@@ -1152,7 +1151,7 @@ function paintThreadList(){
   const threads=threadsWithMessages();
   list.innerHTML=threads.length?threads.map(threadRowHtml).join(''):'<p class="muted" style="padding:14px">No customer messages yet.</p>';
   list.querySelectorAll('[data-thread]').forEach(b=>b.onclick=()=>openThread(b.dataset.thread));
-  MSG.sync?.();
+  showChatView();
 }
 
 /* Messenger-style read receipt: "Seen" under our own last message, once the
@@ -1179,7 +1178,8 @@ function paintThread(){
   const host=document.getElementById('threadView');
   if(!host)return;
   const thread=(A.data.threads||[]).find(t=>t.id===MSG.openId);
-  if(!thread){host.innerHTML='<div class="thread-empty"><p class="muted">Pick a conversation on the left to read it and reply.</p></div>';return}
+  showChatView();
+  if(!thread){host.innerHTML='';return}
   const log=MSG.loading&&!MSG.messages.length
     ?'<p class="muted" style="padding:14px">Loading…</p>'
     :(MSG.messages.length?MSG.messages.map(m=>{
@@ -1193,12 +1193,17 @@ function paintThread(){
   const draft=prev?prev.value:'';
   const caret=prev?prev.selectionStart:null;
   const hadFocus=prev&&document.activeElement===prev;
-  host.innerHTML=`<div class="thread-head"><div><strong>${esc(thread.customer_name||'Customer')}</strong><span class="thread-row-sub">${esc(thread.phone||'No phone on file')}</span></div></div>
+  host.innerHTML=`<div class="thread-head"><div><strong>${esc(thread.customer_name||'Customer')}</strong><span class="thread-row-sub">${esc(thread.phone||'No phone on file')}</span></div><button type="button" class="chat-thread-delete" id="threadDelete" title="Delete this conversation" aria-label="Delete this conversation"></button></div>
     <div class="thread-log">${log}<div class="msg-seen" id="threadSeen" hidden></div></div>
     <form class="thread-compose" id="threadCompose"><label class="sr-only" for="threadInput">Reply</label>
       <textarea id="threadInput" rows="1" maxlength="2000" placeholder="Write a reply…"></textarea>
       <button class="primary-btn" type="submit">Send</button></form>`;
   paintSeen();
+  document.getElementById('threadDelete').onclick=async()=>{
+    if(!confirm(`Delete the conversation with ${thread.customer_name||'this customer'}? This cannot be undone.`))return;
+    try{await removeThreads([thread.id]);A.data.threads=(A.data.threads||[]).filter(t=>t.id!==thread.id);paintThreadList();paintThread();paintNavBadge()}
+    catch(err){alert(err.message||'Could not delete the conversation.')}
+  };
   const logEl=host.querySelector('.thread-log');
   if(logEl&&atBottom)logEl.scrollTop=logEl.scrollHeight;
   const form=document.getElementById('threadCompose');
@@ -1271,34 +1276,81 @@ async function deleteAllThreads(){
   if(prompt('Type DELETE ALL MESSAGES to confirm:')!=='DELETE ALL MESSAGES')return alert('Delete All cancelled.');
   try{
     await removeThreads(threads.map(t=>t.id));
-    bulkReset();await loadAll();renderShell();
+    await loadAll();paintThreadList();paintThread();paintNavBadge();
     alert('All conversations and their messages have been deleted.');
   }catch(err){console.error(err);alert(err.message||'Could not delete the conversations.')}
 }
 
-function messages(m){
-  m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Support</span><h2>Messages</h2></div>
-      <div class="row-actions"><button type="button" id="bulkToggle">Select</button><button type="button" class="danger-btn" id="deleteAllThreads">Delete All Messages</button></div></div>
-    ${bulkBarHtml()}
-    <div class="thread-layout"><div class="panel thread-list" id="threadList"></div><div class="panel thread-view" id="threadView"></div></div>`;
-  paintThreadList();paintThread();
+/* Messages float over every section, bottom right, like a chat app: the button
+   carries the unread count, and the panel holds the conversation list, or one
+   conversation with a back arrow. It lives outside #app so switching sections
+   (which rebuilds the shell) leaves an open conversation and its draft alone. */
+/* On a phone the section menu sits along the bottom of the screen; the chat sits
+   just above it instead of covering it. */
+function placeChatDock(){
+  const dock=document.getElementById('chatDock'),bar=document.querySelector('.sidebar');
+  if(!dock)return;
+  const r=bar?bar.getBoundingClientRect():null;
+  const atBottom=r&&r.top>innerHeight/2&&r.bottom>=innerHeight-2;
+  dock.style.bottom=atBottom?`${Math.ceil(r.height)+12}px`:'';
+}
+addEventListener('resize',placeChatDock);
+function mountChatDock(){
+  if(document.getElementById('chatDock')){paintNavBadge();placeChatDock();return}
+  document.body.insertAdjacentHTML('beforeend',`<div class="chat-dock" id="chatDock">
+    <section class="chat-panel" id="chatPanel" role="dialog" aria-label="Customer messages" hidden>
+      <header class="chat-panel-head">
+        <button type="button" class="chat-head-btn chat-back" id="chatBack" aria-label="Back to conversations" hidden>&lsaquo;</button>
+        <strong>Messages</strong>
+        <button type="button" class="chat-head-btn chat-delete-all" id="deleteAllThreads">Delete all</button>
+        <button type="button" class="chat-head-btn" id="chatClose" aria-label="Close messages">&times;</button>
+      </header>
+      <div class="chat-panel-body"><div class="thread-list" id="threadList"></div><div class="thread-view" id="threadView" hidden></div></div>
+    </section>
+    <button type="button" class="chat-fab" id="chatFab" aria-controls="chatPanel" aria-expanded="false" aria-label="Customer messages">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.3 8.9 8.9 0 0 1-3.9-.9L3 20.5l1.7-4.9a8.1 8.1 0 0 1-1.2-4.1A8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>
+      <span class="chat-fab-badge" id="chatFabBadge" hidden></span>
+    </button></div>`);
+  document.getElementById('chatFab').onclick=()=>MSG.panelOpen?closeChat():openChat();
+  document.getElementById('chatClose').onclick=closeChat;
+  document.getElementById('chatBack').onclick=()=>{MSG.openId=null;MSG.messages=[];paintThreadList();paintThread()};
   document.getElementById('deleteAllThreads').onclick=deleteAllThreads;
-  MSG.sync=wireBulk('messages',document.getElementById('threadList'),'conversation',removeThreads);
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&MSG.panelOpen&&!document.querySelector('.admin-modal-backdrop'))closeChat()});
+  paintNavBadge();placeChatDock();
+}
+function unmountChatDock(){stopMessagePolling();MSG.panelOpen=false;MSG.openId=null;MSG.messages=[];document.getElementById('chatDock')?.remove()}
+/* The list and the open conversation share the panel: one or the other shows. */
+function showChatView(){
+  const inThread=!!(MSG.openId&&(A.data.threads||[]).some(t=>t.id===MSG.openId));
+  const list=document.getElementById('threadList'),view=document.getElementById('threadView');
+  if(!list||!view)return;
+  list.hidden=inThread;view.hidden=!inThread;
+  document.getElementById('chatBack').hidden=!inThread;
+  document.getElementById('deleteAllThreads').hidden=inThread||!threadsWithMessages().length;
+}
+function openChat(){
+  MSG.panelOpen=true;
+  document.getElementById('chatPanel').hidden=false;
+  document.getElementById('chatFab').setAttribute('aria-expanded','true');
+  document.getElementById('chatDock').classList.add('is-open');
+  paintThreadList();paintThread();
+  refreshThreads();
   stopMessagePolling();
-  /* 4s rather than 12s: this is what carries the customer's read receipt while the
-     admin has focus in the reply box, which pauses the page-wide refresh. */
+  /* 4s: this is what carries new messages and the customer's read receipt while the
+     panel is open, including while the admin is typing (which pauses the page-wide
+     refresh). paintThread's draft carry-over keeps a half-typed reply intact. */
   MSG.timer=setInterval(()=>{
-    if(document.hidden||A.section!=='messages')return;
-    /* While the page-wide refresh has stood down (typing in the reply box, a
-       modal open), this poll is the only thing carrying new messages and read
-       receipts — running it regardless used to fetch every thread twice over.
-       While idle, the page refresh handles the list, but the open thread's own
-       messages still have to arrive: otherwise new customer words sit unseen
-       until you click into the reply box. paintThread's draft carry-over keeps
-       any half-typed reply intact. */
-    if(autoRefreshPaused())refreshThreads();
-    else if(MSG.openId)loadThreadMessages(MSG.openId,{silent:true});
+    if(document.hidden||!MSG.panelOpen)return;
+    if(autoRefreshPaused()||!MSG.openId)refreshThreads();
+    else loadThreadMessages(MSG.openId,{silent:true});
   },4000);
+}
+function closeChat(){
+  MSG.panelOpen=false;
+  stopMessagePolling();
+  document.getElementById('chatPanel').hidden=true;
+  document.getElementById('chatFab').setAttribute('aria-expanded','false');
+  document.getElementById('chatDock').classList.remove('is-open');
 }
 
 

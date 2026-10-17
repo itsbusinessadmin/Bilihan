@@ -16,7 +16,7 @@
      the unread badge is the least time-critical part of the widget, and the 3s
      idle poll was the steadiest background load in the app. */
   const POLL_OPEN = 3000;      /* while the panel is open        */
-  const POLL_IDLE = 15000;     /* badge refresh while it is shut */
+  const POLL_IDLE = 8000;      /* while it is shut: a reply opens the chat, so not too slow */
   /* A background tab used to poll nothing at all, so a reply arriving while the
      customer was on another tab made no sound -- the one moment a chime is for.
      It now checks the unread count every ten seconds. support_unread has no side
@@ -41,7 +41,7 @@
        own baseline. null means "not looked yet": the first reading only sets it, so
        a reply already waiting when the page opened is on the badge, not announced. */
     heardUnread: null, heardAdminAt: null,
-    pollSeq: 0, pollApplied: 0, lastHiddenPoll: 0
+    pollSeq: 0, pollApplied: 0, lastHiddenPoll: 0, openWhenVisible: false, quietOpen: false
   };
 
   const chime = () => window.BilihanChime?.play();
@@ -131,7 +131,9 @@
     /* The box clears only when the message actually sent: on a failed send the
        text stays put so it can be retried instead of retyped. */
     form.onsubmit = async e => { e.preventDefault(); if(await send(input.value)){ input.value=''; grow(); } input.focus(); };
-    input.focus();
+    /* Not when the chat opened by itself for a reply: on a phone that would throw
+       the keyboard up over the message the customer is meant to read. */
+    if (!state.quietOpen) input.focus();
   }
 
   function greetingHtml() {
@@ -281,8 +283,14 @@
       if (!data?.ok) { clearSession(); renderIdentify('Please identify yourself again to continue.'); return; }
       if (data?.ok) {
         const n = data.unread || 0;
-        if (state.heardUnread !== null && n > state.heardUnread) chime();
+        /* A reply from the store opens the chat by itself, with the chime, so the
+           customer sees it without hunting for the badge. That includes one already
+           waiting when the page loads. */
+        const fresh = state.heardUnread !== null && n > state.heardUnread;
+        const waiting = state.heardUnread === null && n > 0;
+        if (fresh) chime();
         state.heardUnread = n;
+        if ((fresh || waiting) && !state.open) autoOpen();
         setUnread(n);
         state.adminLastReadAt = data.admin_last_read_at || null;
       }
@@ -393,6 +401,14 @@
     else renderIdentify(state.lastError, { order: latestOrder()?.order_code || '', phone: '' });
     schedule();
   }
+  /* Opening reads the conversation, which tells the store it was seen -- so a
+     hidden tab waits and opens the chat the moment the customer comes back. */
+  async function autoOpen() {
+    if (document.hidden) { state.openWhenVisible = true; return; }
+    state.openWhenVisible = false;
+    state.quietOpen = true;
+    try { await openPanel(); } finally { state.quietOpen = false; }
+  }
   function closePanel() {
     state.open = false;
     $('supportPanel').hidden = true;
@@ -409,6 +425,7 @@
     $('supportClose').onclick = closePanel;
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.open) closePanel(); });
     document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && state.openWhenVisible && !state.open) { autoOpen(); return; }
       if (document.hidden || !state.open) return;
       /* A reply that came in while the tab was hidden has already chimed through the
          hidden-tab count, so coming back re-reads quietly rather than chiming again. */
