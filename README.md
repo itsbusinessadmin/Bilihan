@@ -467,6 +467,17 @@ Run `supabase-fix-audit-11.sql` in the Supabase SQL Editor once before using Max
 qty. It adds the column, saves it from the editor, and teaches `place_order` to
 check and charge extra quantities. Safe to re-run.
 
+## What's new notes (Admin)
+
+Every time Admin is opened or refreshed, a **What's new** box at the top lists the
+changes from the last 3 days (72 hours), newest first, each tagged **Admin** or
+**Customer page**. Four show at first; **Show all** lists the rest. The × hides it
+until the next refresh. When nothing is that recent, the box does not appear.
+
+The notes live in `updates.js`. When a change ships, add an entry at the top with
+the time it went in (`at`, ISO time), where it shows (`where`), a short `title` and
+a plain-language `text`. Older entries stop showing on their own.
+
 ## Promote tab
 
 **Admin → Promote** shows your menu the way customers see it: your logo, store

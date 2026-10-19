@@ -254,7 +254,42 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefres
 /* ========================================================================
    The shell: sidebar, and whichever section is showing
    ======================================================================== */
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['promote','Promote'],['categories','Categories'],['orders','Orders'],['coupons','Coupons'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,promote,categories,orders,coupons,settings,appearance,security}[A.section]||dashboard)(m);mountChatDock();startAutoRefresh()}
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['promote','Promote'],['categories','Categories'],['orders','Orders'],['coupons','Coupons'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><div class="admin-main admin-updates-slot" id="updatesSlot"></div><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,promote,categories,orders,coupons,settings,appearance,security}[A.section]||dashboard)(m);paintUpdatesBanner();mountChatDock();startAutoRefresh()}
+/* ========================================================================
+   What's new: the changes from the last 3 days, from updates.js
+
+   Shown every time Admin is opened or refreshed. Closing it hides it until the
+   next refresh, and it is not drawn at all when nothing is that recent.
+   ======================================================================== */
+const UPDATES={dismissed:false,expanded:false};
+const UPDATES_WINDOW_MS=3*24*3600*1000;
+const UPDATES_SHOWN=4;
+function recentUpdates(){
+  const now=Date.now();
+  return (window.BILIHAN_UPDATES||[])
+    .map(u=>({...u,t:new Date(u.at).getTime()}))
+    .filter(u=>Number.isFinite(u.t)&&u.t<=now+60000&&now-u.t<=UPDATES_WINDOW_MS)
+    .sort((a,b)=>b.t-a.t);
+}
+function paintUpdatesBanner(){
+  const slot=document.getElementById('updatesSlot');
+  if(!slot)return;
+  const list=UPDATES.dismissed?[]:recentUpdates();
+  if(!list.length){slot.innerHTML='';slot.hidden=true;return}
+  slot.hidden=false;
+  const shown=UPDATES.expanded?list:list.slice(0,UPDATES_SHOWN);
+  const day=t=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}).format(new Date(t));
+  slot.innerHTML=`<section class="updates-banner" aria-label="What's new">
+    <div class="updates-head"><div><span class="updates-spark" aria-hidden="true">✦</span><strong>What&rsquo;s new</strong><span class="updates-sub">${list.length} update${list.length===1?'':'s'} in the last 3 days</span></div>
+      <button type="button" class="updates-close" id="updatesClose" aria-label="Hide what's new">&times;</button></div>
+    <ul class="updates-list">${shown.map(u=>`<li><span class="updates-tag ${u.where==='Admin'?'is-admin':'is-store'}">${esc(u.where||'Admin')}</span><div><strong>${esc(u.title)}</strong> <span class="updates-date">${esc(day(u.t))}</span><p>${esc(u.text||'')}</p></div></li>`).join('')}</ul>
+    ${list.length>UPDATES_SHOWN?`<button type="button" class="updates-more" id="updatesMore">${UPDATES.expanded?'Show less':`Show all ${list.length}`}</button>`:''}
+  </section>`;
+  document.getElementById('updatesClose').onclick=()=>{UPDATES.dismissed=true;paintUpdatesBanner()};
+  const more=document.getElementById('updatesMore');
+  if(more)more.onclick=()=>{UPDATES.expanded=!UPDATES.expanded;paintUpdatesBanner()};
+}
+
 /* ========================================================================
    Sales reporting
    ======================================================================== */
