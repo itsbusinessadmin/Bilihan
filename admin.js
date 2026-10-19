@@ -883,12 +883,23 @@ function receiptUrlFor(order){
   const tok=scriptToken();
   return GOOGLE_SHEETS_WEB_APP_URL+'?action=receipt&order_code='+encodeURIComponent(order.order_code||'')+(tok?'&token='+encodeURIComponent(tok):'');
 }
+/* The choices frozen onto an order line, one per row under the item name, each with
+   what it cost: "Extra: Boiled Egg +P15.00". The label already carries any x2. */
+function orderLineVariantsHtml(item){
+  const v=(item.variants||[]).filter(x=>x&&x.label);
+  if(!v.length)return '';
+  return `<ul class="order-item-variants">${v.map(x=>{
+    const amt=Number(x.amount||0),n=Number(x.qty||1);
+    const price=amt>0?` <span>${x.price_mode==='absolute'?'':'+'}${money(amt*(x.price_mode==='absolute'?1:n))}</span>`:'';
+    return `<li>${x.group?`<em>${esc(x.group)}:</em> `:''}${esc(x.label)}${price}</li>`;
+  }).join('')}</ul>`;
+}
 function openOrderDetails(id){
   const o=(A.data.orders||[]).find(x=>x.id===id);
   if(!o){alert('That order is no longer available. Refresh the page.');return}
   const field=(label,value)=>value===''||value===null||value===undefined?'':`<dt>${esc(label)}</dt><dd>${esc(String(value))}</dd>`;
   const items=(o.order_items||[]);
-  const itemRows=items.map(i=>`<tr><td>${esc(i.product_name)}</td><td>${i.qty}</td><td>${money(i.unit_price)}</td><td><strong>${money(Number(i.unit_price||0)*Number(i.qty||0))}</strong></td></tr>`).join('');
+  const itemRows=items.map(i=>`<tr><td>${esc(i.product_name)}${orderLineVariantsHtml(i)}</td><td>${i.qty}</td><td>${money(i.unit_price)}</td><td><strong>${money(Number(i.unit_price||0)*Number(i.qty||0))}</strong></td></tr>`).join('');
   const receiptHref=receiptUrlFor(o);
   document.getElementById('orderDetailModal')?.remove();
   document.body.insertAdjacentHTML('beforeend',`<div class="admin-modal-backdrop" id="orderDetailModal"><div class="admin-modal admin-modal-wide" role="dialog" aria-modal="true" aria-labelledby="orderDetailTitle"><div class="admin-modal-header"><div><span class="eyebrow">Customer order</span><h2 id="orderDetailTitle">#${esc(o.order_code)}${o.status==='Cancelled'?' <span class="order-cancelled-tag">Cancelled</span>':''}</h2></div><button type="button" class="admin-modal-close" id="closeOrderDetail" aria-label="Close">&times;</button></div>
@@ -2130,7 +2141,7 @@ function openCouponBreakdown(orderId){
   /* total already includes the delivery fee, so the "before coupon" subtotal
      must take it back out or the breakdown won't add up on delivery orders. */
   const subtotal=Number(o.total||0)+discount-Number(o.delivery_fee||0);
-  const itemRows=items.map(i=>`<tr><td>${esc(i.product_name)} &times; ${i.qty}</td><td style="text-align:right">${money(Number(i.unit_price||0)*Number(i.qty||0))}</td></tr>`).join('');
+  const itemRows=items.map(i=>`<tr><td>${esc(i.product_name)} &times; ${i.qty}${orderLineVariantsHtml(i)}</td><td style="text-align:right">${money(Number(i.unit_price||0)*Number(i.qty||0))}</td></tr>`).join('');
   document.getElementById('couponBreakdownModal')?.remove();
   document.body.insertAdjacentHTML('beforeend',`<div class="admin-modal-backdrop" id="couponBreakdownModal"><div class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="couponBreakdownTitle"><div class="admin-modal-header"><div><span class="eyebrow">Coupon used</span><h2 id="couponBreakdownTitle">#${esc(o.order_code)}</h2></div><button type="button" class="admin-modal-close" id="closeCouponBreakdown" aria-label="Close">&times;</button></div>
   <div class="table-wrap" style="margin-top:12px"><table class="table"><tbody>${itemRows}<tr><td>Subtotal</td><td style="text-align:right"><strong>${money(subtotal)}</strong></td></tr><tr><td>Coupon <code class="coupon-code">${esc(o.coupon_code)}</code>${o.coupon_kind?` <span class="muted">(${o.coupon_kind==='credit'?'credit':'discount'})</span>`:''}</td><td style="text-align:right"><strong>&minus;${money(discount)}</strong></td></tr><tr><td><strong>Total</strong></td><td style="text-align:right"><strong>${money(o.total)}</strong></td></tr></tbody></table></div>
