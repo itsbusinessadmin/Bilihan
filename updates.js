@@ -1,6 +1,6 @@
 /* Bilihan — what changed, for the "What's new" notes in Admin.
 
-   Admin shows the entries from the last 3 days (72 hours) every time it is opened
+   Admin pops up the entries from the last 3 days (72 hours) every time it is opened
    or refreshed, newest first, and nothing at all when none are that recent. Add a
    new entry at the top whenever a change ships: `at` is when it went in (ISO time),
    `where` is "Admin" or "Customer page", and the text is written for the shop
@@ -9,7 +9,7 @@ window.BILIHAN_UPDATES = [
   {
     at: '2026-10-19T18:50:00Z', where: 'Admin',
     title: 'What’s new notes',
-    text: 'This box. It lists the changes from the last 3 days whenever you open or refresh Admin, and disappears when nothing new has shipped.'
+    text: 'This popup. It lists the changes from the last 3 days whenever you open or refresh Admin, and does not appear when nothing new has shipped.'
   },
   {
     at: '2026-10-19T18:29:00Z', where: 'Customer page',

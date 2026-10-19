@@ -869,29 +869,29 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .order-item-variants em{font-style:normal;font-weight:600}
 .order-item-variants span{color:var(--admin-text);font-variant-numeric:tabular-nums}
 
-/* What's new: recent changes, above whichever section is showing. */
-.admin-updates-slot{padding-bottom:0!important}
-.admin-updates-slot[hidden]{display:none}
-.admin-updates-slot:not([hidden])+.admin-main{padding-top:var(--admin-space-lg)}
-.updates-banner{padding:var(--admin-space-md) var(--admin-space-lg);border:1px solid color-mix(in srgb,var(--admin-green) 30%,var(--admin-line));border-radius:var(--admin-radius);background:color-mix(in srgb,var(--admin-green) 6%,var(--admin-card));box-shadow:var(--admin-shadow)}
-.updates-head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--admin-space-md)}
-.updates-head>div{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
-.updates-head strong{font-size:1rem;color:var(--admin-text)}
-.updates-spark{color:var(--admin-green);font-size:1rem}
+/* What's new: a popup of recent changes, styled like the storefront promo banner. */
+.updates-overlay{position:fixed;inset:0;z-index:var(--admin-z-modal);display:grid;place-items:center;padding:20px;background:rgba(8,14,10,.55);backdrop-filter:blur(3px);animation:updatesIn .25s ease-out}
+@keyframes updatesIn{from{opacity:0}}
+@keyframes updatesPop{from{opacity:0;transform:translateY(14px) scale(.96)}}
+.updates-card{position:relative;display:flex;flex-direction:column;width:min(560px,100%);max-height:min(82vh,720px);padding:24px 24px 20px;border-radius:20px;background:var(--admin-card);box-shadow:0 24px 64px rgba(0,0,0,.35);animation:updatesPop .3s cubic-bezier(.34,1.56,.64,1)}
+@media (prefers-reduced-motion:reduce){.updates-overlay,.updates-card{animation:none}}
+.updates-close{position:absolute;top:-14px;right:-14px;width:40px;height:40px;border:0;border-radius:50%;background:var(--admin-green);color:#fff;font-size:22px;line-height:1;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+.updates-head{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--admin-line)}
+.updates-head h2{margin:0;color:var(--admin-text);font-size:1.35rem;letter-spacing:-.02em}
+.updates-spark{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border-radius:14px;background:color-mix(in srgb,var(--admin-green) 14%,transparent);color:var(--admin-green);font-size:1.3rem}
 .updates-sub{color:var(--admin-muted);font-size:var(--admin-text-caption);font-weight:600}
-.updates-close{flex:0 0 auto;width:32px;height:32px;border:1px solid var(--admin-line);border-radius:10px;background:var(--admin-card);color:var(--admin-text);font-size:1.2rem;line-height:1;cursor:pointer}
-.updates-close:hover{border-color:var(--admin-line-strong)}
-.updates-list{display:grid;gap:10px;margin:12px 0 0;padding:0;list-style:none}
+.updates-list{flex:1;min-height:0;display:grid;align-content:start;gap:14px;margin:0;padding:16px 4px 4px 0;list-style:none;overflow-y:auto}
 .updates-list li{display:flex;align-items:flex-start;gap:10px}
 .updates-list strong{color:var(--admin-text);font-size:var(--admin-text-secondary)}
-.updates-list p{margin:2px 0 0;color:var(--admin-muted);font-size:var(--admin-text-caption);line-height:1.5}
+.updates-list p{margin:3px 0 0;color:var(--admin-muted);font-size:var(--admin-text-caption);line-height:1.5}
 .updates-date{color:var(--admin-muted);font-size:var(--admin-text-caption)}
 .updates-tag{flex:0 0 auto;width:106px;margin-top:1px;padding:3px 8px;border-radius:999px;font-size:.66rem;font-weight:800;letter-spacing:.02em;text-align:center;white-space:nowrap}
 .updates-tag.is-admin{background:color-mix(in srgb,var(--admin-green) 14%,transparent);color:var(--admin-green)}
 .updates-tag.is-store{background:color-mix(in srgb,#c2410c 13%,transparent);color:#c2410c}
-.updates-more{margin-top:12px;min-height:34px;padding:0 14px;border:1px solid var(--admin-line);border-radius:10px;background:var(--admin-card);color:var(--admin-text);font:inherit;font-size:var(--admin-text-caption);font-weight:600;cursor:pointer}
+.updates-ok{margin-top:16px;width:100%}
 @media (max-width:560px){
-  .updates-banner{padding:var(--admin-space-md)}
+  .updates-card{padding:20px 16px 16px}
+  .updates-close{top:-12px;right:-6px}
   .updates-list li{flex-direction:column;gap:4px}
   .updates-tag{width:auto}
 }

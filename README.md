@@ -469,10 +469,11 @@ check and charge extra quantities. Safe to re-run.
 
 ## What's new notes (Admin)
 
-Every time Admin is opened or refreshed, a **What's new** box at the top lists the
-changes from the last 3 days (72 hours), newest first, each tagged **Admin** or
-**Customer page**. Four show at first; **Show all** lists the rest. The × hides it
-until the next refresh. When nothing is that recent, the box does not appear.
+Every time Admin is opened or refreshed, a **What's new** popup (styled like the
+storefront promo banner) lists the changes from the last 3 days (72 hours), newest
+first, each tagged **Admin** or **Customer page**. **Got it**, the ×, the dark
+background or Esc closes it; switching sections does not bring it back, a refresh
+does. When nothing is that recent, no popup appears.
 
 The notes live in `updates.js`. When a change ships, add an entry at the top with
 the time it went in (`at`, ISO time), where it shows (`where`), a short `title` and
