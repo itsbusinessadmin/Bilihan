@@ -254,7 +254,47 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefres
 /* ========================================================================
    The shell: sidebar, and whichever section is showing
    ======================================================================== */
-function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['promote','Promote'],['categories','Categories'],['orders','Orders'],['coupons','Coupons'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,promote,categories,orders,coupons,settings,appearance,security}[A.section]||dashboard)(m);mountChatDock();startAutoRefresh()}
+function renderShell(){app.innerHTML=`<div class="admin-shell"><aside class="sidebar"><div class="admin-brand"><img src="${esc(A.data.settings?.logo_url||'bilihan-logo.png')}" alt=""><div><strong>${esc(A.data.settings?.business_name||'Bilihan')}</strong><small>Admin</small></div></div><nav class="side-nav">${[['dashboard','Dashboard'],['products','Products'],['promote','Promote'],['categories','Categories'],['orders','Orders'],['coupons','Coupons'],['settings','Settings'],['appearance','Appearance'],['security','Security']].map(([id,n])=>`<button data-s="${id}" class="${A.section===id?'active':''}">${n}${id==='messages'&&adminUnreadTotal()?`<span class="nav-badge">${adminUnreadTotal()>99?'99+':adminUnreadTotal()}</span>`:''}</button>`).join('')}</nav></aside><main id="adminMain" class="admin-main"></main></div>`;document.querySelectorAll('.side-nav button').forEach(b=>b.onclick=()=>{A.section=b.dataset.s;bulkReset();renderShell()});const m=document.getElementById('adminMain');AUTO.print=dataPrint();({dashboard,products,promote,categories,orders,coupons,settings,appearance,security}[A.section]||dashboard)(m);paintUpdatesBanner();mountChatDock();startAutoRefresh()}
+/* ========================================================================
+   What's new: the changes from the last 3 days, from updates.js
+
+   A popup over Admin, like the storefront's promo banner, each time Admin is
+   opened or refreshed. Switching sections does not bring it back; a refresh
+   does. It is not shown at all when nothing is that recent.
+   ======================================================================== */
+const UPDATES={shown:false};
+const UPDATES_WINDOW_MS=3*24*3600*1000;
+function recentUpdates(){
+  const now=Date.now();
+  return (window.BILIHAN_UPDATES||[])
+    .map(u=>({...u,t:new Date(u.at).getTime()}))
+    .filter(u=>Number.isFinite(u.t)&&u.t<=now+60000&&now-u.t<=UPDATES_WINDOW_MS)
+    .sort((a,b)=>b.t-a.t);
+}
+function paintUpdatesBanner(){
+  if(UPDATES.shown)return;
+  UPDATES.shown=true;
+  const list=recentUpdates();
+  if(!list.length)return;
+  const day=t=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}).format(new Date(t));
+  document.getElementById('updatesPopup')?.remove();
+  document.body.insertAdjacentHTML('beforeend',`<div class="updates-overlay" id="updatesPopup" role="dialog" aria-modal="true" aria-labelledby="updatesTitle">
+    <section class="updates-card">
+      <button type="button" class="updates-close" id="updatesClose" aria-label="Close what's new">&times;</button>
+      <div class="updates-head"><span class="updates-spark" aria-hidden="true">✦</span><div><h2 id="updatesTitle">What&rsquo;s new</h2><span class="updates-sub">${list.length} update${list.length===1?'':'s'} in the last 3 days</span></div></div>
+      <ul class="updates-list">${list.map(u=>`<li><span class="updates-tag ${u.where==='Admin'?'is-admin':'is-store'}">${esc(u.where||'Admin')}</span><div><strong>${esc(u.title)}</strong> <span class="updates-date">${esc(day(u.t))}</span><p>${esc(u.text||'')}</p></div></li>`).join('')}</ul>
+      <button type="button" class="primary-btn updates-ok" id="updatesOk">Got it</button>
+    </section></div>`);
+  const ov=document.getElementById('updatesPopup');
+  const close=()=>{ov.remove();document.removeEventListener('keydown',onKey)};
+  const onKey=e=>{if(e.key==='Escape')close()};
+  ov.addEventListener('click',e=>{if(e.target===ov)close()});
+  document.getElementById('updatesClose').onclick=close;
+  document.getElementById('updatesOk').onclick=close;
+  document.addEventListener('keydown',onKey);
+  document.getElementById('updatesOk').focus();
+}
+
 /* ========================================================================
    Sales reporting
    ======================================================================== */
