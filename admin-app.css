@@ -831,7 +831,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 }
 
 /* Floating customer messages, bottom right on every section. */
-.chat-dock{position:fixed;right:20px;bottom:20px;z-index:900;display:flex;flex-direction:column;align-items:flex-end;gap:12px;pointer-events:none}
+.chat-dock{position:fixed;right:20px;bottom:20px;z-index:90;display:flex;flex-direction:column;align-items:flex-end;gap:12px;pointer-events:none}
 .chat-dock>*{pointer-events:auto}
 .chat-fab{position:relative;display:grid;place-items:center;width:58px;height:58px;border:0;border-radius:50%;background:var(--admin-green);color:#fff;box-shadow:0 10px 28px rgba(0,0,0,.22);cursor:pointer;transition:transform .15s ease}
 .chat-fab:hover{transform:translateY(-2px)}
@@ -862,3 +862,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   .chat-dock.is-open .chat-panel{width:100%;height:auto;flex:1}
   .chat-fab{width:54px;height:54px}
 }
+
+/* The extras chosen on an order line, listed under the item in order details. */
+.order-item-variants{margin:4px 0 0;padding:0;list-style:none;color:var(--admin-muted);font-size:var(--admin-text-caption);line-height:1.5}
+.order-item-variants li::before{content:"• ";opacity:.6}
+.order-item-variants em{font-style:normal;font-weight:600}
+.order-item-variants span{color:var(--admin-text);font-variant-numeric:tabular-nums}
