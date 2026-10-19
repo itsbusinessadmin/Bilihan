@@ -155,21 +155,34 @@ function renderSettings(){
    uploaded an image. Tapping anywhere — the image, the backdrop, or the × —
    closes it and reveals the store. */
 function renderAdBanner(s){
-  document.getElementById('adBannerOverlay')?.remove();
-  if(!(s && s.ad_banner_enabled && s.ad_banner_url))return;
+  const url=s&&s.ad_banner_enabled&&s.ad_banner_url?String(s.ad_banner_url):'';
+  const current=document.getElementById('adBannerOverlay');
+  /* The settings arrive twice on a return visit (the saved copy, then the fresh
+     one). The same banner already up, or still loading, is left alone rather than
+     torn down and popped in again. */
+  if(current&&url&&current.dataset.src===url)return;
+  current?.remove();
+  if(!url)return;
   try{if(sessionStorage.getItem('bilihan_ad_seen')==='1')return}catch{}
   const ov=document.createElement('div');
   ov.id='adBannerOverlay';
   ov.className='ad-banner-overlay';
+  ov.dataset.src=url;
   ov.setAttribute('role','dialog');
   ov.setAttribute('aria-label','Promotion');
-  ov.innerHTML=`<div class="ad-banner-card"><button type="button" class="ad-banner-close" aria-label="Close promotion">&times;</button><img src="${esc(s.ad_banner_url)}" alt="Promotion"></div>`;
-  const _img=ov.querySelector('img');
-  /* A deleted or unreachable image must not trap customers behind a broken popup. */
-  if(_img)_img.onerror=()=>ov.remove();
+  ov.innerHTML=`<div class="ad-banner-card"><button type="button" class="ad-banner-close" aria-label="Close promotion">&times;</button><img alt="Promotion"></div>`;
   const close=()=>{ov.remove();try{sessionStorage.setItem('bilihan_ad_seen','1')}catch{}};
   ov.addEventListener('click',close);
+  /* Shown only once the picture is ready, so the popup lands whole: before, the
+     dark backdrop and a lone close button appeared first and the image dropped in
+     a moment later. A deleted or unreachable image never shows the popup at all. */
+  const img=ov.querySelector('img');
+  img.onerror=()=>ov.remove();
+  /* Held in the page (hidden) while it loads, so a second render can see it. */
+  ov.hidden=true;
   document.body.appendChild(ov);
+  img.onload=()=>{if(!ov.isConnected)return;ov.hidden=false};
+  img.src=url;
 }
 function renderContact(s){
   /* Saved setting links must be real web addresses: esc() neutralizes HTML
