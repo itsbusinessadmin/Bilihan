@@ -7,6 +7,11 @@
    owner, not for developers. Old entries can stay; they simply stop showing. */
 window.BILIHAN_UPDATES = [
   {
+    at: '2026-10-20T20:50:00Z', where: 'Admin',
+    title: 'Coupons tab is locked',
+    text: 'Coupons now asks for a lock code before showing or changing coupons. It stays open until the browser tab is closed; tap Lock to lock it again.'
+  },
+  {
     at: '2026-10-19T18:50:00Z', where: 'Admin',
     title: 'What’s new notes',
     text: 'This popup. It lists the changes from the last 3 days whenever you open or refresh Admin, and does not appear when nothing new has shipped.'

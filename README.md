@@ -467,6 +467,19 @@ Run `supabase-fix-audit-11.sql` in the Supabase SQL Editor once before using Max
 qty. It adds the column, saves it from the editor, and teaches `place_order` to
 check and charge extra quantities. Safe to re-run.
 
+## Coupons lock (Admin)
+
+The **Coupons** tab asks for a lock code before it shows or changes any coupon
+(letters are not case-sensitive). Once unlocked it stays open until that browser
+tab is closed; **Lock** at the top of the tab locks it again straight away. The
+code itself is not stored anywhere in the site, only its SHA-256 fingerprint
+(`COUPON_LOCK_HASH` in `admin.js`). To change the code, replace that value with
+the SHA-256 of the new code in capital letters.
+
+This lock is in the Admin page only. Anyone signed in to Admin could still reach
+coupons through the database directly, so it keeps the tab away from people using
+an Admin device, not from someone who knows how to query Supabase.
+
 ## What's new notes (Admin)
 
 Every time Admin is opened or refreshed, a **What's new** popup (styled like the

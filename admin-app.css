@@ -895,3 +895,17 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   .updates-list li{flex-direction:column;gap:4px}
   .updates-tag{width:auto}
 }
+
+/* The lock in front of the Coupons tab. */
+.coupon-lock{max-width:420px;margin:0 auto;padding:var(--admin-space-2xl) var(--admin-space-xl);text-align:center;justify-items:center}
+.coupon-lock-icon{display:grid;place-items:center;width:64px;height:64px;border-radius:20px;background:color-mix(in srgb,var(--admin-green) 12%,transparent);color:var(--admin-green)}
+.coupon-lock-icon svg{width:30px;height:30px}
+.coupon-lock h3{margin:4px 0 0;color:var(--admin-text);font-size:1.2rem}
+.coupon-lock p{margin:0}
+.coupon-lock input{width:100%;text-align:center;letter-spacing:.12em}
+.coupon-lock .primary-btn{width:100%}
+.coupon-lock-error{color:var(--admin-danger);font-size:var(--admin-text-caption);font-weight:600}
+.coupon-lock-error[hidden]{display:none}
+.coupon-relock{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 14px;border:1px solid var(--admin-line);border-radius:12px;background:var(--admin-card);color:var(--admin-text);font:inherit;font-size:.78rem;font-weight:600;cursor:pointer}
+.coupon-relock::before{content:"";width:13px;height:13px;background:currentColor;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='4.5' y='10.5' width='15' height='10' rx='2.5' fill='none' stroke='%23000' stroke-width='2.2'/%3E%3Cpath d='M8 10.5V7.8a4 4 0 0 1 8 0v2.7' fill='none' stroke='%23000' stroke-width='2.2'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='4.5' y='10.5' width='15' height='10' rx='2.5' fill='none' stroke='%23000' stroke-width='2.2'/%3E%3Cpath d='M8 10.5V7.8a4 4 0 0 1 8 0v2.7' fill='none' stroke='%23000' stroke-width='2.2'/%3E%3C/svg%3E") center/contain no-repeat}
+.coupon-relock:hover{border-color:var(--admin-line-strong)}

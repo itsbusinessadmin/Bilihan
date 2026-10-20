@@ -2016,7 +2016,54 @@ function couponRowHtml(c){
   const expiry=c.expires_at?new Date(c.expires_at).toLocaleDateString('en-PH',{timeZone:'Asia/Manila',year:'numeric',month:'short',day:'numeric'}):'<span class="muted">No expiry</span>';
   return `<tr><td><code class="coupon-code">${esc(c.code)}</code></td><td>${c.kind==='credit'?'Credit':'Discount'}</td><td>${couponValueHtml(c)}</td><td><span class="coupon-pill ${COUPON_STATUS_CLASS[st]}">${COUPON_STATUS_LABEL[st]}</span></td><td>${expiry}</td><td><div class="row-actions" style="justify-content:flex-start">${(c.status==='used'||st==='expired')?'':`<button type="button" data-cpause="${esc(c.id)}">${c.status==='paused'?'Resume':'Pause'}</button>`}<button type="button" data-csettings="${esc(c.id)}">Settings</button><button type="button" class="danger-btn" data-cdelete="${esc(c.id)}">Delete</button></div></td></tr>`;
 }
+/* The Coupons tab sits behind its own lock code, on top of the admin sign-in, so
+   only someone who knows it can make or change coupons on this device. Only the
+   code's SHA-256 is kept here, never the code itself; letters are compared without
+   regard to case. Unlocking lasts until this browser tab is closed, and Lock puts
+   it back at once.
+
+   This is a lock in the page, not in the database: anyone signed in to Admin can
+   still reach coupons through the database directly. */
+const COUPON_LOCK_HASH='efd8e64bae9b673a776ab36e1721361f0c6ba268b14f29a30dc962bbb59b3b06';
+const COUPON_LOCK_KEY='bilihan_coupons_unlocked_v1';
+const couponsUnlocked=()=>{try{return sessionStorage.getItem(COUPON_LOCK_KEY)===COUPON_LOCK_HASH}catch{return false}};
+async function sha256Hex(text){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function couponLock(m){
+  m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Discounts &amp; credits</span><h2>Coupons</h2></div></div>
+    <form class="panel admin-form coupon-lock" id="couponLockForm">
+      <div class="coupon-lock-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8 10.5V7.8a4 4 0 0 1 8 0v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></div>
+      <h3>Coupons are locked</h3>
+      <p class="muted">Enter the lock code to manage coupons.</p>
+      <label class="sr-only" for="couponLockInput">Lock code</label>
+      <input id="couponLockInput" type="password" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Lock code" required>
+      <p class="coupon-lock-error" id="couponLockError" role="alert" hidden>That code is not right. Please try again.</p>
+      <button class="primary-btn" type="submit">Unlock</button>
+    </form>`;
+  const form=document.getElementById('couponLockForm'),input=document.getElementById('couponLockInput'),err=document.getElementById('couponLockError');
+  input.oninput=()=>{err.hidden=true};
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    let hash='';
+    try{hash=await sha256Hex(String(input.value||'').trim().toUpperCase())}catch{}
+    if(hash!==COUPON_LOCK_HASH){err.hidden=false;input.select();return}
+    try{sessionStorage.setItem(COUPON_LOCK_KEY,hash)}catch{}
+    coupons(m);
+  };
+  input.focus();
+}
 function coupons(m){
+  if(!couponsUnlocked())return couponLock(m);
+  couponsView(m);
+  const head=m.querySelector('.page-head');
+  if(head&&!head.querySelector('#couponRelock')){
+    head.insertAdjacentHTML('beforeend','<button type="button" class="coupon-relock" id="couponRelock" title="Lock the Coupons tab again">Lock</button>');
+    document.getElementById('couponRelock').onclick=()=>{try{sessionStorage.removeItem(COUPON_LOCK_KEY)}catch{}couponLock(m)};
+  }
+}
+function couponsView(m){
   if(A.data.couponsUnavailable){
     m.innerHTML=`<div class="page-head"><div><span class="eyebrow">Discounts &amp; credits</span><h2>Coupons</h2></div></div><div class="panel"><p><strong>Coupons are not set up yet.</strong></p><p class="muted">Run <code>supabase-coupons.sql</code> once in Supabase Dashboard &rarr; SQL Editor, then reload this page.</p></div>`;
     return;
