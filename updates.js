@@ -7,6 +7,11 @@
    owner, not for developers. Old entries can stay; they simply stop showing. */
 window.BILIHAN_UPDATES = [
   {
+    at: '2026-10-21T17:05:00Z', where: 'Customer page',
+    title: 'New CE Fun Club Store logo',
+    text: 'The plate-and-fork logo now appears in the header, footer, home picture, browser tab icon, phone home-screen icon, link previews, order emails and the seller page. A logo uploaded in Appearance still takes its place.'
+  },
+  {
     at: '2026-10-20T20:50:00Z', where: 'Admin',
     title: 'Coupons tab is locked',
     text: 'Coupons now asks for a lock code before showing or changing coupons. It stays open until the browser tab is closed; tap Lock to lock it again.'

@@ -70,7 +70,7 @@
 
     const preview = document.createElement('img');
     preview.className = 'fast-entry-photo-preview';
-    preview.src = 'bilihan-logo.png';
+    preview.src = 'brand/ce-symbol.svg';
     preview.alt = 'Product photo preview';
 
     const copy = document.createElement('div');

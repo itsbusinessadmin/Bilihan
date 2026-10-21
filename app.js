@@ -134,7 +134,7 @@ function renderSettings(){
   const s=state.data.settings||FALLBACK.settings;
   applySkin(s.storefront_skin);
   const name=realSetting(s.business_name)||'Bilihan';
-  const logo=s.logo_url||'bilihan-mark.webp';
+  const logo=s.logo_url||'brand/ce-app-icon.svg';
   $('brandName').textContent=$('footerBrand').textContent=name;
   /* On phones the name is hidden and this label is all a screen reader gets, so it
      has to follow the store's actual name rather than stay at the seeded one. */
@@ -143,7 +143,7 @@ function renderSettings(){
   document.title=`${name} — ${TITLE_SUFFIX}`;
   document.querySelectorAll('img[data-store-logo]').forEach(img=>{img.src=logo});
   $('heroTitle').textContent=s.hero_title;$('heroTagline').textContent=s.hero_tagline;$('aboutText').textContent=s.about_text;
-  $('aboutImage').onerror=()=>{$('aboutImage').src='bilihan-logo.png';$('aboutImage').onerror=null};$('aboutImage').src=s.about_image_url||'bilihan-logo.png';
+  $('aboutImage').onerror=()=>{$('aboutImage').src='brand/ce-hero.svg';$('aboutImage').onerror=null};$('aboutImage').src=s.about_image_url||'brand/ce-hero.svg';
   $('aboutImage').alt=`A selection of the food available at ${name}`;
   renderContact(s);
   $('year').textContent=new Date().getFullYear();
@@ -215,8 +215,8 @@ function buildHeroDots(imgs){
 function renderHero(){
   const imgs=state.data.settings?.hero_images||[];
   const img=$('heroImage');
-  if(!imgs.length){img.src='bilihan-logo.png';$('heroDots').innerHTML='';heroDotsKey='';return}
-  img.onerror=()=>{img.src='bilihan-logo.png';img.onerror=null};
+  if(!imgs.length){img.src='brand/ce-hero.svg';$('heroDots').innerHTML='';heroDotsKey='';return}
+  img.onerror=()=>{img.src='brand/ce-hero.svg';img.onerror=null};
   const i=state.heroIndex%imgs.length;
   img.src=imgs[i];
   buildHeroDots(imgs);
